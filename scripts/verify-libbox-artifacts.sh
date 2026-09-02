@@ -1,9 +1,9 @@
 #!/bin/sh
-# Verify that installed native artifacts are the reviewed 1.1.0 build outputs.
+# Verify that installed native artifacts are the reviewed 1.1.1 build outputs.
 set -eu
 
 REPO_DIR=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
-RECORD="$REPO_DIR/native-core/verified-1.1.0.txt"
+RECORD="$REPO_DIR/native-core/verified-1.1.1.txt"
 AAR="$REPO_DIR/android/app/libs/libbox.aar"
 XCFRAMEWORK="$REPO_DIR/ios/Frameworks/Libbox.xcframework"
 MODE=${1:---all}
@@ -69,4 +69,4 @@ if [ "$MODE" = "--all" ]; then
     "$XCFRAMEWORK/ios-arm64_x86_64-simulator/Libbox.framework/Versions/A/Libbox"
 fi
 
-echo "All reviewed hideip.net 1.1.0 native artifact hashes match."
+echo "All reviewed hideip.net 1.1.1 native artifact hashes match."

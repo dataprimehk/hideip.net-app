@@ -109,7 +109,7 @@ plus the Android NDK for the AAR and a full Xcode installation for the iOS
 framework. It verifies the sing-box commit, the module checksums and
 `govulncheck` before installing `android/app/libs/libbox.aar` and
 `ios/Frameworks/Libbox.xcframework`. `scripts/verify-libbox-artifacts.sh`
-checks the installed artifacts against `native-core/verified-1.1.0.txt`.
+checks the installed artifacts against `native-core/verified-1.1.1.txt`.
 
 Android release builds need `android/key.properties` pointing at a signing
 keystore; without it the release task fails instead of signing with the debug

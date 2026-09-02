@@ -1,4 +1,4 @@
-# Native core recipe for hideip.net 1.1.0
+# Native core recipe for hideip.net 1.1.1
 
 Android and iOS use the same official sing-box `v1.13.12` source commit,
 Go toolchain, dependency backport, and gomobile generator. The immutable inputs
@@ -35,8 +35,8 @@ The app build consumes only those local artifacts. It does not fall back to the
 opaque third-party JitPack AAR. Keep `source.env`, the dependency manifest, this
 recipe, and the corresponding source available with distributed GPLv3 builds.
 
-Before packaging the reviewed 1.1.0 release candidate, verify that the installed
-artifacts still match `verified-1.1.0.txt`:
+Before packaging the reviewed 1.1.1 release candidate, verify that the installed
+artifacts still match `verified-1.1.1.txt`:
 
 ```sh
 scripts/verify-libbox-artifacts.sh

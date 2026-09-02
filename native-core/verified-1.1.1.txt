@@ -1,0 +1,43 @@
+Verification date: 2026-09-02
+App version: 1.1.1+7
+
+sing_box_tag=v1.13.12
+sing_box_commit=1086ab2563320e0da0c23b3a491d8dfa0939dff4
+go_version=go1.26.6
+govulncheck_version=v1.6.0
+gomobile_module=v0.1.12
+android_api=24
+android_ndk_version=28.2.13676358
+xcode_version=26.6
+xcode_build=17F113
+ios_sdk_version=26.5
+modules_sha256=a2bc3322241c4d44123ccd3c29050a4f6a0a0a19e04459e0b4bab16d9d82ff20
+
+android_aar_sha256=38c35bed1eaeeea8356b6431c0679a2d78c94d96c894cf6f07457ef03281b755
+android_arm64-v8a_libbox_sha256=1346bbb6f6e3e1320211dfb32679b5cf448956e969a87fa58a1fcfea495ae1c4
+android_armeabi-v7a_libbox_sha256=e9bee5b1007821d37ea6d0692dc96519cf5c1fc4229b8ccb6bfc5f15cde50fec
+android_x86_libbox_sha256=44413a6a567d46cbadb9109a40713431fdfc2cb11407b2f787ed2f610e09c02e
+android_x86_64_libbox_sha256=63c458208dc4a5ffba609b144f06b3559bc81cb6a93a88c73b78d3153ca44519
+
+apple_ios_arm64_libbox_sha256=17078f86ab15fed28bc2984bee243623f58ccd629fdb8aa6c213de4a808a3a86
+apple_simulator_arm64_x86_64_libbox_sha256=c82dc6876020654c5f16aabc3973059f90b3a156076e08abd8fd69a7aa2e51cf
+
+Source govulncheck result for Android tags: 0 reachable vulnerabilities.
+Source govulncheck result for Apple tags: 0 reachable vulnerabilities.
+Android binary scan result for every ABI: GO-2026-5932 only. This advisory has
+no fixed version and covers the unsafe-by-design legacy OpenPGP package. The
+source scan finds no call path and the Android dependency package list contains
+no golang.org/x/crypto/openpgp package. The build recipe fails for any other
+source or binary result.
+
+Changes since verified-1.1.0.txt: Go 1.26.5 to 1.26.6 (GO-2026-6218,
+GO-2026-6091, GO-2026-6090, GO-2026-6089, GO-2026-5972, GO-2026-5026),
+golang.org/x/crypto v0.53.0 to v0.56.0 (GO-2026-6355, GO-2026-6354),
+golang.org/x/mod v0.38.0 to v0.40.0 (GO-2026-6180, GO-2026-6179, binary-only
+module matches before the update), golang.org/x/net v0.56.0 to v0.58.0 and
+golang.org/x/text v0.39.0 to v0.41.0 as raised by go mod tidy.
+
+Compatibility smoke:
+- flutter build apk --release --split-per-abi: passed against the locally built AAR
+- flutter build appbundle --release: passed against the locally built AAR
+- flutter build ios --release --no-codesign: passed against the XCFramework
