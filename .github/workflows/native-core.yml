@@ -33,7 +33,7 @@ jobs:
 
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
-          go-version: "1.26.5"
+          go-version: "1.26.6"
           check-latest: false
           cache: false
 
@@ -52,3 +52,11 @@ jobs:
 
       - name: Verify reviewed artifact hashes
         run: scripts/verify-libbox-artifacts.sh --android
+
+      - name: Upload native core reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: native-core-reports
+          path: build/native-core/*.txt
+          if-no-files-found: ignore

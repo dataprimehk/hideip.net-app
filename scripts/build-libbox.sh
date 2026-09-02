@@ -96,9 +96,17 @@ export PATH="$TOOLS_DIR:$PATH"
 
 "$TOOLS_DIR/govulncheck" -version > "$REPORT_DIR/govulncheck-version.txt"
 "$TOOLS_DIR/govulncheck" -tags="$ANDROID_TAGS" ./experimental/libbox \
-  > "$REPORT_DIR/govulncheck-source-android.txt"
+  > "$REPORT_DIR/govulncheck-source-android.txt" || {
+    cat "$REPORT_DIR/govulncheck-source-android.txt" >&2
+    echo "Source govulncheck found a reachable vulnerability for the Android tags" >&2
+    exit 1
+  }
 "$TOOLS_DIR/govulncheck" -tags="$APPLE_TAGS" ./experimental/libbox \
-  > "$REPORT_DIR/govulncheck-source-apple.txt"
+  > "$REPORT_DIR/govulncheck-source-apple.txt" || {
+    cat "$REPORT_DIR/govulncheck-source-apple.txt" >&2
+    echo "Source govulncheck found a reachable vulnerability for the Apple tags" >&2
+    exit 1
+  }
 GOOS=android GOARCH=arm64 CGO_ENABLED=1 \
   go list -deps -tags="$ANDROID_TAGS" ./experimental/libbox |
   LC_ALL=C sort > "$REPORT_DIR/android-packages.txt"
