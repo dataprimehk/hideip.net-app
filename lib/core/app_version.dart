@@ -2,7 +2,7 @@
 ///
 /// Keep [appVersion] in sync with the `version:` field in pubspec.yaml (the
 /// part before the `+` build number). Bump both together on every release.
-const String appVersion = '1.1.0';
+const String appVersion = '1.1.1';
 
 /// The User-Agent every subscription/provisioning HTTP fetch must send, so
 /// seller panels can recognise the client and pick the right response format

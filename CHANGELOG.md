@@ -3,6 +3,25 @@
 Notable changes to the hideip.net app. The same history is published at
 https://hideip.net/apps/changelog.
 
+## 1.1.1 (unreleased)
+
+Build 7. iOS 15 or later.
+
+### Security
+- The sing-box core is rebuilt with Go 1.26.6 and updated golang.org/x/crypto
+  (v0.56.0), x/mod (v0.40.0), x/net (v0.58.0) and x/text (v0.41.0). This
+  closes the eight advisories govulncheck reported as reachable in the 1.1.0
+  core: GO-2026-6355 and GO-2026-6354 in x/crypto, and GO-2026-6218,
+  GO-2026-6091, GO-2026-6090, GO-2026-6089, GO-2026-5972 and GO-2026-5026 in
+  the Go standard library. It also removes GO-2026-6180 and GO-2026-6179 in
+  x/mod, which the binary scan matched at module level; the source scan
+  never found a call path to them. The build script now prints the
+  govulncheck report when a scan fails, and CI keeps the reports as an
+  artifact.
+
+### Changed
+- iOS 15 or later is required, up from 14.
+
 ## 1.1.0 (2026-09-02)
 
 Build 6 on Google Play and the App Store. iOS 14 or later.
