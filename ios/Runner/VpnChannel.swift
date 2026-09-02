@@ -169,10 +169,8 @@ final class VpnChannel: NSObject {
     ) {
         manager.isOnDemandEnabled = enabled
         manager.onDemandRules = enabled ? [NEOnDemandRuleConnect()] : nil
-        if #available(iOS 14.0, *) {
-            // Make sure profiles saved by the build that set this are healed.
-            manager.protocolConfiguration?.includeAllNetworks = false
-        }
+        // Make sure profiles saved by the build that set this are healed.
+        manager.protocolConfiguration?.includeAllNetworks = false
         manager.saveToPreferences { error in
             guard error == nil else {
                 completion(error)
