@@ -1341,7 +1341,9 @@ class AppState extends ChangeNotifier {
     if (newState != _conn && _conn != ConnState.connecting) {
       _conn = newState;
       if (newState == ConnState.connected) {
-        Haptics.success();
+        // The cold-start reconcile only discovers a tunnel that Always-on
+        // kept up; nothing changed for the user, so nothing to feel.
+        if (!initial) Haptics.success();
         _connectedAt ??= DateTime.now();
         _startStatusPoll();
       }
