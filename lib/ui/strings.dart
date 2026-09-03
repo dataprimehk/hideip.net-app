@@ -784,6 +784,10 @@ abstract final class S {
       'Change the keys, the endpoint or anything else in the config.';
   static const srvEditTitle = 'Edit server';
   static const srvSaveChanges = 'Save changes';
+  /// Edit mode, first step: the config is read again before it can be saved.
+  static const srvEditContinue = 'Continue';
+  /// Edit mode, result card: nothing is added, the server is replaced.
+  static const srvEditReady = 'Ready to save';
   static String srvUpdated(String name) => '$name updated';
   static const srvConfigDetected = 'Config detected';
   static const srvEditOneOnly =

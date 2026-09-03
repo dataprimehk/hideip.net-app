@@ -360,8 +360,8 @@ class LocationsBody extends StatelessWidget {
       subtitle: advanced
           ? S.tunnelChain(l.protoLabel, l.host)
           : ms == null
-              ? l.country
-              : S.lockedSub(l.country, ms),
+              ? rowPlace(l)
+              : S.lockedSub(rowPlace(l), ms),
       subtitleMono: advanced,
       trailing: Row(mainAxisSize: MainAxisSize.min, children: [
         // Speed mode only ever applies to the hideip.net fleet, and only a

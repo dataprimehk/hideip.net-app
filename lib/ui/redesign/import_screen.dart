@@ -561,7 +561,7 @@ class _ImportScreenState extends State<ImportScreen> {
                 ),
                 child: switch (_phase) {
                   _Phase.input => HipCta(
-                    S.eImport,
+                    _editing != null ? S.srvEditContinue : S.eImport,
                     onTap: _detect(_text.text, editing: _editing != null) == null
                         ? null
                         : _runImport,
@@ -821,7 +821,7 @@ class _ImportScreenState extends State<ImportScreen> {
       children: [
         _DetectBox(
           text: _editing != null
-              ? S.e6Ready
+              ? S.srvEditReady
               : _isSubscription
                   ? S.e4Added
                   : S.e6Ready,

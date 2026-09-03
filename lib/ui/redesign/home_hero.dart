@@ -14,7 +14,7 @@ import '../../vpn_controller.dart';
 import '../strings.dart';
 import 'ascii/hero_ascii.dart';
 import 'ascii/hero_glow.dart';
-import 'detail_screen.dart' show removalFallsBackToAuto, serverLabel;
+import 'detail_screen.dart' show removalFallsBackToAuto, rowPlace, serverLabel;
 import 'hero_compact.dart';
 import 'hero_ip_sheet.dart';
 import 'hero_search.dart';
@@ -1045,7 +1045,7 @@ class _HomeList extends StatelessWidget {
           : (l.provider != null ? HipBadge.blue(l.provider!) : null),
       subtitle: advanced
           ? S.tunnelChain(l.protoLabel, l.host)
-          : (ms == null ? l.country : S.homeRowSub(l.country, ms)),
+          : (ms == null ? rowPlace(l) : S.homeRowSub(rowPlace(l), ms)),
       subtitleMono: advanced,
       selected: chosen,
       live: chosen && on,

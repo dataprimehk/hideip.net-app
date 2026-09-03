@@ -288,7 +288,7 @@ void main() {
         );
         await wait(tester);
         expect(
-          tester.widget<HipCta>(find.widgetWithText(HipCta, S.eImport)).onTap,
+          tester.widget<HipCta>(find.widgetWithText(HipCta, S.srvEditContinue)).onTap,
           isNull,
         );
 
@@ -297,7 +297,7 @@ void main() {
           _link('1.0.0.7', 'nl-ams-02'),
         );
         await wait(tester);
-        await tester.tap(find.text(S.eImport));
+        await tester.tap(find.text(S.srvEditContinue));
         // Four named steps, a beat each.
         await wait(tester, 1800);
 
