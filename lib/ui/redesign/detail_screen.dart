@@ -15,6 +15,7 @@ import 'hip.dart';
 import 'hip_sheet.dart';
 import 'shell.dart';
 import 'srv_edit.dart';
+import 'srv_location_picker.dart';
 
 /// The label to show for [l]: the name the user gave the server, or the one
 /// it was imported under.
@@ -75,6 +76,34 @@ class _DetailScreenState extends State<DetailScreen> {
     final at = widget.location.index;
     if (at >= 0 && at < locs.length && !locs[at].premium) return locs[at];
     return widget.location;
+  }
+
+  /// Where this server is, in words, for the Location row: the user's own
+  /// choice says so, the lookup's answer stands on its own, and nothing
+  /// placed reads as not known.
+  String _placeLine(Location loc) {
+    if (!loc.placed) return S.srvLocationUnknown;
+    return loc.profile.ccOverride != null
+        ? S.srvLocationSetByYou(loc.placeLabel)
+        : loc.placeLabel;
+  }
+
+  /// Asks where the server is and stores the answer on the profile.
+  Future<void> _pickLocation() async {
+    final loc = _loc;
+    final p = loc.profile;
+    final place = await showSrvLocationPicker(
+      context,
+      cc: p.ccOverride ?? (loc.placed ? loc.cc : null),
+      city: p.cityOverride ?? loc.placeCity,
+      overridden: p.ccOverride != null,
+    );
+    if (place == null || !mounted) return;
+    final state = widget.state;
+    final match = state.locations.where((l) => l.id == loc.id);
+    final index = match.isEmpty ? loc.index : match.first.index;
+    await state.setServerLocation(index, cc: place.cc, city: place.city);
+    state.showToast(S.srvLocationSaved);
   }
 
   /// Opens the importer on this server's config; saving there puts the
@@ -250,6 +279,8 @@ class _DetailScreenState extends State<DetailScreen> {
                   onRefresh:
                       subUrl == null ? null : () => _refreshSubscription(subUrl),
                   onEdit: _edit,
+                  place: _placeLine(loc),
+                  onLocation: _pickLocation,
                 ),
               if (advanced) ...[
                 const HipSectionLabel(S.gRawConfig),
@@ -351,6 +382,11 @@ class ManageServerSection extends StatefulWidget {
   /// Opens the config for editing. Null hides the row.
   final VoidCallback? onEdit;
 
+  /// Where the server is, in words, and the picker behind the row. The row
+  /// is shown only with [onLocation].
+  final String? place;
+  final VoidCallback? onLocation;
+
   const ManageServerSection({
     super.key,
     required this.name,
@@ -362,6 +398,8 @@ class ManageServerSection extends StatefulWidget {
     required this.onRename,
     this.onRefresh,
     this.onEdit,
+    this.place,
+    this.onLocation,
   });
 
   @override
@@ -447,6 +485,13 @@ class _ManageServerSectionState extends State<ManageServerSection> {
             subtitle: S.gNameSub(widget.name, widget.rawName),
             trailing: Icon(Icons.edit_outlined, size: 16, color: Hip.muted2),
             onTap: _start,
+          ),
+        if (widget.onLocation != null)
+          HipListRow(
+            title: S.srvLocation,
+            subtitle: widget.place ?? S.srvLocationUnknown,
+            trailing: Icon(Icons.edit_outlined, size: 16, color: Hip.muted2),
+            onTap: widget.onLocation,
           ),
         if (widget.onEdit != null)
           HipListRow(

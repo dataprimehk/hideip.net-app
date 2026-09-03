@@ -1,4 +1,5 @@
 import 'proxy_profile.dart';
+import 'srv_naming.dart';
 
 /// A display-friendly view over a [ProxyProfile]: "de-fra-reality-01" becomes
 /// "Frankfurt, Germany" with a DE tile, while the raw name and endpoint stay
@@ -12,6 +13,11 @@ class Location {
   final String? provider; // e.g. "@quietproxy" lifted from the raw name
   final double? lat;
   final double? lon;
+
+  /// The city of the place, by name, when one is known: what a token in the
+  /// name matched, what the lookup answered, or what the user typed. Not the
+  /// label ([city] is that, for historical reasons); this is the place.
+  final String? placeCity;
 
   /// A hideip.net location the user cannot use yet: it comes from the signed
   /// public catalog rather than from a provisioned profile, so it is shown
@@ -33,6 +39,7 @@ class Location {
     this.provider,
     this.lat,
     this.lon,
+    this.placeCity,
     this.locked = false,
     this.won = false,
   });
@@ -46,9 +53,18 @@ class Location {
         provider: provider,
         lat: lat,
         lon: lon,
+        placeCity: placeCity,
         locked: locked ?? this.locked,
         won: won ?? this.won,
       );
+
+  /// The place in words, `Berlin, Germany` or `Germany`, or empty when
+  /// nothing placed this server.
+  String get placeLabel => !placed
+      ? ''
+      : placeCity != null
+          ? '$placeCity, $country'
+          : country;
 
   String get rawName => profile.name;
 
@@ -92,71 +108,99 @@ class Location {
     final at = RegExp(r'@[a-z0-9_]{3,}').firstMatch(lowered);
     if (at != null) provider = at.group(0);
 
-    // Tokenize on anything non-alphanumeric; also split off digits so
-    // "reality01" yields "reality".
-    final tokens = lowered
-        .split(RegExp(r'[^a-z0-9]+'))
-        .expand((t) => t.split(RegExp(r'(?<=[a-z])(?=\d)')))
-        .where((t) => t.isNotEmpty)
-        .toList();
+    final hostPort = '${p.server}:${p.port}';
+    final display = raw.isEmpty ? hostPort : raw;
+    // A placeholder the parser fell back to says nothing; the place does.
+    final unnamed = SrvNaming.isFallback(raw, host: p.server, port: p.port);
 
-    _City? city;
-    for (final t in tokens) {
-      city = _cities[t];
-      if (city != null) break;
+    // The place the user chose wins over the name and over the lookup.
+    final over = p.ccOverride;
+    if (validCc(over)) {
+      return _placed(
+        p,
+        index,
+        cc: over!,
+        cityName: p.cityOverride,
+        provider: provider,
+        label: unnamed
+            ? SrvNaming.suggest(
+                city: p.cityOverride, country: countryName(over), host: hostPort)
+            : display,
+      );
     }
-    // Country prefix ("de-...") wins over the city's country only when no
-    // city matched; otherwise the city already implies it.
-    String? cc;
-    for (final t in tokens) {
-      if (_countries.containsKey(t)) {
-        cc = t;
-        break;
+
+    // The name the importer suggested from the lookup is made of the place's
+    // own words, so the token pass below would only find what the lookup
+    // found, and lose the number on the way. It is read as is instead.
+    final geoSuggestion = placeSuggestion(p);
+    final suggested =
+        geoSuggestion != null && SrvNaming.isSuggested(raw, geoSuggestion);
+
+    if (!suggested) {
+      // Tokenize on anything non-alphanumeric; also split off digits so
+      // "reality01" yields "reality".
+      final tokens = lowered
+          .split(RegExp(r'[^a-z0-9]+'))
+          .expand((t) => t.split(RegExp(r'(?<=[a-z])(?=\d)')))
+          .where((t) => t.isNotEmpty)
+          .toList();
+
+      _City? city;
+      for (final t in tokens) {
+        city = _cities[t];
+        if (city != null) break;
+      }
+      // Country prefix ("de-...") wins over the city's country only when no
+      // city matched; otherwise the city already implies it.
+      String? cc;
+      for (final t in tokens) {
+        if (_countries.containsKey(t)) {
+          cc = t;
+          break;
+        }
+      }
+
+      if (city != null) {
+        return Location(
+          profile: p,
+          index: index,
+          city: city.name,
+          country: _countries[city.cc] ?? city.cc.toUpperCase(),
+          cc: city.cc.toUpperCase(),
+          provider: provider,
+          lat: city.lat,
+          lon: city.lon,
+          placeCity: city.name,
+        );
+      }
+      if (cc != null) {
+        final c = _countryCenters[cc];
+        return Location(
+          profile: p,
+          index: index,
+          city: _countries[cc]!,
+          country: _countries[cc]!,
+          cc: cc.toUpperCase(),
+          provider: provider,
+          lat: c?.$1,
+          lon: c?.$2,
+        );
       }
     }
 
-    if (city != null) {
-      return Location(
-        profile: p,
-        index: index,
-        city: city.name,
-        country: _countries[city.cc] ?? city.cc.toUpperCase(),
-        cc: city.cc.toUpperCase(),
+    // A place geolocated from the server address (stored on the profile at
+    // import) fills in when the name says nothing: a provider's own label
+    // stays, a placeholder gives way to the place, and the country supplies
+    // the flag and the map pin either way.
+    final geoCc = p.cc;
+    if (validCc(geoCc)) {
+      return _placed(
+        p,
+        index,
+        cc: geoCc!,
+        cityName: p.city,
         provider: provider,
-        lat: city.lat,
-        lon: city.lon,
-      );
-    }
-    if (cc != null) {
-      final c = _countryCenters[cc];
-      return Location(
-        profile: p,
-        index: index,
-        city: _countries[cc]!,
-        country: _countries[cc]!,
-        cc: cc.toUpperCase(),
-        provider: provider,
-        lat: c?.$1,
-        lon: c?.$2,
-      );
-    }
-    final display = raw.isEmpty ? '${p.server}:${p.port}' : raw;
-
-    // A country geolocated from the server address (stored on the profile at
-    // import) fills in when the name says nothing: the user's label stays,
-    // the country supplies the flag and the map pin.
-    final geoCc = p.cc?.toLowerCase();
-    if (geoCc != null && RegExp(r'^[a-z]{2}$').hasMatch(geoCc)) {
-      final c = _countryCenters[geoCc];
-      return Location(
-        profile: p,
-        index: index,
-        city: display,
-        country: _countries[geoCc] ?? geoCc.toUpperCase(),
-        cc: geoCc.toUpperCase(),
-        provider: provider,
-        lat: c?.$1,
-        lon: c?.$2,
+        label: unnamed ? geoSuggestion! : display,
       );
     }
 
@@ -170,6 +214,77 @@ class Location {
       provider: provider,
     );
   }
+
+  /// A location at a known place: the user's or the lookup's. The pin lands
+  /// on the city when the table knows it, on the country's centre otherwise.
+  static Location _placed(
+    ProxyProfile p,
+    int index, {
+    required String cc,
+    String? cityName,
+    String? provider,
+    required String label,
+  }) {
+    final lc = cc.toLowerCase();
+    final cleanCity = cityName?.trim();
+    final known = cleanCity == null || cleanCity.isEmpty
+        ? null
+        : _cities[cleanCity.toLowerCase().replaceAll(RegExp(r'[^a-z]'), '')];
+    final pin = known != null && known.cc == lc
+        ? (known.lat, known.lon)
+        : _countryCenters[lc];
+    return Location(
+      profile: p,
+      index: index,
+      city: label,
+      country: countryName(cc),
+      cc: cc.toUpperCase(),
+      provider: provider,
+      lat: pin?.$1,
+      lon: pin?.$2,
+      placeCity: cleanCity == null || cleanCity.isEmpty ? null : cleanCity,
+    );
+  }
+
+  /// The name the importer would suggest for [p] from the place it has
+  /// (the user's choice first, then the lookup), or null when it has none.
+  static String? placeSuggestion(ProxyProfile p) {
+    final hostPort = '${p.server}:${p.port}';
+    if (validCc(p.ccOverride)) {
+      return SrvNaming.suggest(
+          city: p.cityOverride,
+          country: countryName(p.ccOverride!),
+          host: hostPort);
+    }
+    if (validCc(p.cc)) {
+      return SrvNaming.suggest(
+          city: p.city, country: countryName(p.cc!), host: hostPort);
+    }
+    return null;
+  }
+
+  /// Whether [cc] is exactly two ASCII letters.
+  static bool validCc(String? cc) =>
+      cc != null && RegExp(r'^[A-Za-z]{2}$').hasMatch(cc);
+
+  /// Names learnt from the atlas at runtime (see SrvCountries), for the
+  /// codes the table below does not carry. Upper-case codes.
+  static Map<String, String> _learnt = const {};
+
+  static void learnCountryNames(Map<String, String> names) =>
+      _learnt = {..._learnt, ...names};
+
+  /// The display name for a country code: the table's, then a learnt one,
+  /// then the code itself.
+  static String countryName(String cc) =>
+      _countries[cc.toLowerCase()] ?? _learnt[cc.toUpperCase()] ?? cc.toUpperCase();
+
+  /// The codes the table knows names for, upper case, without the `uk`
+  /// alias.
+  static List<String> get tableCountryCodes => [
+        for (final k in _countries.keys)
+          if (k != 'uk') k.toUpperCase(),
+      ];
 
   /// The placeholder `cc` of a server nothing could place. Its `country` is
   /// then the raw host, which is fine under a flag slot and wrong after a

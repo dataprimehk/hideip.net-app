@@ -27,6 +27,16 @@ class ProxyProfile {
   /// (most bare-IP links). Null until (and unless) that lookup succeeds.
   final String? cc;
 
+  /// The city that same lookup named, when it knew one. Only meaningful
+  /// beside [cc]; older saved profiles lack it and read as country only.
+  final String? city;
+
+  /// The place the user chose for this server, which wins over the lookup
+  /// and over whatever the name says. [ccOverride] null means no override;
+  /// [cityOverride] is optional beside it.
+  final String? ccOverride;
+  final String? cityOverride;
+
   /// True for profiles managed by the hideip.net premium subscription (they
   /// came from the provisioning backend, not a user import). Managed profiles
   /// are replaced wholesale on refresh and removed when the subscription
@@ -62,6 +72,9 @@ class ProxyProfile {
     this.extraOutbounds = const [],
     this.isEndpoint = false,
     this.cc,
+    this.city,
+    this.ccOverride,
+    this.cityOverride,
     this.premium = false,
     this.subUrl,
     this.customName,
@@ -75,6 +88,9 @@ class ProxyProfile {
   ProxyProfile copyWith({
     String? name,
     String? cc,
+    Object? city = _keep,
+    Object? ccOverride = _keep,
+    Object? cityOverride = _keep,
     bool? premium,
     String? subUrl,
     Object? customName = _keep,
@@ -89,6 +105,13 @@ class ProxyProfile {
         extraOutbounds: extraOutbounds,
         isEndpoint: isEndpoint,
         cc: cc ?? this.cc,
+        city: identical(city, _keep) ? this.city : city as String?,
+        ccOverride: identical(ccOverride, _keep)
+            ? this.ccOverride
+            : ccOverride as String?,
+        cityOverride: identical(cityOverride, _keep)
+            ? this.cityOverride
+            : cityOverride as String?,
         premium: premium ?? this.premium,
         subUrl: subUrl ?? this.subUrl,
         customName: identical(customName, _keep)
@@ -97,17 +120,41 @@ class ProxyProfile {
         source: identical(source, _keep) ? this.source : source as String?,
       );
 
+  /// This profile with the geolocated place forgotten, for when its address
+  /// changed and the old answer no longer describes it.
+  ProxyProfile withoutGeo() => ProxyProfile(
+        name: name,
+        protocol: protocol,
+        server: server,
+        port: port,
+        outbound: outbound,
+        extraOutbounds: extraOutbounds,
+        isEndpoint: isEndpoint,
+        ccOverride: ccOverride,
+        cityOverride: cityOverride,
+        premium: premium,
+        subUrl: subUrl,
+        customName: customName,
+        source: source,
+      );
+
   /// The fields added after the profile store's map was first laid out, in
   /// the shape the store persists. The store spreads this into its map and
   /// hands the map back to [withStoredExtras] on load, so a new field is
   /// declared here once and older saved lists, which lack it, still read.
   Map<String, dynamic> get storedExtras => {
         if (source != null) 'source': source,
+        if (city != null) 'city': city,
+        if (ccOverride != null) 'ccOverride': ccOverride,
+        if (cityOverride != null) 'cityOverride': cityOverride,
       };
 
   /// This profile with the fields of [storedExtras] read back from [m].
   ProxyProfile withStoredExtras(Map<String, dynamic> m) => copyWith(
         source: m['source'] as String?,
+        city: m['city'] as String?,
+        ccOverride: m['ccOverride'] as String?,
+        cityOverride: m['cityOverride'] as String?,
       );
 
   /// A copy of [outbound] with the given [tag] injected.

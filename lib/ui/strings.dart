@@ -767,4 +767,16 @@ abstract final class S {
 
   /// The tag on a row or a header that hideip.net runs.
   static const srvBrandTag = 'hideip.net';
+
+  /// The Location row on the detail screen and the picker behind it.
+  static const srvLocation = 'Location';
+  static const srvLocationUnknown = 'Not known yet';
+  static String srvLocationSetByYou(String place) => '$place, set by you';
+  static const srvLocationTitle = 'Where is this server?';
+  static const srvLocationBody =
+      'The country sets the flag and the map pin. The city is optional.';
+  static const srvCountrySearch = 'Search countries';
+  static const srvCityHint = 'City (optional)';
+  static const srvUseDetected = 'Use the detected location';
+  static const srvLocationSaved = 'Location updated';
 }

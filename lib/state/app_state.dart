@@ -21,6 +21,7 @@ import '../core/proxy_profile.dart';
 import '../core/purchase_service.dart';
 import '../core/share_link_parser.dart';
 import '../core/singbox_config.dart';
+import '../core/srv_naming.dart';
 import '../core/sub_info.dart';
 import '../core/subscription.dart';
 import '../core/ui_prefs.dart';
@@ -879,12 +880,13 @@ class AppState extends ChangeNotifier {
       final idx = _profiles.indexOf(p);
       if (idx < 0) continue;
       if (Location.derive(p, idx).placed) continue;
-      final cc = await IpLookup.countryFor(p.server);
+      final geo = await IpLookup.geoFor(p.server);
+      final cc = geo?.cc;
       if (cc == null) continue;
       // The list may have shifted while the lookup was in flight.
       final at = _profiles.indexOf(p);
       if (at < 0) continue;
-      _profiles[at] = p.copyWith(cc: cc);
+      _profiles[at] = p.copyWith(cc: cc, city: geo!.city);
       await _persist();
       notifyListeners();
     }
@@ -1379,14 +1381,55 @@ class AppState extends ChangeNotifier {
     final old = _profiles[index];
     if (old.premium) return;
     final sameAddress = old.server == next.server;
-    _profiles[index] = next.copyWith(
-      cc: sameAddress ? old.cc : null,
+    // A name that places itself (a city or country token) makes the old
+    // lookup moot; otherwise it still describes the same address.
+    final keepGeo = sameAddress && !Location.derive(next, index).placed;
+    var merged = next.copyWith(
       subUrl: next.subUrl ?? old.subUrl,
       customName: next.customName ?? old.customName,
+      ccOverride: old.ccOverride,
+      cityOverride: old.cityOverride,
     );
+    if (keepGeo) merged = merged.copyWith(cc: old.cc, city: old.city);
+    _profiles[index] = merged;
     await _persist();
     notifyListeners();
     pingAll();
     _backfillGeo();
   }
+
+  /// Sets where the server at [index] is, by the user's word: the country
+  /// and, when given, the city. A null [cc] returns to the detected place.
+  /// A name the importer suggested from the old place is suggested again
+  /// from the new one, numbered against the rest of the list; a name the
+  /// user typed or the provider sent is left alone.
+  Future<void> setServerLocation(int index, {String? cc, String? city}) async {
+    if (index < 0 || index >= _profiles.length) return;
+    final old = _profiles[index];
+    if (old.premium) return;
+    final code = Location.validCc(cc) ? cc!.toUpperCase() : null;
+    final town = code == null ? null : city?.trim();
+    var next = old.copyWith(
+      ccOverride: code,
+      cityOverride: town == null || town.isEmpty ? null : town,
+    );
+    final before = Location.placeSuggestion(old);
+    final unnamed =
+        SrvNaming.isFallback(old.name, host: old.server, port: old.port);
+    if (unnamed || (before != null && SrvNaming.isSuggested(old.name, before))) {
+      final base = Location.placeSuggestion(next) ??
+          '${next.server}:${next.port}';
+      next = next.copyWith(name: SrvNaming.numbered(base, _labelsExcept(index)));
+    }
+    _profiles[index] = next;
+    await _persist();
+    notifyListeners();
+  }
+
+  /// The labels of every server but the one at [index], which is what a
+  /// suggested name must stay clear of.
+  Iterable<String> _labelsExcept(int index) => [
+        for (final l in locations)
+          if (l.index != index) l.label,
+      ];
 }
