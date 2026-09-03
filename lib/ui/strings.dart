@@ -779,4 +779,9 @@ abstract final class S {
   static const srvCityHint = 'City (optional)';
   static const srvUseDetected = 'Use the detected location';
   static const srvLocationSaved = 'Location updated';
+
+  /// The name field on the import result.
+  static const srvNameHint = 'Name';
+  static const srvNamedFromPlace =
+      'The name comes from where the address is. Change it above if you like.';
 }

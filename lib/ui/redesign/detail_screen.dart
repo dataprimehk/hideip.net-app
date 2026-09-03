@@ -542,6 +542,11 @@ class _HeaderCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final proto = protoShort(location) ?? location.profile.protocol;
+    // A name suggested from the place already ends in the country; saying
+    // it twice would read as a stutter.
+    final title = name.endsWith(', ${location.country}')
+        ? name
+        : '$name, ${location.country}';
     final line = advanced
         ? S.tunnelChain(location.protoLabel, location.host)
         : location.premium
@@ -557,7 +562,7 @@ class _HeaderCard extends StatelessWidget {
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
               Flexible(
-                child: Text('$name, ${location.country}',
+                child: Text(title,
                     overflow: TextOverflow.ellipsis,
                     style: Hip.sans(650, 15.5,
                         color: Hip.ink, letterSpacing: -.15)),

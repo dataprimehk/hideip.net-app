@@ -10,11 +10,14 @@ import '../../core/camera_permission.dart';
 import '../../core/deep_link.dart';
 import '../../core/haptics.dart';
 import '../../core/import_payload.dart';
+import '../../core/ip_lookup.dart';
 import '../../core/location.dart';
 import '../../core/ping.dart';
 import '../../core/proxy_profile.dart';
 import '../../core/safe_http.dart';
 import '../../core/share_link_parser.dart';
+import '../../core/srv_naming.dart';
+import '../../core/srv_suggest.dart';
 import '../../core/sub_info.dart';
 import '../../core/subscription.dart';
 import '../../core/wg_import.dart';
@@ -73,6 +76,9 @@ class ImportHooks {
   /// without opening a socket.
   final Future<PingResult> Function(String host, int port) ping;
 
+  /// Where the parsed endpoint sits, for the suggested name and the flag.
+  final Future<IpLookupData?> Function(String host) geo;
+
   const ImportHooks({
     this.camStatus = CameraPermission.status,
     this.camRequest = CameraPermission.request,
@@ -82,6 +88,7 @@ class ImportHooks {
     this.clipboardText = _clipboardText,
     this.pickFile = pickImportFile,
     this.ping = _ping,
+    this.geo = IpLookup.geoFor,
   });
 }
 
@@ -125,6 +132,10 @@ class ImportScreen extends StatefulWidget {
 
 class _ImportScreenState extends State<ImportScreen> {
   final _text = TextEditingController();
+
+  /// The name the server is added under: suggested, then the user's to
+  /// change. Only a single server gets the field.
+  final _name = TextEditingController();
   _Phase _phase = _Phase.input;
   bool _tech = false;
   bool _formats = false;
@@ -172,6 +183,7 @@ class _ImportScreenState extends State<ImportScreen> {
   void dispose() {
     widget.nav.releaseBack(_back);
     _text.dispose();
+    _name.dispose();
     super.dispose();
   }
 
@@ -322,13 +334,24 @@ class _ImportScreenState extends State<ImportScreen> {
       _steps[2] = ping is PingOk ? S.e5Verified : S.e5NotReachable;
       await _advance(3);
 
-      // Step 4: clean name.
-      _steps[3] = S.e5NamedIt(first.city);
+      // Step 4: the name. A single server whose name places nothing (a bare
+      // address, a file without a comment) is named from where the address
+      // is, apart from the servers already on the list. Token-named servers
+      // already carry their place and cost no lookup.
+      if (profiles.length == 1 && !first.placed) {
+        final geo = await widget.hooks.geo(profiles.first.server);
+        profiles = [
+          srvNameFromPlace(profiles.first, geo: geo, taken: _takenLabels()),
+        ];
+      }
+      final named = Location.derive(profiles.first, 0);
+      _steps[3] = S.e5NamedIt(named.label);
       await _advance(4);
 
       setState(() {
         _pending = profiles;
-        _preview = first;
+        _preview = named;
+        _name.text = _edited?.customName ?? named.label;
         _phase = _Phase.result;
         _syncBackClaim();
       });
@@ -351,9 +374,34 @@ class _ImportScreenState extends State<ImportScreen> {
     if (mounted) setState(() => _stepDone = n);
   }
 
+  /// The labels a suggested name has to stay clear of: every server on the
+  /// list, less the one being edited.
+  Iterable<String> _takenLabels() {
+    final skip = _editIndex;
+    return [
+      for (final l in widget.state.locations)
+        if (l.index != skip) l.label,
+    ];
+  }
+
+  /// The profiles to commit, with the name field applied: what the user
+  /// typed becomes the custom name, the suggestion stays the parsed one.
+  /// Left as suggested (or emptied), nothing of the user's is stored.
+  List<ProxyProfile> get _named {
+    if (_pending.length != 1) return _pending;
+    final typed = _name.text.trim();
+    final label = _preview!.label;
+    return [
+      _pending.first.copyWith(
+        customName: typed.isEmpty || typed == label ? null : typed,
+      ),
+    ];
+  }
+
   Future<void> _commit({required bool connect}) async {
-    await widget.state.addProfiles(_pending, select: true);
-    final city = _preview!.city;
+    final profiles = _named;
+    await widget.state.addProfiles(profiles, select: true);
+    final city = profiles.first.customName ?? _preview!.city;
     var go = connect;
     if (go && widget.state.needsVpnPrimer) {
       // B13 reads the same here as on Home: the one system permission is
@@ -398,7 +446,7 @@ class _ImportScreenState extends State<ImportScreen> {
   Future<void> _commitEdit() async {
     final editing = _editing!;
     final index = _editIndex ?? editing.index;
-    final next = _pending.first;
+    final next = _named.first;
     await widget.state.replaceProfile(index, next);
     final profiles = widget.state.profiles;
     final saved = index < profiles.length ? profiles[index] : next;
@@ -752,10 +800,16 @@ class _ImportScreenState extends State<ImportScreen> {
     // A WireGuard file carries a name only in the comment at the top; without
     // one the importer falls back to the endpoint.
     final namedByComment = isWg && loc.rawName != 'WireGuard ${loc.host}';
+    // The name was suggested from the looked-up place rather than read.
+    final suggestion = Location.placeSuggestion(loc.profile);
+    final namedFromPlace =
+        suggestion != null && SrvNaming.isSuggested(loc.rawName, suggestion);
+    final single = _pending.length == 1;
     final o = loc.profile.outbound;
     final tls = o['tls'] is Map ? o['tls'] as Map : const {};
     final ms = _previewPingMs;
     final subtitle = [
+      if (single && loc.placed) loc.placeLabel,
       if (loc.provider != null)
         S.e6From(loc.provider!)
       else if (isWg)
@@ -786,15 +840,48 @@ class _ImportScreenState extends State<ImportScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          '${loc.city}, ${loc.country}',
-                          style: Hip.sans(
-                            650,
-                            15.5,
-                            color: Hip.ink,
-                            letterSpacing: -.15,
+                        if (single)
+                          TextField(
+                            controller: _name,
+                            autocorrect: false,
+                            textCapitalization: TextCapitalization.words,
+                            textInputAction: TextInputAction.done,
+                            style: Hip.sans(
+                              650,
+                              15.5,
+                              color: Hip.ink,
+                              letterSpacing: -.15,
+                            ),
+                            decoration: InputDecoration(
+                              isDense: true,
+                              hintText: S.srvNameHint,
+                              hintStyle: Hip.sans(500, 15.5, color: Hip.muted2),
+                              contentPadding:
+                                  const EdgeInsets.only(top: 2, bottom: 4),
+                              border: UnderlineInputBorder(
+                                borderSide:
+                                    BorderSide(color: Hip.line, width: 1.5),
+                              ),
+                              enabledBorder: UnderlineInputBorder(
+                                borderSide:
+                                    BorderSide(color: Hip.line, width: 1.5),
+                              ),
+                              focusedBorder: UnderlineInputBorder(
+                                borderSide:
+                                    BorderSide(color: Hip.blue, width: 1.5),
+                              ),
+                            ),
+                          )
+                        else
+                          Text(
+                            '${loc.city}, ${loc.country}',
+                            style: Hip.sans(
+                              650,
+                              15.5,
+                              color: Hip.ink,
+                              letterSpacing: -.15,
+                            ),
                           ),
-                        ),
                         if (subtitle.isNotEmpty) ...[
                           const SizedBox(height: 2),
                           Text(
@@ -865,6 +952,8 @@ class _ImportScreenState extends State<ImportScreen> {
           const HipSubnote(S.srvEditFromSub)
         else if (_isSubscription && _editing == null)
           HipSubnote(S.e4SubNote(_pending.length))
+        else if (namedFromPlace)
+          const HipSubnote(S.srvNamedFromPlace)
         else if (renamed)
           HipSubnote(S.e6Renamed(loc.rawName, loc.city))
         else if (namedByComment)
