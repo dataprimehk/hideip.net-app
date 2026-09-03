@@ -15,6 +15,7 @@ import '../strings.dart';
 import 'ascii/hero_ascii.dart';
 import 'ascii/hero_glow.dart';
 import 'detail_screen.dart' show serverLabel;
+import 'hero_compact.dart';
 import 'hero_search.dart';
 import 'hip.dart';
 import 'hip_sheet.dart';
@@ -46,7 +47,17 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
   final _heroKey = GlobalKey();
   final _ctaKey = GlobalKey();
   final _search = TextEditingController();
+  final _searchFocus = FocusNode();
   String _query = '';
+
+  /// While the search field has focus or holds a query, the hero folds down
+  /// to one line so the results have the screen (a keyboard plus large text
+  /// used to leave no room for even one). The fold is what the chrome
+  /// measurement below has to sit out: a hero measured mid-fold would size
+  /// the map from a height it never keeps.
+  static const _foldDur = Duration(milliseconds: 200);
+  bool _wasCompact = false;
+  bool _heroSettling = false;
 
   /// A connection link sitting in the clipboard, and the last one that was
   /// waved away. Offering the same link twice is nagging.
@@ -67,14 +78,45 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _searchFocus.addListener(_onSearchFocus);
     _readClipboard();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _searchFocus
+      ..removeListener(_onSearchFocus)
+      ..dispose();
     _search.dispose();
     super.dispose();
+  }
+
+  void _onSearchFocus() {
+    if (mounted) setState(() {});
+  }
+
+  /// A picked result ends the search: the field empties, the keyboard goes,
+  /// and the hero unfolds with the pick in the list and Connect under it.
+  void _endSearch() {
+    _search.clear();
+    _searchFocus.unfocus();
+    setState(() => _query = '');
+  }
+
+  /// Tracks the fold for [_measureChrome]. Unfolding takes the fold's
+  /// duration to land, and the first frame after it still has the folded
+  /// height, so the measurement waits it out and one rebuild is scheduled
+  /// for when it has.
+  void _noteCompact(bool compact) {
+    if (compact == _wasCompact) return;
+    _wasCompact = compact;
+    if (compact) return;
+    _heroSettling = true;
+    Future<void>.delayed(Hip.dur(_foldDur) + const Duration(milliseconds: 60))
+        .then((_) {
+      if (mounted) setState(() => _heroSettling = false);
+    });
   }
 
   @override
@@ -217,6 +259,7 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
   }
 
   void _measureChrome() {
+    if (_wasCompact || _heroSettling) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final hero = _heroKey.currentContext?.size?.height;
       final cta = _ctaKey.currentContext?.size?.height;
@@ -292,12 +335,18 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
     final offMode = state.offline && !on && !busy;
     final denied = state.vpnPerm == VpnPerm.denied && !on && !busy;
     final searching = !mapMode && _query.trim().isNotEmpty;
+    final compact =
+        !mapMode && hasServers && (searching || _searchFocus.hasFocus);
 
+    _noteCompact(compact);
     _measureChrome();
     _maybeShowConnectFailed();
 
     final activePing = loc == null ? null : state.pingFor(loc.profile);
     final clip = _clipLink;
+    final ipText = offMode
+        ? null
+        : (state.publicIp ?? (state.ipLoading ? '…' : S.homeIpUnknown));
 
     final tone = offMode
         ? StatusTone.off
@@ -347,82 +396,120 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: Column(children: [
-                      // The ASCII field lives behind the glass; a sparser,
-                      // larger layer floats in front of it, and the glow sits
-                      // between the two. Both hang a little outside the hero
-                      // (`.hero-ascii` and `.hero-glow` in app.css), so the
-                      // stack must not clip them.
-                      Stack(
-                          alignment: Alignment.bottomCenter,
-                          clipBehavior: Clip.none,
-                          children: [
-                        const SizedBox(height: 132, width: double.infinity),
-                        Positioned(
-                          left: -10,
-                          right: -10,
-                          top: 0,
-                          bottom: 0,
-                          child: IgnorePointer(
-                            child: HeroAscii(state: _markState),
-                          ),
+                      // The fold: the full hero and its one-line stand-in
+                      // swap with a crossfade while the height between them
+                      // animates, so nothing on the panel jumps.
+                      _foldSize(
+                        child: AnimatedSwitcher(
+                          duration: Hip.dur(_foldDur),
+                          switchInCurve: Curves.easeOutCubic,
+                          switchOutCurve: Curves.easeInCubic,
+                          layoutBuilder: _switchTopAligned,
+                          child: compact
+                              ? HeroCompactLine(
+                                  key: const ValueKey('hero-compact'),
+                                  tone: tone,
+                                  status: status,
+                                  ip: ipText,
+                                )
+                              : Column(
+                                  key: const ValueKey('hero-full'),
+                                  children: [
+                                    // The ASCII field lives behind the glass;
+                                    // a sparser, larger layer floats in front
+                                    // of it, and the glow sits between the
+                                    // two. Both hang a little outside the
+                                    // hero (`.hero-ascii` and `.hero-glow` in
+                                    // app.css), so the stack must not clip
+                                    // them.
+                                    Stack(
+                                        alignment: Alignment.bottomCenter,
+                                        clipBehavior: Clip.none,
+                                        children: [
+                                          const SizedBox(
+                                              height: 132,
+                                              width: double.infinity),
+                                          Positioned(
+                                            left: -10,
+                                            right: -10,
+                                            top: 0,
+                                            bottom: 0,
+                                            child: IgnorePointer(
+                                              child: HeroAscii(
+                                                  state: _markState),
+                                            ),
+                                          ),
+                                          Positioned(
+                                            left: -10,
+                                            right: -10,
+                                            bottom: -12,
+                                            height: 78,
+                                            child: IgnorePointer(
+                                              child: HeroGlow(
+                                                  state: _markState,
+                                                  offline: state.offline),
+                                            ),
+                                          ),
+                                          HomeStatusCard(
+                                            tone: tone,
+                                            status: status,
+                                            ip: ipText,
+                                            context: _contextLine(
+                                                offline: offMode,
+                                                connected: on),
+                                            slowLine:
+                                                state.connSlow && state.isBusy
+                                                    ? S.b16Slow
+                                                    : null,
+                                          ),
+                                          Positioned(
+                                            left: -10,
+                                            right: -10,
+                                            top: 0,
+                                            bottom: 0,
+                                            child: IgnorePointer(
+                                              child: HeroAscii(
+                                                  state: _markState,
+                                                  front: true),
+                                            ),
+                                          ),
+                                        ]),
+                                    if (clip != null)
+                                      HomeClipboardBanner(
+                                        preview: _clipPreview(clip),
+                                        onAdd: () {
+                                          setState(() => _clipLink = null);
+                                          nav.openImportWith(clip);
+                                        },
+                                        onDismiss: () => setState(() {
+                                          _clipDismissed = clip;
+                                          _clipLink = null;
+                                        }),
+                                      ),
+                                    if (denied)
+                                      HomeDeniedBanner(
+                                          onOpenSettings:
+                                              VpnController.openVpnSettings),
+                                    if (_trialEndsTomorrow(state))
+                                      HomeTrialBanner(
+                                        price: state
+                                            .planInfo(PremiumPlan.yearly)
+                                            .price,
+                                        onKeep: () => nav.openPaywall(
+                                            from: HipScreen.home),
+                                      ),
+                                    const SizedBox(height: 16),
+                                    _HomeSeg(
+                                        mapMode: mapMode,
+                                        onChanged: _setMapMode),
+                                  ],
+                                ),
                         ),
-                        Positioned(
-                          left: -10,
-                          right: -10,
-                          bottom: -12,
-                          height: 78,
-                          child: IgnorePointer(
-                            child: HeroGlow(
-                                state: _markState, offline: state.offline),
-                          ),
-                        ),
-                        HomeStatusCard(
-                          tone: tone,
-                          status: status,
-                          ip: offMode
-                              ? null
-                              : (state.publicIp ??
-                                  (state.ipLoading ? '…' : S.homeIpUnknown)),
-                          context:
-                              _contextLine(offline: offMode, connected: on),
-                          slowLine:
-                              state.connSlow && state.isBusy ? S.b16Slow : null,
-                        ),
-                        Positioned(
-                          left: -10,
-                          right: -10,
-                          top: 0,
-                          bottom: 0,
-                          child: IgnorePointer(
-                            child: HeroAscii(state: _markState, front: true),
-                          ),
-                        ),
-                      ]),
-                      if (clip != null)
-                        HomeClipboardBanner(
-                          preview: _clipPreview(clip),
-                          onAdd: () {
-                            setState(() => _clipLink = null);
-                            nav.openImportWith(clip);
-                          },
-                          onDismiss: () => setState(() {
-                            _clipDismissed = clip;
-                            _clipLink = null;
-                          }),
-                        ),
-                      if (denied)
-                        HomeDeniedBanner(
-                            onOpenSettings: VpnController.openVpnSettings),
-                      if (_trialEndsTomorrow(state))
-                        HomeTrialBanner(
-                          price: state.planInfo(PremiumPlan.yearly).price,
-                          onKeep: () => nav.openPaywall(from: HipScreen.home),
-                        ),
-                      const SizedBox(height: 16),
-                      _HomeSeg(mapMode: mapMode, onChanged: _setMapMode),
+                      ),
                       if (!mapMode && hasServers)
                         _HomeSearch(
                           controller: _search,
+                          focusNode: _searchFocus,
                           onChanged: (q) => setState(() => _query = q),
                         ),
                     ]),
@@ -472,12 +559,20 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
                 duration: Hip.dur(const Duration(milliseconds: 300)),
                 opacity: mapMode ? 0 : 1,
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
-                  child: _HomeList(
-                    state: state,
-                    nav: nav,
-                    on: on,
-                    query: searching ? _query.trim() : null,
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                  // The results move up a little while the hero is folded:
+                  // with a keyboard up every row of height counts.
+                  child: AnimatedPadding(
+                    duration: Hip.dur(_foldDur),
+                    curve: Curves.easeOutCubic,
+                    padding: EdgeInsets.only(top: compact ? 8 : 18),
+                    child: _HomeList(
+                      state: state,
+                      nav: nav,
+                      on: on,
+                      query: searching ? _query.trim() : null,
+                      onResultTap: searching ? _endSearch : null,
+                    ),
                   ),
                 ),
               ),
@@ -485,28 +580,61 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
           ),
 
           // --- CTA bar -------------------------------------------------------
-          Padding(
-            key: _ctaKey,
-            padding: EdgeInsets.fromLTRB(22, 14, 22, pad.bottom + 14),
-            child: HomeCtaBar(
-              empty: !hasServers,
-              connected: on || _disconnecting,
-              disconnecting: _disconnecting,
-              connecting: state.isBusy,
-              offline: state.offline,
-              denied: denied,
-              darkSurface: mapMode,
-              onConnect: _connect,
-              onCancel: state.cancel,
-              onDisconnect: _disconnect,
-              onAdd: nav.openImport,
-              onSeePremium: () => nav.go(HipScreen.locations),
-            ),
+          // It steps aside with the hero while a search is on: the results
+          // need the height more than a button that a picked result brings
+          // straight back.
+          _foldSize(
+            child: compact
+                ? const SizedBox(width: double.infinity)
+                : Padding(
+                    key: _ctaKey,
+                    padding: EdgeInsets.fromLTRB(22, 14, 22, pad.bottom + 14),
+                    child: HomeCtaBar(
+                      empty: !hasServers,
+                      connected: on || _disconnecting,
+                      disconnecting: _disconnecting,
+                      connecting: state.isBusy,
+                      offline: state.offline,
+                      denied: denied,
+                      darkSurface: mapMode,
+                      onConnect: _connect,
+                      onCancel: state.cancel,
+                      onDisconnect: _disconnect,
+                      onAdd: nav.openImport,
+                      onSeePremium: () => nav.go(HipScreen.locations),
+                    ),
+                  ),
           ),
         ]),
       );
     });
   }
+
+  /// The height change of a fold. With motion reduced the child is laid out
+  /// as is: AnimatedSize cannot take a zero duration (it re-dirties itself
+  /// mid-layout and asserts), and there is nothing to animate anyway.
+  static Widget _foldSize({required Widget child}) => Hip.reducedMotion
+      ? child
+      : AnimatedSize(
+          duration: _foldDur,
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: child,
+        );
+
+  /// Both sides of the fold hang from the top while one fades into the
+  /// other, and the stack takes the size of the incoming one, so the
+  /// AnimatedSize around it has one honest target to move to.
+  static Widget _switchTopAligned(Widget? current, List<Widget> previous) =>
+      Stack(
+        alignment: Alignment.topCenter,
+        clipBehavior: Clip.none,
+        children: [
+          for (final p in previous)
+            Positioned(left: 0, right: 0, top: 0, child: p),
+          ?current,
+        ],
+      );
 }
 
 /// The bar under the list. Every Home state that changes what the primary
@@ -683,8 +811,13 @@ class _HomeSeg extends StatelessWidget {
 /// rows included.
 class _HomeSearch extends StatelessWidget {
   final TextEditingController controller;
+  final FocusNode focusNode;
   final ValueChanged<String> onChanged;
-  const _HomeSearch({required this.controller, required this.onChanged});
+  const _HomeSearch({
+    required this.controller,
+    required this.focusNode,
+    required this.onChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -704,6 +837,7 @@ class _HomeSearch extends StatelessWidget {
         Expanded(
           child: TextField(
             controller: controller,
+            focusNode: focusNode,
             onChanged: onChanged,
             autocorrect: false,
             style: Hip.sans(500, 14, color: white),
@@ -753,11 +887,16 @@ class _HomeList extends StatelessWidget {
   /// The live search text, or null when nothing is being searched for.
   final String? query;
 
+  /// Called after a search result is picked, so the screen can end the
+  /// search. Null outside a search.
+  final VoidCallback? onResultTap;
+
   const _HomeList({
     required this.state,
     required this.nav,
     required this.on,
     this.query,
+    this.onResultTap,
   });
 
   int? _ms(Location l) {
@@ -788,7 +927,10 @@ class _HomeList extends StatelessWidget {
           child: chosen ? Icon(Icons.check, size: 18, color: Hip.blue) : null,
         ),
       ]),
-      onTap: () => state.selectLocation(l),
+      onTap: () {
+        state.selectLocation(l);
+        onResultTap?.call();
+      },
     );
   }
 
