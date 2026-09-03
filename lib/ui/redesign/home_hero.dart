@@ -15,6 +15,7 @@ import '../strings.dart';
 import 'ascii/hero_ascii.dart';
 import 'ascii/hero_glow.dart';
 import 'detail_screen.dart' show serverLabel;
+import 'hero_search.dart';
 import 'hip.dart';
 import 'hip_sheet.dart';
 import 'home_banners.dart';
@@ -825,13 +826,9 @@ class _HomeList extends StatelessWidget {
     final active = state.activeLocation;
 
     // --- B10, search ------------------------------------------------------
-    final q = query?.toLowerCase();
+    final q = query;
     if (q != null) {
-      bool matches(Location l) =>
-          '${serverLabel(l)} ${l.city} ${l.country} ${l.cc}'
-              .toLowerCase()
-              .contains(q);
-      final hits = [...open.where(matches), ...locked.where(matches)];
+      final hits = HeroSearch.filter(open, locked, q);
       final allLocked = hits.isNotEmpty && hits.every((l) => l.locked);
       return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         const HipSectionLabel(S.homeResults),
