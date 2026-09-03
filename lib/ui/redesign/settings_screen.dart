@@ -37,6 +37,32 @@ Widget _grayTile(IconData icon) => Container(
 
 Widget _chevron() => Icon(Icons.chevron_right, size: 17, color: Hip.muted2);
 
+/// A section header: a small outlined icon, muted, in front of the label.
+///
+/// [HipSectionLabel] alone is a text-only header; Settings has grown enough
+/// sections that the eye needs a shape to catch mid-scroll, not just a word
+/// in caps. Same padding and type as [HipSectionLabel] so the two would sit
+/// flush if one ever appeared without the other.
+class SettingsSectionHeader extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  const SettingsSectionHeader(this.icon, this.text, {super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 18, 14, 7),
+      child: Row(children: [
+        Icon(icon, size: 15, color: Hip.muted2),
+        const SizedBox(width: 6),
+        Text(text.toUpperCase(),
+            style: Hip.sans(650, Hip.captionSize,
+                color: Hip.muted2, letterSpacing: .91)),
+      ]),
+    );
+  }
+}
+
 /// A list-row subtitle where every fragment in [mono] is set in the mono
 /// face and the sentence around it stays in the body face.
 ///
@@ -429,7 +455,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   onTap: () => nav.openPaywall(from: HipScreen.settings),
                 )
               else if (sellable) ...[
-                const HipSectionLabel(S.setAccount),
+                const SettingsSectionHeader(Icons.person_outline, S.setAccount),
                 HipListGroup(children: [
                   HipListRow(
                     leading: const HipFlag(cc: '', child: PremiumCubeIcon()),
@@ -453,7 +479,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                 ]),
               ],
-              const HipSectionLabel(S.setInterface),
+              const SettingsSectionHeader(Icons.tune_outlined, S.setInterface),
               HipListGroup(children: [
                 _ThemeRow(
                   mode: prefs.themeMode,
@@ -470,7 +496,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   ),
                 ),
               ]),
-              const HipSectionLabel(S.setConnection),
+              const SettingsSectionHeader(Icons.bolt_outlined, S.setConnection),
               HipListGroup(children: [
                 HipListRow(
                   title: S.setAutoConnect,
@@ -540,7 +566,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                 if (_isAndroid) _AndroidAlwaysOnRows(state: state),
               ]),
               const _LeftSubnote(S.setSpeedNote),
-              const HipSectionLabel(S.setNotifications),
+              const SettingsSectionHeader(
+                  Icons.notifications_outlined, S.setNotifications),
               NotificationRows(
                 perm: _perm,
                 connAlerts: prefs.connAlerts,
@@ -552,7 +579,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                 onPrePrompt: _askNotifications,
                 onOpenSettings: Notifications.openSettings,
               ),
-              const HipSectionLabel(S.setPrivacySection),
+              const SettingsSectionHeader(
+                  Icons.privacy_tip_outlined, S.setPrivacySection),
               HipListGroup(children: [
                 HipListRow(
                   leading: _grayTile(Icons.bar_chart_outlined),
@@ -565,7 +593,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   ),
                 ),
               ]),
-              const HipSectionLabel(S.setConnections),
+              const SettingsSectionHeader(Icons.dns_outlined, S.setConnections),
               HipListGroup(children: [
                 HipListRow(
                   title: S.tAddConn,
@@ -579,7 +607,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   onTap: () => nav.go(HipScreen.locations),
                 ),
               ]),
-              const HipSectionLabel(S.setHelp),
+              const SettingsSectionHeader(Icons.help_outline, S.setHelp),
               HipListGroup(children: [
                 HipListRow(
                   title: S.setIntroAgain,

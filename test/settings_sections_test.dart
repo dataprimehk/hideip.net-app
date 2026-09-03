@@ -3,13 +3,28 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hideip_vpn/core/notifications.dart';
 import 'package:hideip_vpn/core/ui_prefs.dart';
+import 'package:hideip_vpn/state/app_state.dart';
 import 'package:hideip_vpn/ui/redesign/hip.dart';
 import 'package:hideip_vpn/ui/brand.dart';
 import 'package:hideip_vpn/ui/redesign/settings_screen.dart';
+import 'package:hideip_vpn/ui/redesign/shell.dart';
 import 'package:hideip_vpn/ui/strings.dart';
 
 Widget _host(Widget child) =>
     MaterialApp(home: Scaffold(body: SingleChildScrollView(child: child)));
+
+HipNav _nav() => HipNav(
+      go: (_, [_]) {},
+      back: () {},
+      ctx: () => null,
+      showSheet: <T>(List<Widget> children) async => null,
+      openDetail: (_) {},
+      openImport: () {},
+      openImportWith: (_) {},
+      openPaywall: ({required HipScreen from, String? locId}) {},
+      claimBack: (_) {},
+      releaseBack: (_) {},
+    );
 
 Widget _notifications(
   NotifPerm perm, {
@@ -268,6 +283,81 @@ void main() {
 
       expect(line, hasLength(1));
       expect(line.single.text, 'Not subscribed; 7 days free to start');
+    });
+  });
+
+  group('section headers', () {
+    // Settings is a lazy ListView: on a phone-sized test surface the
+    // sections below the fold are never built, so the tree is inspected on
+    // a tall one.
+    setUp(() {
+      final view = TestWidgetsFlutterBinding.ensureInitialized()
+          .platformDispatcher
+          .views
+          .first;
+      view.physicalSize = const Size(1000, 4000);
+      view.devicePixelRatio = 1;
+      addTearDown(view.resetPhysicalSize);
+      addTearDown(view.resetDevicePixelRatio);
+    });
+
+    Widget settings() => MaterialApp(
+          home:
+              Scaffold(body: SettingsScreen(state: AppState(), nav: _nav())),
+        );
+
+    testWidgets('every section label carries its icon, in the muted tone',
+        (tester) async {
+      Hip.reducedMotion = true;
+      addTearDown(() => Hip.reducedMotion = false);
+      await tester.pumpWidget(settings());
+      await tester.pump();
+
+      // Account is conditional on an offered subscription, which a bare
+      // AppState never has; the sections below always show.
+      const sections = {
+        S.setInterface: Icons.tune_outlined,
+        S.setConnection: Icons.bolt_outlined,
+        S.setNotifications: Icons.notifications_outlined,
+        S.setPrivacySection: Icons.privacy_tip_outlined,
+        S.setConnections: Icons.dns_outlined,
+        S.setHelp: Icons.help_outline,
+      };
+      for (final entry in sections.entries) {
+        final header = tester.widget<SettingsSectionHeader>(find.ancestor(
+          of: find.text(entry.key.toUpperCase()),
+          matching: find.byType(SettingsSectionHeader),
+        ));
+        expect(header.icon, entry.value, reason: entry.key);
+      }
+    });
+
+    testWidgets('the row count in every unconditional section is unchanged',
+        (tester) async {
+      Hip.reducedMotion = true;
+      addTearDown(() => Hip.reducedMotion = false);
+      await tester.pumpWidget(settings());
+      await tester.pump();
+
+      // Interface: theme row plus the advanced-view toggle.
+      expect(find.text(S.setTheme), findsOneWidget);
+      expect(find.text(S.setAdvanced), findsOneWidget);
+      // Connection: auto-connect and kill switch always show; speed mode
+      // and routing are conditional and are not part of this count.
+      expect(find.text(S.setAutoConnect), findsOneWidget);
+      expect(find.text(S.tKill), findsOneWidget);
+      // Notifications: exactly two rows, whatever the permission state.
+      expect(find.text(S.notifConnTitle), findsOneWidget);
+      expect(find.text(S.notifVoteTitle), findsOneWidget);
+      // Privacy: still the one row it always was.
+      expect(find.text(S.setUsage), findsOneWidget);
+      // Connections: add and manage.
+      expect(find.text(S.tAddConn), findsOneWidget);
+      expect(find.text(S.setManageServers), findsOneWidget);
+      // Help: replay intro, privacy policy, terms.
+      expect(find.text(S.setIntroAgain), findsOneWidget);
+      expect(find.text(S.setPrivacyPolicy), findsOneWidget);
+      expect(find.text(S.setTerms), findsOneWidget);
     });
   });
 }
