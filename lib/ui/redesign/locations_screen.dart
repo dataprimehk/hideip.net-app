@@ -226,13 +226,18 @@ class _LocationsScreenState extends State<LocationsScreen> {
       onWinner: (l) => l.locked
           ? nav.openPaywall(from: HipScreen.locations, locId: l.id)
           : _select(l),
-      footer: _VoteSection(onOpenMap: () {
-        final prefs = state.prefs;
-        if (!prefs.homeMap) {
-          state.updatePrefs(prefs.copyWith(homeMap: true));
-        }
-        nav.go(HipScreen.home);
-      }),
+      footer: ComingNextSection(
+        expanded: state.prefs.comingNextOpen,
+        onToggle: () => state.updatePrefs(
+            state.prefs.copyWith(comingNextOpen: !state.prefs.comingNextOpen)),
+        onOpenMap: () {
+          final prefs = state.prefs;
+          if (!prefs.homeMap) {
+            state.updatePrefs(prefs.copyWith(homeMap: true));
+          }
+          nav.go(HipScreen.home);
+        },
+      ),
     );
   }
 }
@@ -902,15 +907,26 @@ class _PremiumSectionHead extends StatelessWidget {
 /// Counts render only once the server has ever answered (see VoteService);
 /// until then the section still shows the user's own votes, just without
 /// numbers, so a cast vote never looks lost.
-class _VoteSection extends StatefulWidget {
+///
+/// Folded by default: the header carries the label and how many rows wait
+/// under it, and a tap unfolds them. The pointer into voting stays visible
+/// either way, since it is the action and the rows are only the standings.
+class ComingNextSection extends StatefulWidget {
+  final bool expanded;
+  final VoidCallback onToggle;
   final VoidCallback onOpenMap;
-  const _VoteSection({required this.onOpenMap});
+  const ComingNextSection({
+    super.key,
+    required this.expanded,
+    required this.onToggle,
+    required this.onOpenMap,
+  });
 
   @override
-  State<_VoteSection> createState() => _VoteSectionState();
+  State<ComingNextSection> createState() => _ComingNextSectionState();
 }
 
-class _VoteSectionState extends State<_VoteSection> {
+class _ComingNextSectionState extends State<ComingNextSection> {
   final VoteService _votes = VoteService.instance;
   Map<String, String> _names = const {};
 
@@ -943,8 +959,16 @@ class _VoteSectionState extends State<_VoteSection> {
     final mine = _votes.mine.where((cc) => !onBoard.contains(cc)).toList()
       ..sort((a, b) => (_names[a] ?? a).compareTo(_names[b] ?? b));
 
+    final rows = board.length + mine.length;
+    final open = widget.expanded;
+
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      const HipSectionLabel(S.dComingNext),
+      _FoldHeader(
+        label: S.dComingNext,
+        count: rows,
+        open: open,
+        onTap: widget.onToggle,
+      ),
       HipListGroup(children: [
         HipListRow(
           leading: HipFlag(
@@ -955,40 +979,89 @@ class _VoteSectionState extends State<_VoteSection> {
           trailing: Icon(Icons.chevron_right, size: 18, color: Hip.muted2),
           onTap: widget.onOpenMap,
         ),
-        for (final (i, (cc, count)) in board.indexed)
-          HipListRow(
-            leading: HipFlag(cc: '${i + 1}'),
-            title: _names[cc] ?? cc,
-            trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-              if (_votes.hasVoted(cc)) ...[
-                Icon(Icons.check, size: 15, color: Hip.blue),
-                const SizedBox(width: 7),
-              ],
-              Text('$count', style: Hip.mono(700, 13, color: Hip.ink)),
-              const SizedBox(width: 4),
-              Text(S.dVotes, style: Hip.sans(500, 12, color: Hip.muted)),
-            ]),
-            onTap: widget.onOpenMap,
-          ),
-        for (final cc in mine)
-          HipListRow(
-            leading: HipFlag(
-                cc: '',
-                child: Icon(Icons.check, size: 17, color: Hip.blueDeep)),
-            title: _names[cc] ?? cc,
-            subtitle: S.dYourVote,
-            trailing: switch (_votes.displayCount(cc)) {
-              null => null,
-              final count => Row(mainAxisSize: MainAxisSize.min, children: [
-                  Text('$count', style: Hip.mono(700, 13, color: Hip.ink)),
-                  const SizedBox(width: 4),
-                  Text(S.dVotes, style: Hip.sans(500, 12, color: Hip.muted)),
-                ]),
-            },
-            onTap: widget.onOpenMap,
-          ),
+        if (open) ...[
+          for (final (i, (cc, count)) in board.indexed)
+            HipListRow(
+              leading: HipFlag(cc: '${i + 1}'),
+              title: _names[cc] ?? cc,
+              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                if (_votes.hasVoted(cc)) ...[
+                  Icon(Icons.check, size: 15, color: Hip.blue),
+                  const SizedBox(width: 7),
+                ],
+                Text('$count', style: Hip.mono(700, 13, color: Hip.ink)),
+                const SizedBox(width: 4),
+                Text(S.dVotes, style: Hip.sans(500, 12, color: Hip.muted)),
+              ]),
+              onTap: widget.onOpenMap,
+            ),
+          for (final cc in mine)
+            HipListRow(
+              leading: HipFlag(
+                  cc: '',
+                  child: Icon(Icons.check, size: 17, color: Hip.blueDeep)),
+              title: _names[cc] ?? cc,
+              subtitle: S.dYourVote,
+              trailing: switch (_votes.displayCount(cc)) {
+                null => null,
+                final count => Row(mainAxisSize: MainAxisSize.min, children: [
+                    Text('$count', style: Hip.mono(700, 13, color: Hip.ink)),
+                    const SizedBox(width: 4),
+                    Text(S.dVotes, style: Hip.sans(500, 12, color: Hip.muted)),
+                  ]),
+              },
+              onTap: widget.onOpenMap,
+            ),
+        ],
       ]),
-      if (board.isNotEmpty || mine.isNotEmpty) const HipSubnote(S.dVoteNote),
+      if (open && rows > 0) const HipSubnote(S.dVoteNote),
     ]);
+  }
+}
+
+/// A section label that folds its list: the uppercase label, the row count
+/// in mono after a middle dot, and a chevron that turns when open. Same
+/// metrics as [HipSectionLabel] so the rhythm of the list holds.
+class _FoldHeader extends StatelessWidget {
+  final String label;
+  final int count;
+  final bool open;
+  final VoidCallback onTap;
+  const _FoldHeader({
+    required this.label,
+    required this.count,
+    required this.open,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final style =
+        Hip.sans(650, Hip.captionSize, color: Hip.muted2, letterSpacing: .91);
+    return Semantics(
+      button: true,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 18, 14, 7),
+          child: Row(children: [
+            Text(label.toUpperCase(), style: style),
+            if (count > 0) ...[
+              Text(' · ', style: style),
+              Text('$count',
+                  style: Hip.mono(650, Hip.captionSize, color: Hip.muted2)),
+            ],
+            const SizedBox(width: 4),
+            AnimatedRotation(
+              turns: open ? .25 : 0,
+              duration: Hip.dur(const Duration(milliseconds: 200)),
+              curve: Curves.easeOutCubic,
+              child: Icon(Icons.chevron_right, size: 16, color: Hip.muted2),
+            ),
+          ]),
+        ),
+      ),
+    );
   }
 }
