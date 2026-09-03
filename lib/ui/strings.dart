@@ -748,4 +748,18 @@ abstract final class S {
       'and completing your first successful connect. Each one carries only '
       'its own name and whether you are on Android or iOS. No IP address, '
       'no account and no device identifier travels with it.';
+
+  // 1.1.1, home hero
+  // ---------------------------------------------------------------------
+
+  /// Spoken hint on the address row: a long press opens the details sheet.
+  static const homeIpHoldHint = 'Hold for details';
+
+  /// The address sheet: what the lookup knows about the address on show.
+  /// A row the lookup could not fill is left out rather than dashed.
+  static const heroIpTitle = 'Public IP address';
+  static const heroIpAddress = 'Address';
+  static const heroIpCity = 'City';
+  static const heroIpCountry = 'Country';
+  static const heroIpNetwork = 'Network';
 }

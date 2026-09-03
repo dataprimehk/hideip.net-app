@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../core/haptics.dart';
 import '../brand.dart';
 import '../strings.dart';
 import 'hip.dart';
@@ -30,10 +31,12 @@ enum StatusTone {
 /// Everything it shows arrives as a plain value: the card has no idea what a
 /// tunnel is, which keeps it honest and makes every state testable without a
 /// running app. The one thing it owns is the copy affordance, because the
-/// check mark that replaces the icon for 1400 ms is purely local.
+/// check mark that replaces the icon for 1200 ms is purely local.
 ///
-/// The card is deliberately NOT a button. Only the copy icon reacts to a tap,
-/// so nobody discovers by accident that the hero opens something.
+/// The whole row is the copy target, not just the icon: on a phone the icon
+/// alone was a small thing to hit, and there is nothing else on the card a
+/// tap could mean. A long press opens whatever the hero hands in through
+/// [onLongPress] (the address details sheet); without it the row only copies.
 ///
 /// It is real glass rather than a flat panel, and the depth comes from five
 /// layers that all sit in `.statcard`:
@@ -65,6 +68,9 @@ class HomeStatusCard extends StatefulWidget {
   /// The extra line a slow handshake earns after ten seconds (B16).
   final String? slowLine;
 
+  /// A long press on the address row, when there is somewhere for it to go.
+  final VoidCallback? onLongPress;
+
   const HomeStatusCard({
     super.key,
     required this.tone,
@@ -72,6 +78,7 @@ class HomeStatusCard extends StatefulWidget {
     required this.context,
     this.ip,
     this.slowLine,
+    this.onLongPress,
   });
 
   @override
@@ -119,9 +126,10 @@ class _HomeStatusCardState extends State<HomeStatusCard>
     final ip = widget.ip;
     if (ip == null || ip.isEmpty) return;
     await Clipboard.setData(ClipboardData(text: ip));
+    Haptics.selection();
     if (!mounted) return;
     setState(() => _copied = true);
-    await Future<void>.delayed(const Duration(milliseconds: 1400));
+    await Future<void>.delayed(const Duration(milliseconds: 1200));
     if (mounted) setState(() => _copied = false);
   }
 
@@ -180,7 +188,7 @@ class _HomeStatusCardState extends State<HomeStatusCard>
   Widget _row(Color sc) {
     final ip = widget.ip;
     const white = Colors.white;
-    return Row(children: [
+    final row = Row(children: [
       // --- tone icon --------------------------------------------------------
       Container(
         width: 42,
@@ -254,43 +262,54 @@ class _HomeStatusCardState extends State<HomeStatusCard>
         ),
       ),
 
-      // --- copy -------------------------------------------------------------
+      // --- copy mark --------------------------------------------------------
+      // The icon only shows what a tap does; the row below it is the target.
       if (ip != null) ...[
         const SizedBox(width: 8),
-        Semantics(
-          button: true,
-          label: _copied ? S.homeCopiedIp : S.homeCopyIp,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: _copy,
-            child: SizedBox(
-              width: 44,
-              height: 44,
-              child: Center(
-                child: Container(
-                  width: 34,
-                  height: 34,
-                  decoration: BoxDecoration(
-                    // background: hsl(0 0% 100% / .05)
-                    color: white.withValues(alpha: .05),
-                    borderRadius: BorderRadius.circular(11),
-                    // box-shadow: 0 0 0 1px hsl(0 0% 100% / .08) inset
-                    border: Border.all(color: white.withValues(alpha: .08)),
-                  ),
-                  child: Icon(
-                    _copied ? Icons.check : Icons.copy_outlined,
-                    size: 15,
-                    color: _copied
-                        ? Brand.hsl(152, 60, 60)
-                        : white.withValues(alpha: .45),
-                  ),
-                ),
+        SizedBox(
+          width: 44,
+          height: 44,
+          child: Center(
+            child: Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                // background: hsl(0 0% 100% / .05)
+                color: white.withValues(alpha: .05),
+                borderRadius: BorderRadius.circular(11),
+                // box-shadow: 0 0 0 1px hsl(0 0% 100% / .08) inset
+                border: Border.all(color: white.withValues(alpha: .08)),
+              ),
+              child: Icon(
+                _copied ? Icons.check : Icons.copy_outlined,
+                size: 15,
+                color: _copied
+                    ? Brand.hsl(152, 60, 60)
+                    : white.withValues(alpha: .45),
               ),
             ),
           ),
         ),
       ],
     ]);
+    if (ip == null) return row;
+    final hold = widget.onLongPress;
+    return Semantics(
+      button: true,
+      label: _copied ? S.homeCopiedIp : S.homeCopyIp,
+      hint: hold == null ? null : S.homeIpHoldHint,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: _copy,
+        onLongPress: hold == null
+            ? null
+            : () {
+                Haptics.selection();
+                hold();
+              },
+        child: row,
+      ),
+    );
   }
 }
 

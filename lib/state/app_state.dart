@@ -1178,6 +1178,9 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> disconnect() async {
+    // Only a tunnel that was actually up earns the closing pulse below; a
+    // disconnect over an idle state is bookkeeping and has nothing to feel.
+    final wasUp = _conn == ConnState.connected;
     // Invalidate any in-flight WireGuard probe: it must not tear down or
     // reconnect a tunnel the user has already dismissed.
     _connectGeneration++;
@@ -1192,6 +1195,10 @@ class AppState extends ChangeNotifier {
     _error = null;
     _connectedAt = null;
     _path = TunnelPath.stealth;
+    // One light pulse, lighter than the connect landing on purpose: losing
+    // protection is the smaller of the two changes, and a double pulse would
+    // read as a warning.
+    if (wasUp) Haptics.tap();
     notifyListeners();
     _refreshIpAfterToggle();
   }
