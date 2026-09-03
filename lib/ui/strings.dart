@@ -755,6 +755,9 @@ abstract final class S {
   /// Spoken hint on the address row: a long press opens the details sheet.
   static const homeIpHoldHint = 'Hold for details';
 
+  /// Ends a search from the field itself, keyboard or no keyboard.
+  static const homeSearchCancel = 'Cancel';
+
   /// The address sheet: what the lookup knows about the address on show.
   /// A row the lookup could not fill is left out rather than dashed.
   static const heroIpTitle = 'Public IP address';

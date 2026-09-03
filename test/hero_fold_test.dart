@@ -199,7 +199,34 @@ void main() {
     expect(find.text(S.tConnect), findsOneWidget);
   });
 
-  testWidgets('a query keeps the hero folded without focus, clearing it unfolds',
+  testWidgets(
+      'the keyboard going down unfolds the hero and brings Connect back, '
+      'the query still filters', (tester) async {
+    _usePhone(tester);
+    final state = await _threeServers();
+    await tester.pumpWidget(_host(state));
+    await tester.pump();
+
+    await _raiseKeyboard(tester);
+    await tester.enterText(find.byType(TextField), 'ams');
+    expect(find.byType(HeroCompactLine), findsOneWidget);
+
+    // The system drops the keyboard (back gesture, Done) and leaves the
+    // field focused: the hero must not stay folded with no way back.
+    tester.view.viewInsets = FakeViewPadding.zero;
+    await _settle(tester);
+    expect(find.byType(HeroCompactLine), findsNothing);
+    expect(find.byType(HomeStatusCard), findsOneWidget);
+    expect(find.text(S.tConnect), findsOneWidget);
+    expect(find.text('Amsterdam'), findsOneWidget);
+    expect(find.text('Berlin'), findsNothing);
+
+    await tester.tap(find.byIcon(Icons.close));
+    await _settle(tester);
+    expect(find.text('Berlin'), findsOneWidget);
+  });
+
+  testWidgets('Cancel next to the field ends the search with the keyboard up',
       (tester) async {
     _usePhone(tester);
     final state = await _threeServers();
@@ -208,14 +235,19 @@ void main() {
 
     await _raiseKeyboard(tester);
     await tester.enterText(find.byType(TextField), 'ams');
-    await _dropKeyboard(tester);
     expect(find.byType(HeroCompactLine), findsOneWidget);
-    expect(find.text('Amsterdam'), findsOneWidget);
+    expect(find.text(S.homeSearchCancel), findsOneWidget);
 
-    await tester.tap(find.byIcon(Icons.close));
+    await tester.tap(find.text(S.homeSearchCancel));
+    // Losing the focus takes the keyboard down with it.
+    tester.view.viewInsets = FakeViewPadding.zero;
     await _settle(tester);
+    final field = tester.widget<TextField>(find.byType(TextField));
+    expect(field.controller!.text, isEmpty);
+    expect(field.focusNode!.hasFocus, isFalse);
     expect(find.byType(HeroCompactLine), findsNothing);
-    expect(find.byType(HomeStatusCard), findsOneWidget);
+    expect(find.text(S.tConnect), findsOneWidget);
+    expect(find.text('Berlin'), findsOneWidget);
   });
 
   testWidgets('picking a result ends the search and brings Connect back',

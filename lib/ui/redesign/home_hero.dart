@@ -127,6 +127,22 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
     if (state == AppLifecycleState.resumed) _readClipboard();
   }
 
+  /// The keyboard can go down without the field losing focus (back gesture
+  /// on Android, Done on iOS), which used to leave the hero folded with no
+  /// way back and no Connect. Dropping the focus with the keyboard unfolds
+  /// it. The raw view is read on purpose: the Scaffold strips the inset
+  /// from MediaQuery for its body, so the hero never sees it there.
+  @override
+  void didChangeMetrics() {
+    if (!mounted) return;
+    final kbUp = View.of(context).viewInsets.bottom > 0;
+    if (kbUp == _kbUp) return;
+    _kbUp = kbUp;
+    if (!kbUp && _searchFocus.hasFocus) _searchFocus.unfocus();
+  }
+
+  bool _kbUp = false;
+
   // --- clipboard suggestion (B9) ------------------------------------------
 
   /// Reads the clipboard on the two occasions a link can have arrived: the
@@ -369,8 +385,12 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
     final offMode = state.offline && !on && !busy;
     final denied = state.vpnPerm == VpnPerm.denied && !on && !busy;
     final searching = !mapMode && _query.trim().isNotEmpty;
-    final compact =
-        !mapMode && hasServers && (searching || _searchFocus.hasFocus);
+    // The fold follows the field's focus, so it starts before the keyboard
+    // has slid up and the two never fight over the height. When the keyboard
+    // goes down the focus goes with it (see [didChangeMetrics]), and the full
+    // hero with Connect under the list comes back. A query without the
+    // keyboard still filters the lists, under the full hero.
+    final compact = !mapMode && hasServers && _searchFocus.hasFocus;
 
     _noteCompact(compact);
     _measureChrome();
@@ -548,6 +568,7 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
                           controller: _search,
                           focusNode: _searchFocus,
                           onChanged: (q) => setState(() => _query = q),
+                          onCancel: _endSearch,
                         ),
                     ]),
                   ),
@@ -852,10 +873,14 @@ class _HomeSearch extends StatelessWidget {
   final TextEditingController controller;
   final FocusNode focusNode;
   final ValueChanged<String> onChanged;
+
+  /// Ends the search outright: clears, drops the keyboard, unfolds.
+  final VoidCallback onCancel;
   const _HomeSearch({
     required this.controller,
     required this.focusNode,
     required this.onChanged,
+    required this.onCancel,
   });
 
   @override
@@ -905,6 +930,22 @@ class _HomeSearch extends StatelessWidget {
                 height: 44,
                 child: Icon(Icons.close,
                     size: 14, color: white.withValues(alpha: .5)),
+              ),
+            ),
+          ),
+        // The way out that does not depend on the keyboard: a search that
+        // was started can always be ended from the same place.
+        if (focusNode.hasFocus || controller.text.isNotEmpty)
+          Semantics(
+            button: true,
+            label: S.homeSearchCancel,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onCancel,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(4, 0, 16, 0),
+                child: Text(S.homeSearchCancel,
+                    style: Hip.sans(600, 13, color: Hip.blue)),
               ),
             ),
           )
