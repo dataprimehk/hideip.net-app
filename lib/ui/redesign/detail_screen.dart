@@ -29,8 +29,10 @@ String serverLabel(Location l) => l.label;
 /// What a list row says under the label. Normally the country; when the
 /// label already is the country (a server named from a lookup that knew no
 /// city), the protocol, so the row does not say the same thing twice.
-String rowPlace(Location l) =>
-    serverLabel(l) == l.country ? l.protoLabel : l.country;
+String rowPlace(Location l) {
+  final base = serverLabel(l).replaceFirst(RegExp(r' #\d+$'), '');
+  return base == l.country ? l.protoLabel : l.country;
+}
 
 /// Where a subscription refresh stands right now.
 enum RefreshState { idle, busy, done, error }
