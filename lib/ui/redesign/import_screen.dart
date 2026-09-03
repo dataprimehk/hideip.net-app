@@ -26,6 +26,7 @@ import 'hip_sheet.dart';
 import 'home_banners.dart';
 import 'qr_popup.dart';
 import 'shell.dart';
+import 'srv_edit.dart';
 
 enum _Phase { input, parsing, result }
 
@@ -68,6 +69,10 @@ class ImportHooks {
   /// empty string when the file is not text.
   final Future<String?> Function() pickFile;
 
+  /// The reachability probe on the parsed endpoint, so a test can answer it
+  /// without opening a socket.
+  final Future<PingResult> Function(String host, int port) ping;
+
   const ImportHooks({
     this.camStatus = CameraPermission.status,
     this.camRequest = CameraPermission.request,
@@ -76,8 +81,12 @@ class ImportHooks {
     this.clipboardHasText = Clipboard.hasStrings,
     this.clipboardText = _clipboardText,
     this.pickFile = pickImportFile,
+    this.ping = _ping,
   });
 }
+
+Future<PingResult> _ping(String host, int port) =>
+    Ping.measure(host, port, timeout: const Duration(seconds: 3));
 
 Future<String?> _clipboardText() async {
   final data = await Clipboard.getData(Clipboard.kTextPlain);
@@ -133,9 +142,15 @@ class _ImportScreenState extends State<ImportScreen> {
   int? _previewPingMs;
   bool _isSubscription = false;
 
+  /// Set when the screen was opened to edit an existing server: saving then
+  /// replaces that one in place instead of adding to the list.
+  SrvEditCtx? _editing;
+
   @override
   void initState() {
     super.initState();
+    final ctx = widget.nav.ctx();
+    if (ctx is SrvEditCtx) _editing = ctx;
     _text.addListener(
       () => setState(() {
         _error = null;
@@ -148,6 +163,9 @@ class _ImportScreenState extends State<ImportScreen> {
     if (widget.initialText != null && widget.initialText!.isNotEmpty) {
       _text.text = widget.initialText!;
     }
+    // An edit opens on the server's own config, whatever else was pending.
+    final editing = _editing;
+    if (editing != null) _text.text = editing.text;
   }
 
   @override
@@ -190,12 +208,27 @@ class _ImportScreenState extends State<ImportScreen> {
   /// The detection line, plus whether the input is a subscription. The
   /// whitelist behind it is shared with the deep-link path, so a link the
   /// site sends and text pasted by hand are judged by one rule.
-  static (String, bool)? _detect(String input) {
+  static (String, bool)? _detect(String input, {bool editing = false}) {
     final payload = classifyImportPayload(input);
     if (payload == null) return null;
     // A pasted WireGuard file is a share link to everything downstream, but
     // calling it a link on screen would not match what the person just pasted.
     if (WgImport.looksLikeConfig(input)) return (S.e3Detected, false);
+    // An edit replaces one server with one server. A body is read (that is
+    // how a rebuilt config comes back) and held to one result later; a URL
+    // to fetch is a whole subscription and never one server, so it is out.
+    if (editing) {
+      return switch (payload.kind) {
+        ImportPayloadKind.subscriptionUrl => null,
+        ImportPayloadKind.subscriptionBlob => (S.srvConfigDetected, true),
+        ImportPayloadKind.shareLink => (
+          S.e2Detected(
+            _protocolNames[payload.scheme] ?? payload.scheme!.toUpperCase(),
+          ),
+          false,
+        ),
+      };
+    }
     return switch (payload.kind) {
       ImportPayloadKind.shareLink => (
         S.e2Detected(
@@ -212,7 +245,7 @@ class _ImportScreenState extends State<ImportScreen> {
 
   Future<void> _runImport() async {
     final input = _text.text.trim();
-    final det = _detect(input);
+    final det = _detect(input, editing: _editing != null);
     if (det == null) return;
     final (_, isSub) = det;
 
@@ -264,6 +297,13 @@ class _ImportScreenState extends State<ImportScreen> {
         if (p == null) throw S.eNotALink;
         profiles = [p];
       }
+      if (_editing != null && profiles.length != 1) throw S.srvEditOneOnly;
+      // A single link or file is kept as the user pasted it, so a later edit
+      // opens on the same text. A provider's body is not: every server in it
+      // would carry the whole body.
+      if (profiles.length == 1 && (!isSub || _editing != null)) {
+        profiles = [profiles.first.copyWith(source: input)];
+      }
       await _advance(1);
 
       // Step 2: protocol identified; rewrite the step label with the truth.
@@ -274,10 +314,9 @@ class _ImportScreenState extends State<ImportScreen> {
       await _advance(2);
 
       // Step 3: reachability probe (informative; failure does not block).
-      final ping = await Ping.measure(
+      final ping = await widget.hooks.ping(
         profiles.first.server,
         profiles.first.port,
-        timeout: const Duration(seconds: 3),
       );
       _previewPingMs = ping is PingOk ? ping.ms : null;
       _steps[2] = ping is PingOk ? S.e5Verified : S.e5NotReachable;
@@ -332,6 +371,41 @@ class _ImportScreenState extends State<ImportScreen> {
       await Future.delayed(const Duration(milliseconds: 250));
       await widget.state.connect();
     }
+  }
+
+  /// The profile this edit started from, or null when the list moved on.
+  ProxyProfile? get _edited {
+    final editing = _editing;
+    if (editing == null) return null;
+    final profiles = widget.state.profiles;
+    final at = _editIndex;
+    return at == null || at >= profiles.length ? null : profiles[at];
+  }
+
+  /// Where the edited server sits now: found by identity first, since a
+  /// refresh may have moved it, then by the position it had.
+  int? get _editIndex {
+    final editing = _editing;
+    if (editing == null) return null;
+    for (final l in widget.state.locations) {
+      if (l.id == editing.id) return l.index;
+    }
+    return editing.index;
+  }
+
+  /// Puts the parsed server where the edited one sits. Its custom name, its
+  /// subscription and the selection stay; see [AppState.replaceProfile].
+  Future<void> _commitEdit() async {
+    final editing = _editing!;
+    final index = _editIndex ?? editing.index;
+    final next = _pending.first;
+    await widget.state.replaceProfile(index, next);
+    final profiles = widget.state.profiles;
+    final saved = index < profiles.length ? profiles[index] : next;
+    widget.state.showToast(
+      S.srvUpdated(saved.customName ?? Location.derive(saved, index).city),
+    );
+    widget.nav.back();
   }
 
   // --- quick actions -----------------------------------------------------------
@@ -399,6 +473,12 @@ class _ImportScreenState extends State<ImportScreen> {
       });
       return;
     }
+    // An edit was opened from a server's own screen or row; back returns
+    // there rather than to where the importer is usually launched from.
+    if (_editing != null) {
+      widget.nav.back();
+      return;
+    }
     widget.nav.go(widget.exitTo);
   }
 
@@ -410,7 +490,10 @@ class _ImportScreenState extends State<ImportScreen> {
           bottom: false,
           child: Column(
             children: [
-              HipNavHead(title: S.tAddConn, onBack: _back),
+              HipNavHead(
+                title: _editing == null ? S.tAddConn : S.srvEditTitle,
+                onBack: _back,
+              ),
               Expanded(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -431,9 +514,15 @@ class _ImportScreenState extends State<ImportScreen> {
                 child: switch (_phase) {
                   _Phase.input => HipCta(
                     S.eImport,
-                    onTap: _detect(_text.text) == null ? null : _runImport,
+                    onTap: _detect(_text.text, editing: _editing != null) == null
+                        ? null
+                        : _runImport,
                   ),
                   _Phase.parsing => const SizedBox(),
+                  _Phase.result when _editing != null => HipCta(
+                    S.srvSaveChanges,
+                    onTap: _commitEdit,
+                  ),
                   _Phase.result => Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -472,7 +561,7 @@ class _ImportScreenState extends State<ImportScreen> {
   }
 
   Widget _buildInput() {
-    final det = _detect(_text.text);
+    final det = _detect(_text.text, editing: _editing != null);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -677,7 +766,11 @@ class _ImportScreenState extends State<ImportScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _DetectBox(
-          text: _isSubscription ? S.e4Added : S.e6Ready,
+          text: _editing != null
+              ? S.e6Ready
+              : _isSubscription
+                  ? S.e4Added
+                  : S.e6Ready,
           tone: _Tone.ok,
         ),
         const SizedBox(height: 12),
@@ -768,7 +861,9 @@ class _ImportScreenState extends State<ImportScreen> {
             ],
           ),
         ),
-        if (_isSubscription)
+        if (_editing != null && _edited?.subUrl != null)
+          const HipSubnote(S.srvEditFromSub)
+        else if (_isSubscription && _editing == null)
           HipSubnote(S.e4SubNote(_pending.length))
         else if (renamed)
           HipSubnote(S.e6Renamed(loc.rawName, loc.city))

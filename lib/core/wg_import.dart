@@ -260,6 +260,48 @@ class WgImport {
     );
   }
 
+  /// The `[Interface]` / `[Peer]` file for an imported tunnel, rebuilt from
+  /// the profile, for editing it in place.
+  ///
+  /// It is the same file that was imported, with two honest differences: a
+  /// `DNS` line is not carried over at import (see [_profile]) so it cannot
+  /// come back here, and the MTU is the one the tunnel actually runs with
+  /// rather than the one the file declared. A name that was only ever the
+  /// fallback (`WireGuard <host>`) is left off, since it was never in the
+  /// file either.
+  static String toConfig(ProxyProfile p) {
+    final o = p.outbound;
+    final b = StringBuffer();
+    if (p.name.isNotEmpty && p.name != 'WireGuard ${p.server}') {
+      b.writeln('# Name = ${p.name}');
+    }
+    b.writeln('[Interface]');
+    b.writeln('PrivateKey = ${o['private_key'] ?? ''}');
+    b.writeln('Address = ${_joined(o['address'])}');
+    if (o['mtu'] is int) b.writeln('MTU = ${o['mtu']}');
+    final peers = o['peers'];
+    if (peers is List) {
+      for (final raw in peers) {
+        if (raw is! Map) continue;
+        b.writeln();
+        b.writeln('[Peer]');
+        b.writeln('PublicKey = ${raw['public_key'] ?? ''}');
+        final psk = raw['pre_shared_key'];
+        if (psk is String && psk.isNotEmpty) b.writeln('PresharedKey = $psk');
+        b.writeln('AllowedIPs = ${_joined(raw['allowed_ips'])}');
+        final host = raw['address']?.toString() ?? '';
+        final port = raw['port']?.toString() ?? '';
+        b.writeln('Endpoint = ${host.contains(':') ? '[$host]' : host}:$port');
+        final keepalive = raw['persistent_keepalive_interval'];
+        if (keepalive is int) b.writeln('PersistentKeepalive = $keepalive');
+      }
+    }
+    return b.toString();
+  }
+
+  static String _joined(Object? list) =>
+      list is List ? list.map((e) => e.toString()).join(', ') : '';
+
   static ProxyProfile _profile({
     required String name,
     required String host,

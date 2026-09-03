@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io' show InternetAddress;
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 import 'safe_http.dart';
 
 /// A located public address: coordinates plus whatever text the database knew.
@@ -71,6 +73,11 @@ class IpLookup {
   static IpLookupData? _last;
   static DateTime? _lastAt;
 
+  /// Test hook: answers [countryFor] (and the fuller lookup behind it) for
+  /// a server address without touching the network. Null uses the endpoint.
+  @visibleForTesting
+  static Future<IpLookupData?> Function(String host)? lookupOverride;
+
   static Future<String?> current() async {
     if (_shotIp.isNotEmpty) return _shotIp;
     return (await _fetch())?.ip;
@@ -82,6 +89,8 @@ class IpLookup {
   /// which answers off local databases and logs nothing. The hostname is
   /// resolved on the phone first, so only an address ever leaves it.
   static Future<String?> countryFor(String host) async {
+    final override = lookupOverride;
+    if (override != null) return (await override(host))?.cc;
     if (_shotIp.isNotEmpty) return null;
     final base = Uri.tryParse(_endpoint);
     if (base == null || !isAllowedIpEndpoint(base)) return null;

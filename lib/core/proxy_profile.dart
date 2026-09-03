@@ -45,6 +45,14 @@ class ProxyProfile {
   /// from and can always be undone.
   final String? customName;
 
+  /// The text this profile was imported from: the share link, or the whole
+  /// WireGuard file. Kept so the server can be edited as the user first saw
+  /// it rather than as a rebuilt approximation. Null for profiles that came
+  /// out of a subscription body, a rebuilt form stands in for those (see
+  /// `srvEditText`). It holds the same credentials the outbound does and
+  /// lives in the same protected store.
+  final String? source;
+
   const ProxyProfile({
     required this.name,
     required this.protocol,
@@ -57,6 +65,7 @@ class ProxyProfile {
     this.premium = false,
     this.subUrl,
     this.customName,
+    this.source,
   });
 
   /// Sentinel for [copyWith]: tells "leave it alone" apart from "set it to
@@ -64,13 +73,15 @@ class ProxyProfile {
   static const _keep = Object();
 
   ProxyProfile copyWith({
+    String? name,
     String? cc,
     bool? premium,
     String? subUrl,
     Object? customName = _keep,
+    Object? source = _keep,
   }) =>
       ProxyProfile(
-        name: name,
+        name: name ?? this.name,
         protocol: protocol,
         server: server,
         port: port,
@@ -83,6 +94,20 @@ class ProxyProfile {
         customName: identical(customName, _keep)
             ? this.customName
             : customName as String?,
+        source: identical(source, _keep) ? this.source : source as String?,
+      );
+
+  /// The fields added after the profile store's map was first laid out, in
+  /// the shape the store persists. The store spreads this into its map and
+  /// hands the map back to [withStoredExtras] on load, so a new field is
+  /// declared here once and older saved lists, which lack it, still read.
+  Map<String, dynamic> get storedExtras => {
+        if (source != null) 'source': source,
+      };
+
+  /// This profile with the fields of [storedExtras] read back from [m].
+  ProxyProfile withStoredExtras(Map<String, dynamic> m) => copyWith(
+        source: m['source'] as String?,
       );
 
   /// A copy of [outbound] with the given [tag] injected.

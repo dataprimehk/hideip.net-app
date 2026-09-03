@@ -11,8 +11,10 @@ import '../brand.dart';
 import '../strings.dart';
 import 'detail_screen.dart';
 import 'hip.dart';
+import 'hip_sheet.dart';
 import 'locked_row.dart';
 import 'shell.dart';
+import 'srv_edit.dart';
 
 /// What the managed (hideip.net) group has to show right now.
 enum ManagedGroup {
@@ -83,6 +85,51 @@ class _LocationsScreenState extends State<LocationsScreen> {
   int? _ping(Location l) {
     final r = widget.state.pingFor(l.profile);
     return r is PingOk ? r.ms : null;
+  }
+
+  /// The position of [l] right now: the list may have been reordered by a
+  /// refresh since the row was built, so it is resolved by identity.
+  int _indexOf(Location l) {
+    final match = widget.state.locations.where((e) => e.id == l.id);
+    return match.isEmpty ? l.index : match.first.index;
+  }
+
+  /// Behind the swipe's Edit: the importer, opened on this server's config.
+  void _edit(Location l) {
+    widget.nav.go(
+      HipScreen.import,
+      SrvEditCtx(
+        index: _indexOf(l),
+        id: l.id,
+        label: serverLabel(l),
+        text: srvEditText(l.profile),
+      ),
+    );
+  }
+
+  /// Behind the swipe's Delete: the same confirmation the detail screen
+  /// asks, and the same fallback to Auto when the chosen server goes.
+  Future<void> _confirmDelete(Location l) async {
+    final name = serverLabel(l);
+    final go = await showHipSheet<bool>(
+      context,
+      children: removeSwipedSheet(
+        name: name,
+        onCancel: () => Navigator.of(context).pop(false),
+        onRemove: () => Navigator.of(context).pop(true),
+      ),
+    );
+    if (go != true || !mounted) return;
+    final state = widget.state;
+    final index = _indexOf(l);
+    final toAuto = removalFallsBackToAuto(
+      autoSelect: state.prefs.autoSelect,
+      selectedIndex: state.selectedIndex,
+      removedIndex: index,
+    );
+    await state.remove(index);
+    if (toAuto) await state.selectLocation(null);
+    state.showToast(S.gRemoved(name));
   }
 
   @override
@@ -168,6 +215,8 @@ class _LocationsScreenState extends State<LocationsScreen> {
       onBack: () => nav.go(HipScreen.home),
       onSelect: _select,
       onManage: nav.openDetail,
+      onEdit: _edit,
+      onDelete: _confirmDelete,
       onLockedTap: (from, locId) =>
           nav.openPaywall(from: HipScreen.locations, locId: locId),
       onShowAll: _showAll,
@@ -228,6 +277,12 @@ class LocationsBody extends StatelessWidget {
   final VoidCallback onBack;
   final void Function(Location?) onSelect;
   final void Function(Location) onManage;
+
+  /// The swipe actions on the user's own rows. Both or neither: with either
+  /// missing the rows stay still, which is what a list with nothing to edit
+  /// (a test fixture, a read-only mix) wants.
+  final void Function(Location)? onEdit;
+  final void Function(Location)? onDelete;
   final void Function(LockedFrom from, String locId) onLockedTap;
   final VoidCallback onShowAll;
   final VoidCallback onSeePlans;
@@ -261,6 +316,8 @@ class LocationsBody extends StatelessWidget {
     required this.onBack,
     required this.onSelect,
     required this.onManage,
+    this.onEdit,
+    this.onDelete,
     required this.onLockedTap,
     required this.onShowAll,
     required this.onSeePlans,
@@ -284,7 +341,7 @@ class LocationsBody extends StatelessWidget {
     // Advanced view for the ones hideip.net runs (there is nothing on those
     // to rename, refresh or remove).
     final manageable = !l.premium || advanced;
-    return HipListRow(
+    final row = HipListRow(
       leading: HipFlag(cc: l.cc),
       title: nameOf(l),
       titleBadge: l.won
@@ -320,6 +377,15 @@ class LocationsBody extends StatelessWidget {
           ),
       ]),
       onTap: () => onSelect(l),
+    );
+    // Only the user's own servers slide: a managed row has nothing on it to
+    // edit or delete, so it does not move.
+    final edit = onEdit, delete = onDelete;
+    if (l.premium || edit == null || delete == null) return row;
+    return HipSwipeRow(
+      onEdit: () => edit(l),
+      onDelete: () => delete(l),
+      child: row,
     );
   }
 
@@ -414,59 +480,61 @@ class LocationsBody extends StatelessWidget {
           trailing: HipIconButton(Icons.add, onTap: onAdd),
         ),
         Expanded(
-          child: ListView(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            children: [
-              if (w != null)
-                _WinnerCard(
-                  city: nameOf(w),
-                  locked: w.locked,
-                  onDismiss: onDismissWinner,
-                  onAct: () => onWinner(w),
-                ),
-              HipListGroup(children: [
-                HipListRow(
-                  leading: HipFlag(
-                      cc: '',
-                      child: Icon(Icons.bolt_outlined,
-                          size: 19, color: Hip.blueDeep)),
-                  title: S.tAuto,
-                  subtitle: autoCity == null || autoMs == null
-                      ? S.d3AutoIdle
-                      : S.autoSub(autoCity!, autoMs!,
-                          managed: mix == Mix.mixed && autoManaged),
-                  trailing: selectedId == null
-                      ? Icon(Icons.check, size: 18, color: Hip.blue)
-                      : const SizedBox(width: 18),
-                  onTap: () => onSelect(null),
-                ),
-              ]),
-              if (showManagedSection) ...[
-                // The brand header and the tint are relational: they exist
-                // only while there is something to tell apart.
-                if (mix != Mix.hip) const _PremiumSectionHead(),
-                // Locked rows come from the public catalog; while there are
-                // none (no mirror reachable, or a build without the release
-                // key) the strip alone carries the offer. An empty box would
-                // only look broken.
-                if (managedRows.isNotEmpty)
-                  _Group(tinted: mix == Mix.mixed, children: managedRows),
-                if (!subscribed) _PremiumStrip(onTap: onSeePlans),
+          child: HipSwipeArea(
+            child: ListView(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              children: [
+                if (w != null)
+                  _WinnerCard(
+                    city: nameOf(w),
+                    locked: w.locked,
+                    onDismiss: onDismissWinner,
+                    onAct: () => onWinner(w),
+                  ),
+                HipListGroup(children: [
+                  HipListRow(
+                    leading: HipFlag(
+                        cc: '',
+                        child: Icon(Icons.bolt_outlined,
+                            size: 19, color: Hip.blueDeep)),
+                    title: S.tAuto,
+                    subtitle: autoCity == null || autoMs == null
+                        ? S.d3AutoIdle
+                        : S.autoSub(autoCity!, autoMs!,
+                            managed: mix == Mix.mixed && autoManaged),
+                    trailing: selectedId == null
+                        ? Icon(Icons.check, size: 18, color: Hip.blue)
+                        : const SizedBox(width: 18),
+                    onTap: () => onSelect(null),
+                  ),
+                ]),
+                if (showManagedSection) ...[
+                  // The brand header and the tint are relational: they exist
+                  // only while there is something to tell apart.
+                  if (mix != Mix.hip) const _PremiumSectionHead(),
+                  // Locked rows come from the public catalog; while there are
+                  // none (no mirror reachable, or a build without the release
+                  // key) the strip alone carries the offer. An empty box would
+                  // only look broken.
+                  if (managedRows.isNotEmpty)
+                    _Group(tinted: mix == Mix.mixed, children: managedRows),
+                  if (!subscribed) _PremiumStrip(onTap: onSeePlans),
+                ],
+                if (mix != Mix.hip) ...[
+                  const HipSectionLabel(S.dYourServers),
+                  if (userLocations.isEmpty)
+                    HipCard(
+                      child: Text(S.dNoServers,
+                          style:
+                              Hip.sans(400, 13.5, color: Hip.muted, height: 1.5)),
+                    )
+                  else
+                    ..._userServers(),
+                  if (userLocations.isNotEmpty) const HipSubnote(S.dNamesCleaned),
+                ],
+                ?footer,
               ],
-              if (mix != Mix.hip) ...[
-                const HipSectionLabel(S.dYourServers),
-                if (userLocations.isEmpty)
-                  HipCard(
-                    child: Text(S.dNoServers,
-                        style:
-                            Hip.sans(400, 13.5, color: Hip.muted, height: 1.5)),
-                  )
-                else
-                  ..._userServers(),
-                if (userLocations.isNotEmpty) const HipSubnote(S.dNamesCleaned),
-              ],
-              ?footer,
-            ],
+            ),
           ),
         ),
         Padding(
@@ -483,6 +551,24 @@ class LocationsBody extends StatelessWidget {
     );
   }
 }
+
+/// The confirmation behind a swiped row's Delete: the row's label on top,
+/// one question, and what keeps working. Same shape as the detail screen's
+/// sheet, so removing a server reads the same from either place.
+List<Widget> removeSwipedSheet({
+  required String name,
+  required VoidCallback onCancel,
+  required VoidCallback onRemove,
+}) =>
+    [
+      HipSheetTitle(name),
+      const HipSheetBody(S.srvRemoveAsk),
+      const HipSheetBody(S.srvRemoveBody),
+      HipSheetActions(children: [
+        HipCta(S.aRemove, danger: true, ghost: true, onTap: onRemove),
+        HipCta(S.aCancel, quiet: true, onTap: onCancel),
+      ]),
+    ];
 
 /// A list group that can carry the brand tint (app.css `.lgroup.brandg`).
 ///

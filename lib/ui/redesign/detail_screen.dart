@@ -14,6 +14,7 @@ import '../strings.dart';
 import 'hip.dart';
 import 'hip_sheet.dart';
 import 'shell.dart';
+import 'srv_edit.dart';
 
 /// The label to show for [l]: the name the user gave the server, or the one
 /// it was imported under.
@@ -63,10 +64,33 @@ class _DetailScreenState extends State<DetailScreen> {
 
   /// This screen was opened with a snapshot of the location. A rename or a
   /// subscription refresh rewrites the profile behind it, so the current one
-  /// is looked up by id on every build and the snapshot is only the fallback.
-  Location get _loc => widget.state.locations
-      .firstWhere((l) => l.id == widget.location.id,
-          orElse: () => widget.location);
+  /// is looked up by id on every build. An edit can change the endpoint and
+  /// with it the id, but it keeps the position, so that is the next answer;
+  /// the snapshot is only the last fallback.
+  Location get _loc {
+    final locs = widget.state.locations;
+    for (final l in locs) {
+      if (l.id == widget.location.id) return l;
+    }
+    final at = widget.location.index;
+    if (at >= 0 && at < locs.length && !locs[at].premium) return locs[at];
+    return widget.location;
+  }
+
+  /// Opens the importer on this server's config; saving there puts the
+  /// result back in this position.
+  void _edit() {
+    final loc = _loc;
+    widget.nav.go(
+      HipScreen.import,
+      SrvEditCtx(
+        index: loc.index,
+        id: loc.id,
+        label: serverLabel(loc),
+        text: srvEditText(loc.profile),
+      ),
+    );
+  }
 
   Future<void> _test() async {
     setState(() => _testing = true);
@@ -225,6 +249,7 @@ class _DetailScreenState extends State<DetailScreen> {
                   onRename: _rename,
                   onRefresh:
                       subUrl == null ? null : () => _refreshSubscription(subUrl),
+                  onEdit: _edit,
                 ),
               if (advanced) ...[
                 const HipSectionLabel(S.gRawConfig),
@@ -323,6 +348,9 @@ class ManageServerSection extends StatefulWidget {
   final void Function(String name) onRename;
   final VoidCallback? onRefresh;
 
+  /// Opens the config for editing. Null hides the row.
+  final VoidCallback? onEdit;
+
   const ManageServerSection({
     super.key,
     required this.name,
@@ -333,6 +361,7 @@ class ManageServerSection extends StatefulWidget {
     this.lastUpdated,
     required this.onRename,
     this.onRefresh,
+    this.onEdit,
   });
 
   @override
@@ -418,6 +447,13 @@ class _ManageServerSectionState extends State<ManageServerSection> {
             subtitle: S.gNameSub(widget.name, widget.rawName),
             trailing: Icon(Icons.edit_outlined, size: 16, color: Hip.muted2),
             onTap: _start,
+          ),
+        if (widget.onEdit != null)
+          HipListRow(
+            title: S.srvEditConfig,
+            subtitle: S.srvEditConfigSub,
+            trailing: Icon(Icons.chevron_right, size: 18, color: Hip.muted2),
+            onTap: widget.onEdit,
           ),
         if (widget.fromSubscription)
           HipListRow(

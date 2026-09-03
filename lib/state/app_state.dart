@@ -1365,4 +1365,28 @@ class AppState extends ChangeNotifier {
     await ProfileStore.save(_profiles);
     await ProfileStore.saveSelectedIndex(_selected);
   }
+
+  // --- 1.1.1, servers: editing in place ---------------------------------------
+
+  /// Puts [next] where the profile at [index] sits, keeping what the user
+  /// added to the old one: its position, its custom name (unless [next]
+  /// carries one), the subscription it belongs to, and the selection. The
+  /// geolocated place is carried over while the address is the same and
+  /// looked up again when it changed. Managed hideip.net profiles are never
+  /// edited, so a request against one is ignored.
+  Future<void> replaceProfile(int index, ProxyProfile next) async {
+    if (index < 0 || index >= _profiles.length) return;
+    final old = _profiles[index];
+    if (old.premium) return;
+    final sameAddress = old.server == next.server;
+    _profiles[index] = next.copyWith(
+      cc: sameAddress ? old.cc : null,
+      subUrl: next.subUrl ?? old.subUrl,
+      customName: next.customName ?? old.customName,
+    );
+    await _persist();
+    notifyListeners();
+    pingAll();
+    _backfillGeo();
+  }
 }

@@ -738,4 +738,30 @@ abstract final class S {
   // Home ASCII engine. No strings beyond the address samples, which
   // live in the engine because they are drawn glyphs, not copy.
   // ---------------------------------------------------------------------
+
+  // 1.1.1, servers: editing in place, swipe actions, naming and location.
+
+  /// The two buttons a swiped row stops on.
+  static const srvEdit = 'Edit';
+  static const srvDelete = 'Delete';
+
+  /// The confirmation under Delete: the row's label is the sheet title.
+  static const srvRemoveAsk = 'Remove this server?';
+  static const srvRemoveBody =
+      'It is removed from this device. The link from your provider keeps '
+      'working, so it can be added again at any time.';
+
+  /// Edit config, on the detail screen and behind the swipe.
+  static const srvEditConfig = 'Edit config';
+  static const srvEditConfigSub =
+      'Change the keys, the endpoint or anything else in the config.';
+  static const srvEditTitle = 'Edit server';
+  static const srvSaveChanges = 'Save changes';
+  static String srvUpdated(String name) => '$name updated';
+  static const srvConfigDetected = 'Config detected';
+  static const srvEditOneOnly =
+      'An edit takes one server, and this holds more than one.';
+  static const srvEditFromSub =
+      'This server comes from a subscription. The next refresh brings back '
+      'the version your provider sends.';
 }
