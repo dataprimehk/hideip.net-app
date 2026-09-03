@@ -14,7 +14,7 @@ import '../../vpn_controller.dart';
 import '../strings.dart';
 import 'ascii/hero_ascii.dart';
 import 'ascii/hero_glow.dart';
-import 'detail_screen.dart' show serverLabel;
+import 'detail_screen.dart' show removalFallsBackToAuto, serverLabel;
 import 'hero_compact.dart';
 import 'hero_ip_sheet.dart';
 import 'hero_search.dart';
@@ -22,9 +22,11 @@ import 'hip.dart';
 import 'hip_sheet.dart';
 import 'home_banners.dart';
 import 'home_status_card.dart';
+import 'locations_screen.dart' show removeSwipedSheet;
 import 'locked_row.dart';
 import 'mark.dart';
 import 'shell.dart';
+import 'srv_edit.dart';
 import 'worldmap.dart';
 
 /// Home: the dark hero panel (an ASCII field behind the glass status card)
@@ -593,7 +595,8 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
               child: AnimatedOpacity(
                 duration: Hip.dur(const Duration(milliseconds: 300)),
                 opacity: mapMode ? 0 : 1,
-                child: SingleChildScrollView(
+                child: HipSwipeArea(
+                  child: SingleChildScrollView(
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
                   // The results move up a little while the hero is folded:
                   // with a keyboard up every row of height counts.
@@ -609,6 +612,7 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
                       onResultTap: searching ? _endSearch : null,
                     ),
                   ),
+                ),
                 ),
               ),
             ),
@@ -939,15 +943,64 @@ class _HomeList extends StatelessWidget {
     return p is PingOk ? p.ms : null;
   }
 
-  Widget _openRow(Location l, {required bool auto, required Location? active}) {
+  /// The position of [l] right now, resolved by identity: a refresh may
+  /// have reordered the list since the row was built.
+  int _indexOf(Location l) {
+    final match = state.locations.where((e) => e.id == l.id);
+    return match.isEmpty ? l.index : match.first.index;
+  }
+
+  /// Behind the swipe's Edit: the importer, opened on this server's config.
+  void _edit(Location l) {
+    nav.go(
+      HipScreen.import,
+      SrvEditCtx(
+        index: _indexOf(l),
+        id: l.id,
+        label: serverLabel(l),
+        text: srvEditText(l.profile),
+      ),
+    );
+  }
+
+  /// Behind the swipe's Delete: the same confirmation Locations asks, and
+  /// the same fallback to Auto when the chosen server goes.
+  Future<void> _confirmDelete(BuildContext context, Location l) async {
+    final name = serverLabel(l);
+    final go = await showHipSheet<bool>(
+      context,
+      children: removeSwipedSheet(
+        name: name,
+        onCancel: () => Navigator.of(context).pop(false),
+        onRemove: () => Navigator.of(context).pop(true),
+      ),
+    );
+    if (go != true) return;
+    final index = _indexOf(l);
+    final toAuto = removalFallsBackToAuto(
+      autoSelect: state.prefs.autoSelect,
+      selectedIndex: state.selectedIndex,
+      removedIndex: index,
+    );
+    await state.remove(index);
+    if (toAuto) await state.selectLocation(null);
+    state.showToast(S.gRemoved(name));
+  }
+
+  Widget _openRow(
+    BuildContext context,
+    Location l, {
+    required bool auto,
+    required Location? active,
+  }) {
     final advanced = state.prefs.advanced;
     final ms = _ms(l);
     final chosen = !auto && active?.id == l.id;
-    return HipListRow(
+    final row = HipListRow(
       leading: HipFlag(cc: l.cc),
       title: serverLabel(l),
       titleBadge: l.premium && state.mix == Mix.mixed
-          ? HipBadge.blue('hideip.net')
+          ? const HipBrandTag()
           : (l.provider != null ? HipBadge.blue(l.provider!) : null),
       subtitle: advanced
           ? S.tunnelChain(l.protoLabel, l.host)
@@ -966,6 +1019,14 @@ class _HomeList extends StatelessWidget {
         state.selectLocation(l);
         onResultTap?.call();
       },
+    );
+    // Only the user's own servers slide, as on Locations: a managed row has
+    // nothing on it to edit or delete, so it does not move.
+    if (l.premium) return row;
+    return HipSwipeRow(
+      onEdit: () => _edit(l),
+      onDelete: () => _confirmDelete(context, l),
+      child: row,
     );
   }
 
@@ -1013,7 +1074,7 @@ class _HomeList extends StatelessWidget {
           for (final l in hits)
             l.locked
                 ? _lockedRow(l, LockedFrom.homeSearch)
-                : _openRow(l, auto: auto, active: active),
+                : _openRow(context, l, auto: auto, active: active),
           if (hits.isEmpty)
             Padding(
               padding: const EdgeInsets.all(14),
@@ -1091,7 +1152,7 @@ class _HomeList extends StatelessWidget {
       const SizedBox(height: 16),
       HipSectionLabel(recent.isEmpty ? S.homeFastest : S.homeRecentFastest),
       HipListGroup(children: [
-        for (final l in rows) _openRow(l, auto: auto, active: active),
+        for (final l in rows) _openRow(context, l, auto: auto, active: active),
         // Exactly one locked row, in the same list: the comparison is the
         // whole argument, so it lives in context and nowhere else.
         if (locked.isNotEmpty) _lockedRow(locked.first, LockedFrom.homeRow),

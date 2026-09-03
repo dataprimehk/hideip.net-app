@@ -54,6 +54,41 @@ void main() {
     expect(loaded.first.name, 'ch-zur-reality-03');
   });
 
+  test('the source text, city and place override survive a round trip',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    await ProfileStore.save([
+      const ProxyProfile(
+          name: 'WireGuard 1.2.3.4',
+          protocol: 'wireguard',
+          server: '1.2.3.4',
+          port: 51820,
+          outbound: {'type': 'wireguard'},
+          source: '[Interface]\nPrivateKey = x\n[Peer]\nEndpoint = 1.2.3.4:51820',
+          city: 'Berlin',
+          cc: 'DE',
+          ccOverride: 'NL',
+          cityOverride: 'Amsterdam'),
+      const ProxyProfile(
+          name: 'plain',
+          protocol: 'vless',
+          server: '5.6.7.8',
+          port: 443,
+          outbound: {'type': 'vless'}),
+    ]);
+    final loaded = await ProfileStore.load();
+    final wg = loaded.first;
+    expect(wg.source, startsWith('[Interface]'));
+    expect(wg.city, 'Berlin');
+    expect(wg.ccOverride, 'NL');
+    expect(wg.cityOverride, 'Amsterdam');
+    final plain = loaded.last;
+    expect(plain.source, isNull);
+    expect(plain.city, isNull);
+    expect(plain.ccOverride, isNull);
+    expect(plain.cityOverride, isNull);
+  });
+
   test('clearing a name is told apart from leaving it alone', () {
     const p = ProxyProfile(
         name: 'ch-zur-reality-03',

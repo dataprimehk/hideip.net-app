@@ -19,8 +19,38 @@ Build 7. iOS 15 or later.
   govulncheck report when a scan fails, and CI keeps the reports as an
   artifact.
 
+### Added
+- Edit an imported server in place. The detail screen has an Edit config row
+  that reopens the importer on the original WireGuard file or link; saving
+  keeps the server's position, name and location.
+- Swipe a server row to the left, on Home and on Locations, to reach Edit and
+  Delete. The row stops on the two buttons whatever the length of the swipe;
+  Delete asks first. hideip.net rows do not move.
+- Imported servers get a readable name. When the link or file carries none,
+  the app suggests the city and country of the address, shows it in a name
+  field before saving, and numbers a second server in the same place (#2, #3).
+- Pick a server's location. The detail screen has a Location row with a
+  country list and a city field for when the lookup got it wrong or the
+  address gives nothing away.
+- Hold the address on the Home screen for the details the lookup knows: city,
+  country and network, with a Copy button.
+- A Privacy screen under Settings that says exactly what the three one-time
+  usage signals carry, with the switch at the bottom.
+
 ### Changed
 - iOS 15 or later is required, up from 14.
+- Home search matches the protocol, the host, the provider handle and the name
+  the user typed, not only the city and country. Every word of the query has
+  to match.
+- The Home screen folds to one line while the search field is in use, so the
+  results have the height, even with large text and the keyboard up.
+- The whole address row on Home copies the address, not only the icon.
+- Coming next on Locations is folded by default; the header shows the count.
+- hideip.net servers carry a small tag where they sit beside imported ones.
+- Settings section headers carry an icon.
+- Haptics: one light pulse when the tunnel goes down, a click when the address
+  is copied. The connect pulse no longer fires when the app opens on a tunnel
+  that Always-on had kept up.
 
 ## 1.1.0 (2026-09-02)
 
