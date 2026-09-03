@@ -16,6 +16,7 @@ import 'ascii/hero_ascii.dart';
 import 'ascii/hero_glow.dart';
 import 'detail_screen.dart' show serverLabel;
 import 'hero_compact.dart';
+import 'hero_ip_sheet.dart';
 import 'hero_search.dart';
 import 'hip.dart';
 import 'hip_sheet.dart';
@@ -241,6 +242,37 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
     ]);
   }
 
+  // --- the address row ----------------------------------------------------
+
+  /// The address sheet. Disconnected, the lookup's picture of the real
+  /// address is already in hand; connected, the exit's place comes from the
+  /// chosen server and the sheet asks the lookup for the rest.
+  Future<void> _showIpDetails() async {
+    final state = widget.state;
+    final ip = state.publicIp;
+    if (ip == null) return;
+    final loc = state.activeLocation;
+    final HeroIpDetails details;
+    if (state.isConnected && loc != null) {
+      details = HeroIpDetails(
+        ip: ip,
+        city: loc.placed ? loc.city : null,
+        country: loc.placed ? loc.country : null,
+        cc: loc.placed ? loc.cc : null,
+      );
+    } else {
+      details = HeroIpDetails.fromGeo(ip, state.userGeo);
+    }
+    await showHipSheet<void>(context, children: [
+      HeroIpSheet(initial: details, onCopy: _copyIp),
+    ]);
+  }
+
+  Future<void> _copyIp(String ip) async {
+    await Clipboard.setData(ClipboardData(text: ip));
+    widget.state.showToast(S.homeCopiedIp);
+  }
+
   Future<void> _selectFromMap(Location loc) async {
     final state = widget.state;
     await state.selectLocation(loc);
@@ -461,6 +493,9 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
                                                 state.connSlow && state.isBusy
                                                     ? S.b16Slow
                                                     : null,
+                                            onLongPress: state.publicIp == null
+                                                ? null
+                                                : _showIpDetails,
                                           ),
                                           Positioned(
                                             left: -10,

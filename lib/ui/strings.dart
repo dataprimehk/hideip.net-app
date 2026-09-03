@@ -738,4 +738,18 @@ abstract final class S {
   // Home ASCII engine. No strings beyond the address samples, which
   // live in the engine because they are drawn glyphs, not copy.
   // ---------------------------------------------------------------------
+
+  // 1.1.1, home hero
+  // ---------------------------------------------------------------------
+
+  /// Spoken hint on the address row: a long press opens the details sheet.
+  static const homeIpHoldHint = 'Hold for details';
+
+  /// The address sheet: what the lookup knows about the address on show.
+  /// A row the lookup could not fill is left out rather than dashed.
+  static const heroIpTitle = 'Public IP address';
+  static const heroIpAddress = 'Address';
+  static const heroIpCity = 'City';
+  static const heroIpCountry = 'Country';
+  static const heroIpNetwork = 'Network';
 }
