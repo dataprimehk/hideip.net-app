@@ -344,10 +344,13 @@ class LocationsBody extends StatelessWidget {
     final row = HipListRow(
       leading: HipFlag(cc: l.cc),
       title: nameOf(l),
+      // The brand tag is relational: it marks the fleet's rows only while the
+      // user's own sit in the same list, so a subscriber with nothing else
+      // sees an untagged list.
       titleBadge: l.won
           ? const _WonBadge()
           : l.premium
-              ? (mix == Mix.hip ? null : HipBadge.blue('hideip.net'))
+              ? (mix == Mix.hip ? null : const HipBrandTag())
               : (l.provider != null ? HipBadge.blue(l.provider!) : null),
       subtitle: advanced
           ? S.tunnelChain(l.protoLabel, l.host)

@@ -1053,6 +1053,26 @@ class _SwipeButton extends StatelessWidget {
   }
 }
 
+/// The small `hideip.net` tag on a server the fleet runs, for the lists and
+/// the header where the user's own servers sit beside it. Accent tone, no
+/// icon, smaller than a [HipBadge]: it tells the two apart and nothing more.
+class HipBrandTag extends StatelessWidget {
+  const HipBrandTag({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Hip.blueSoft,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(S.srvBrandTag,
+          style: Hip.sans(600, 10.5, color: Hip.blueDeep, letterSpacing: .1)),
+    );
+  }
+}
+
 /// The region around a list of [HipSwipeRow]s: a pointer landing off the
 /// open row, or a scroll starting anywhere inside, closes it.
 class HipSwipeArea extends StatelessWidget {

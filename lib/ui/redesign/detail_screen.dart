@@ -510,10 +510,18 @@ class _HeaderCard extends StatelessWidget {
         Expanded(
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('$name, ${location.country}',
-                overflow: TextOverflow.ellipsis,
-                style:
-                    Hip.sans(650, 15.5, color: Hip.ink, letterSpacing: -.15)),
+            Row(children: [
+              Flexible(
+                child: Text('$name, ${location.country}',
+                    overflow: TextOverflow.ellipsis,
+                    style: Hip.sans(650, 15.5,
+                        color: Hip.ink, letterSpacing: -.15)),
+              ),
+              if (location.premium) ...[
+                const SizedBox(width: 7),
+                const HipBrandTag(),
+              ],
+            ]),
             const SizedBox(height: 2),
             Text(line,
                 overflow: TextOverflow.ellipsis,

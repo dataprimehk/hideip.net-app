@@ -764,4 +764,7 @@ abstract final class S {
   static const srvEditFromSub =
       'This server comes from a subscription. The next refresh brings back '
       'the version your provider sends.';
+
+  /// The tag on a row or a header that hideip.net runs.
+  static const srvBrandTag = 'hideip.net';
 }
