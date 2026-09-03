@@ -738,4 +738,14 @@ abstract final class S {
   // Home ASCII engine. No strings beyond the address samples, which
   // live in the engine because they are drawn glyphs, not copy.
   // ---------------------------------------------------------------------
+
+  // 1.1.1, settings screens.
+  static String setPrivacyRowSub(bool on) =>
+      on ? 'Usage counts on' : 'Usage counts off';
+  static const setPrivacyExplain =
+      'Three one-time signals, sent once per install and never again: '
+      'opening the app for the first time, adding your first connection, '
+      'and completing your first successful connect. Each one carries only '
+      'its own name and whether you are on Android or iOS. No IP address, '
+      'no account and no device identifier travels with it.';
 }

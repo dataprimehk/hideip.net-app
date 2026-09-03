@@ -11,17 +11,20 @@ import '../strings.dart';
 import 'hip.dart';
 import 'hip_sheet.dart';
 import 'paywall_screen.dart';
+import 'set_privacy_screen.dart';
 import 'shell.dart';
 
 bool get _isIos => defaultTargetPlatform == TargetPlatform.iOS;
 bool get _isAndroid => defaultTargetPlatform == TargetPlatform.android;
 
-const _privacyUrl = 'https://hideip.net/privacy';
+/// The privacy policy URL, shared with [SetPrivacyScreen] so there is only
+/// ever one place that spells it out.
+const privacyUrl = 'https://hideip.net/privacy';
 String get _termsUrl => _isIos
     ? 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/'
     : 'https://hideip.net/terms';
 
-void _openUrl(String url) =>
+void openUrl(String url) =>
     launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
 
 /// A flat gray tile. The blue one is reserved for flags and for Premium.
@@ -584,12 +587,13 @@ class _SettingsScreenState extends State<SettingsScreen>
               HipListGroup(children: [
                 HipListRow(
                   leading: _grayTile(Icons.bar_chart_outlined),
-                  title: S.setUsage,
-                  subtitle: S.setUsageSub,
-                  trailing: HipToggle(
-                    on: prefs.usageCounts,
-                    onChanged: (v) =>
-                        state.updatePrefs(prefs.copyWith(usageCounts: v)),
+                  title: S.setPrivacySection,
+                  subtitle: S.setPrivacyRowSub(prefs.usageCounts),
+                  trailing: _chevron(),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => SetPrivacyScreen(state: state),
+                    ),
                   ),
                 ),
               ]),
@@ -620,13 +624,13 @@ class _SettingsScreenState extends State<SettingsScreen>
                   title: S.setPrivacyPolicy,
                   trailing:
                       Icon(Icons.open_in_new, size: 16, color: Hip.muted2),
-                  onTap: () => _openUrl(_privacyUrl),
+                  onTap: () => openUrl(privacyUrl),
                 ),
                 HipListRow(
                   title: S.setTerms,
                   trailing:
                       Icon(Icons.open_in_new, size: 16, color: Hip.muted2),
-                  onTap: () => _openUrl(_termsUrl),
+                  onTap: () => openUrl(_termsUrl),
                 ),
               ]),
               // Apple guideline 2.3.10: no other-platform mentions on iOS.

@@ -349,8 +349,8 @@ void main() {
       // Notifications: exactly two rows, whatever the permission state.
       expect(find.text(S.notifConnTitle), findsOneWidget);
       expect(find.text(S.notifVoteTitle), findsOneWidget);
-      // Privacy: still the one row it always was.
-      expect(find.text(S.setUsage), findsOneWidget);
+      // Privacy: still the one row it always was, now a chevron.
+      expect(find.text(S.setPrivacySection), findsOneWidget);
       // Connections: add and manage.
       expect(find.text(S.tAddConn), findsOneWidget);
       expect(find.text(S.setManageServers), findsOneWidget);
