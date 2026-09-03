@@ -762,4 +762,50 @@ abstract final class S {
   static const heroIpCity = 'City';
   static const heroIpCountry = 'Country';
   static const heroIpNetwork = 'Network';
+
+  // 1.1.1, servers: editing in place, swipe actions, naming and location.
+
+  /// The two buttons a swiped row stops on.
+  static const srvEdit = 'Edit';
+  static const srvDelete = 'Delete';
+
+  /// The confirmation under Delete: the row's label is the sheet title.
+  static const srvRemoveAsk = 'Remove this server?';
+  static const srvRemoveBody =
+      'It is removed from this device. The link from your provider keeps '
+      'working, so it can be added again at any time.';
+
+  /// Edit config, on the detail screen and behind the swipe.
+  static const srvEditConfig = 'Edit config';
+  static const srvEditConfigSub =
+      'Change the keys, the endpoint or anything else in the config.';
+  static const srvEditTitle = 'Edit server';
+  static const srvSaveChanges = 'Save changes';
+  static String srvUpdated(String name) => '$name updated';
+  static const srvConfigDetected = 'Config detected';
+  static const srvEditOneOnly =
+      'An edit takes one server, and this holds more than one.';
+  static const srvEditFromSub =
+      'This server comes from a subscription. The next refresh brings back '
+      'the version your provider sends.';
+
+  /// The tag on a row or a header that hideip.net runs.
+  static const srvBrandTag = 'hideip.net';
+
+  /// The Location row on the detail screen and the picker behind it.
+  static const srvLocation = 'Location';
+  static const srvLocationUnknown = 'Not known yet';
+  static String srvLocationSetByYou(String place) => '$place, set by you';
+  static const srvLocationTitle = 'Where is this server?';
+  static const srvLocationBody =
+      'The country sets the flag and the map pin. The city is optional.';
+  static const srvCountrySearch = 'Search countries';
+  static const srvCityHint = 'City (optional)';
+  static const srvUseDetected = 'Use the detected location';
+  static const srvLocationSaved = 'Location updated';
+
+  /// The name field on the import result.
+  static const srvNameHint = 'Name';
+  static const srvNamedFromPlace =
+      'The name comes from where the address is. Change it above if you like.';
 }

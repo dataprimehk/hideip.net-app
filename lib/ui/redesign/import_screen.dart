@@ -10,11 +10,14 @@ import '../../core/camera_permission.dart';
 import '../../core/deep_link.dart';
 import '../../core/haptics.dart';
 import '../../core/import_payload.dart';
+import '../../core/ip_lookup.dart';
 import '../../core/location.dart';
 import '../../core/ping.dart';
 import '../../core/proxy_profile.dart';
 import '../../core/safe_http.dart';
 import '../../core/share_link_parser.dart';
+import '../../core/srv_naming.dart';
+import '../../core/srv_suggest.dart';
 import '../../core/sub_info.dart';
 import '../../core/subscription.dart';
 import '../../core/wg_import.dart';
@@ -26,6 +29,7 @@ import 'hip_sheet.dart';
 import 'home_banners.dart';
 import 'qr_popup.dart';
 import 'shell.dart';
+import 'srv_edit.dart';
 
 enum _Phase { input, parsing, result }
 
@@ -68,6 +72,13 @@ class ImportHooks {
   /// empty string when the file is not text.
   final Future<String?> Function() pickFile;
 
+  /// The reachability probe on the parsed endpoint, so a test can answer it
+  /// without opening a socket.
+  final Future<PingResult> Function(String host, int port) ping;
+
+  /// Where the parsed endpoint sits, for the suggested name and the flag.
+  final Future<IpLookupData?> Function(String host) geo;
+
   const ImportHooks({
     this.camStatus = CameraPermission.status,
     this.camRequest = CameraPermission.request,
@@ -76,8 +87,13 @@ class ImportHooks {
     this.clipboardHasText = Clipboard.hasStrings,
     this.clipboardText = _clipboardText,
     this.pickFile = pickImportFile,
+    this.ping = _ping,
+    this.geo = IpLookup.geoFor,
   });
 }
+
+Future<PingResult> _ping(String host, int port) =>
+    Ping.measure(host, port, timeout: const Duration(seconds: 3));
 
 Future<String?> _clipboardText() async {
   final data = await Clipboard.getData(Clipboard.kTextPlain);
@@ -116,6 +132,10 @@ class ImportScreen extends StatefulWidget {
 
 class _ImportScreenState extends State<ImportScreen> {
   final _text = TextEditingController();
+
+  /// The name the server is added under: suggested, then the user's to
+  /// change. Only a single server gets the field.
+  final _name = TextEditingController();
   _Phase _phase = _Phase.input;
   bool _tech = false;
   bool _formats = false;
@@ -133,9 +153,15 @@ class _ImportScreenState extends State<ImportScreen> {
   int? _previewPingMs;
   bool _isSubscription = false;
 
+  /// Set when the screen was opened to edit an existing server: saving then
+  /// replaces that one in place instead of adding to the list.
+  SrvEditCtx? _editing;
+
   @override
   void initState() {
     super.initState();
+    final ctx = widget.nav.ctx();
+    if (ctx is SrvEditCtx) _editing = ctx;
     _text.addListener(
       () => setState(() {
         _error = null;
@@ -148,12 +174,16 @@ class _ImportScreenState extends State<ImportScreen> {
     if (widget.initialText != null && widget.initialText!.isNotEmpty) {
       _text.text = widget.initialText!;
     }
+    // An edit opens on the server's own config, whatever else was pending.
+    final editing = _editing;
+    if (editing != null) _text.text = editing.text;
   }
 
   @override
   void dispose() {
     widget.nav.releaseBack(_back);
     _text.dispose();
+    _name.dispose();
     super.dispose();
   }
 
@@ -190,12 +220,27 @@ class _ImportScreenState extends State<ImportScreen> {
   /// The detection line, plus whether the input is a subscription. The
   /// whitelist behind it is shared with the deep-link path, so a link the
   /// site sends and text pasted by hand are judged by one rule.
-  static (String, bool)? _detect(String input) {
+  static (String, bool)? _detect(String input, {bool editing = false}) {
     final payload = classifyImportPayload(input);
     if (payload == null) return null;
     // A pasted WireGuard file is a share link to everything downstream, but
     // calling it a link on screen would not match what the person just pasted.
     if (WgImport.looksLikeConfig(input)) return (S.e3Detected, false);
+    // An edit replaces one server with one server. A body is read (that is
+    // how a rebuilt config comes back) and held to one result later; a URL
+    // to fetch is a whole subscription and never one server, so it is out.
+    if (editing) {
+      return switch (payload.kind) {
+        ImportPayloadKind.subscriptionUrl => null,
+        ImportPayloadKind.subscriptionBlob => (S.srvConfigDetected, true),
+        ImportPayloadKind.shareLink => (
+          S.e2Detected(
+            _protocolNames[payload.scheme] ?? payload.scheme!.toUpperCase(),
+          ),
+          false,
+        ),
+      };
+    }
     return switch (payload.kind) {
       ImportPayloadKind.shareLink => (
         S.e2Detected(
@@ -212,7 +257,7 @@ class _ImportScreenState extends State<ImportScreen> {
 
   Future<void> _runImport() async {
     final input = _text.text.trim();
-    final det = _detect(input);
+    final det = _detect(input, editing: _editing != null);
     if (det == null) return;
     final (_, isSub) = det;
 
@@ -264,6 +309,13 @@ class _ImportScreenState extends State<ImportScreen> {
         if (p == null) throw S.eNotALink;
         profiles = [p];
       }
+      if (_editing != null && profiles.length != 1) throw S.srvEditOneOnly;
+      // A single link or file is kept as the user pasted it, so a later edit
+      // opens on the same text. A provider's body is not: every server in it
+      // would carry the whole body.
+      if (profiles.length == 1 && (!isSub || _editing != null)) {
+        profiles = [profiles.first.copyWith(source: input)];
+      }
       await _advance(1);
 
       // Step 2: protocol identified; rewrite the step label with the truth.
@@ -274,22 +326,32 @@ class _ImportScreenState extends State<ImportScreen> {
       await _advance(2);
 
       // Step 3: reachability probe (informative; failure does not block).
-      final ping = await Ping.measure(
+      final ping = await widget.hooks.ping(
         profiles.first.server,
         profiles.first.port,
-        timeout: const Duration(seconds: 3),
       );
       _previewPingMs = ping is PingOk ? ping.ms : null;
       _steps[2] = ping is PingOk ? S.e5Verified : S.e5NotReachable;
       await _advance(3);
 
-      // Step 4: clean name.
-      _steps[3] = S.e5NamedIt(first.city);
+      // Step 4: the name. A single server whose name places nothing (a bare
+      // address, a file without a comment) is named from where the address
+      // is, apart from the servers already on the list. Token-named servers
+      // already carry their place and cost no lookup.
+      if (profiles.length == 1 && !first.placed) {
+        final geo = await widget.hooks.geo(profiles.first.server);
+        profiles = [
+          srvNameFromPlace(profiles.first, geo: geo, taken: _takenLabels()),
+        ];
+      }
+      final named = Location.derive(profiles.first, 0);
+      _steps[3] = S.e5NamedIt(named.label);
       await _advance(4);
 
       setState(() {
         _pending = profiles;
-        _preview = first;
+        _preview = named;
+        _name.text = _edited?.customName ?? named.label;
         _phase = _Phase.result;
         _syncBackClaim();
       });
@@ -312,9 +374,34 @@ class _ImportScreenState extends State<ImportScreen> {
     if (mounted) setState(() => _stepDone = n);
   }
 
+  /// The labels a suggested name has to stay clear of: every server on the
+  /// list, less the one being edited.
+  Iterable<String> _takenLabels() {
+    final skip = _editIndex;
+    return [
+      for (final l in widget.state.locations)
+        if (l.index != skip) l.label,
+    ];
+  }
+
+  /// The profiles to commit, with the name field applied: what the user
+  /// typed becomes the custom name, the suggestion stays the parsed one.
+  /// Left as suggested (or emptied), nothing of the user's is stored.
+  List<ProxyProfile> get _named {
+    if (_pending.length != 1) return _pending;
+    final typed = _name.text.trim();
+    final label = _preview!.label;
+    return [
+      _pending.first.copyWith(
+        customName: typed.isEmpty || typed == label ? null : typed,
+      ),
+    ];
+  }
+
   Future<void> _commit({required bool connect}) async {
-    await widget.state.addProfiles(_pending, select: true);
-    final city = _preview!.city;
+    final profiles = _named;
+    await widget.state.addProfiles(profiles, select: true);
+    final city = profiles.first.customName ?? _preview!.city;
     var go = connect;
     if (go && widget.state.needsVpnPrimer) {
       // B13 reads the same here as on Home: the one system permission is
@@ -332,6 +419,41 @@ class _ImportScreenState extends State<ImportScreen> {
       await Future.delayed(const Duration(milliseconds: 250));
       await widget.state.connect();
     }
+  }
+
+  /// The profile this edit started from, or null when the list moved on.
+  ProxyProfile? get _edited {
+    final editing = _editing;
+    if (editing == null) return null;
+    final profiles = widget.state.profiles;
+    final at = _editIndex;
+    return at == null || at >= profiles.length ? null : profiles[at];
+  }
+
+  /// Where the edited server sits now: found by identity first, since a
+  /// refresh may have moved it, then by the position it had.
+  int? get _editIndex {
+    final editing = _editing;
+    if (editing == null) return null;
+    for (final l in widget.state.locations) {
+      if (l.id == editing.id) return l.index;
+    }
+    return editing.index;
+  }
+
+  /// Puts the parsed server where the edited one sits. Its custom name, its
+  /// subscription and the selection stay; see [AppState.replaceProfile].
+  Future<void> _commitEdit() async {
+    final editing = _editing!;
+    final index = _editIndex ?? editing.index;
+    final next = _named.first;
+    await widget.state.replaceProfile(index, next);
+    final profiles = widget.state.profiles;
+    final saved = index < profiles.length ? profiles[index] : next;
+    widget.state.showToast(
+      S.srvUpdated(saved.customName ?? Location.derive(saved, index).city),
+    );
+    widget.nav.back();
   }
 
   // --- quick actions -----------------------------------------------------------
@@ -399,6 +521,12 @@ class _ImportScreenState extends State<ImportScreen> {
       });
       return;
     }
+    // An edit was opened from a server's own screen or row; back returns
+    // there rather than to where the importer is usually launched from.
+    if (_editing != null) {
+      widget.nav.back();
+      return;
+    }
     widget.nav.go(widget.exitTo);
   }
 
@@ -410,7 +538,10 @@ class _ImportScreenState extends State<ImportScreen> {
           bottom: false,
           child: Column(
             children: [
-              HipNavHead(title: S.tAddConn, onBack: _back),
+              HipNavHead(
+                title: _editing == null ? S.tAddConn : S.srvEditTitle,
+                onBack: _back,
+              ),
               Expanded(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -431,9 +562,15 @@ class _ImportScreenState extends State<ImportScreen> {
                 child: switch (_phase) {
                   _Phase.input => HipCta(
                     S.eImport,
-                    onTap: _detect(_text.text) == null ? null : _runImport,
+                    onTap: _detect(_text.text, editing: _editing != null) == null
+                        ? null
+                        : _runImport,
                   ),
                   _Phase.parsing => const SizedBox(),
+                  _Phase.result when _editing != null => HipCta(
+                    S.srvSaveChanges,
+                    onTap: _commitEdit,
+                  ),
                   _Phase.result => Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -472,7 +609,7 @@ class _ImportScreenState extends State<ImportScreen> {
   }
 
   Widget _buildInput() {
-    final det = _detect(_text.text);
+    final det = _detect(_text.text, editing: _editing != null);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -663,10 +800,16 @@ class _ImportScreenState extends State<ImportScreen> {
     // A WireGuard file carries a name only in the comment at the top; without
     // one the importer falls back to the endpoint.
     final namedByComment = isWg && loc.rawName != 'WireGuard ${loc.host}';
+    // The name was suggested from the looked-up place rather than read.
+    final suggestion = Location.placeSuggestion(loc.profile);
+    final namedFromPlace =
+        suggestion != null && SrvNaming.isSuggested(loc.rawName, suggestion);
+    final single = _pending.length == 1;
     final o = loc.profile.outbound;
     final tls = o['tls'] is Map ? o['tls'] as Map : const {};
     final ms = _previewPingMs;
     final subtitle = [
+      if (single && loc.placed) loc.placeLabel,
       if (loc.provider != null)
         S.e6From(loc.provider!)
       else if (isWg)
@@ -677,7 +820,11 @@ class _ImportScreenState extends State<ImportScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _DetectBox(
-          text: _isSubscription ? S.e4Added : S.e6Ready,
+          text: _editing != null
+              ? S.e6Ready
+              : _isSubscription
+                  ? S.e4Added
+                  : S.e6Ready,
           tone: _Tone.ok,
         ),
         const SizedBox(height: 12),
@@ -693,15 +840,48 @@ class _ImportScreenState extends State<ImportScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          '${loc.city}, ${loc.country}',
-                          style: Hip.sans(
-                            650,
-                            15.5,
-                            color: Hip.ink,
-                            letterSpacing: -.15,
+                        if (single)
+                          TextField(
+                            controller: _name,
+                            autocorrect: false,
+                            textCapitalization: TextCapitalization.words,
+                            textInputAction: TextInputAction.done,
+                            style: Hip.sans(
+                              650,
+                              15.5,
+                              color: Hip.ink,
+                              letterSpacing: -.15,
+                            ),
+                            decoration: InputDecoration(
+                              isDense: true,
+                              hintText: S.srvNameHint,
+                              hintStyle: Hip.sans(500, 15.5, color: Hip.muted2),
+                              contentPadding:
+                                  const EdgeInsets.only(top: 2, bottom: 4),
+                              border: UnderlineInputBorder(
+                                borderSide:
+                                    BorderSide(color: Hip.line, width: 1.5),
+                              ),
+                              enabledBorder: UnderlineInputBorder(
+                                borderSide:
+                                    BorderSide(color: Hip.line, width: 1.5),
+                              ),
+                              focusedBorder: UnderlineInputBorder(
+                                borderSide:
+                                    BorderSide(color: Hip.blue, width: 1.5),
+                              ),
+                            ),
+                          )
+                        else
+                          Text(
+                            '${loc.city}, ${loc.country}',
+                            style: Hip.sans(
+                              650,
+                              15.5,
+                              color: Hip.ink,
+                              letterSpacing: -.15,
+                            ),
                           ),
-                        ),
                         if (subtitle.isNotEmpty) ...[
                           const SizedBox(height: 2),
                           Text(
@@ -768,8 +948,12 @@ class _ImportScreenState extends State<ImportScreen> {
             ],
           ),
         ),
-        if (_isSubscription)
+        if (_editing != null && _edited?.subUrl != null)
+          const HipSubnote(S.srvEditFromSub)
+        else if (_isSubscription && _editing == null)
           HipSubnote(S.e4SubNote(_pending.length))
+        else if (namedFromPlace)
+          const HipSubnote(S.srvNamedFromPlace)
         else if (renamed)
           HipSubnote(S.e6Renamed(loc.rawName, loc.city))
         else if (namedByComment)

@@ -1,7 +1,9 @@
+import 'package:flutter/gestures.dart' show DragStartBehavior;
 import 'package:flutter/material.dart';
 
 import '../../core/haptics.dart';
 import '../brand.dart';
+import '../strings.dart';
 
 /// Design tokens and shared widgets for the 2.0 redesign.
 ///
@@ -825,6 +827,270 @@ class HipToast extends StatelessWidget {
         const SizedBox(width: 8),
         Text(message, style: Hip.sans(600, 13.5, color: Colors.white)),
       ]),
+    );
+  }
+}
+
+// --- 1.1.1, servers ----------------------------------------------------------
+
+/// A list row that slides left to stop on two buttons, Edit and Delete.
+///
+/// Sliding is all it does: a swipe that runs the whole way settles on the
+/// same two buttons, never past them, so nothing is removed without the
+/// Delete tap and the confirmation behind it. One row is open at a time; a
+/// tap on the open row or anywhere else, and any scroll inside a
+/// [HipSwipeArea], closes it. [enabled] false renders the child on its own,
+/// which is how managed and locked rows stay still.
+class HipSwipeRow extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+  final bool enabled;
+  const HipSwipeRow({
+    super.key,
+    required this.child,
+    required this.onEdit,
+    required this.onDelete,
+    this.enabled = true,
+  });
+
+  /// Width of one button, and so half of what the row slides by.
+  static const double buttonWidth = 72;
+  static const double actionsWidth = buttonWidth * 2;
+
+  static _HipSwipeRowState? _openRow;
+
+  /// Whether any row is open right now.
+  static bool get anyOpen => _openRow != null;
+
+  /// Closes the open row, if there is one.
+  static void closeOpen() => _openRow?.close();
+
+  /// Closes the open row unless [position] (global) lands on it: a tap on
+  /// the buttons must reach them, and a tap on the open row's own content is
+  /// the row's to handle.
+  static void closeOpenUnlessAt(Offset position) {
+    final row = _openRow;
+    if (row == null) return;
+    final box = row.context.findRenderObject();
+    if (box is RenderBox && box.hasSize) {
+      final rect = box.localToGlobal(Offset.zero) & box.size;
+      if (rect.contains(position)) return;
+    }
+    row.close();
+  }
+
+  @override
+  State<HipSwipeRow> createState() => _HipSwipeRowState();
+}
+
+class _HipSwipeRowState extends State<HipSwipeRow>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  double _dragFrom = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: Hip.dur(const Duration(milliseconds: 200)),
+    );
+  }
+
+  /// How far the content sits to the left, 0 to [HipSwipeRow.actionsWidth].
+  double get _offset => _ctrl.value * HipSwipeRow.actionsWidth;
+  bool get _isOpen => HipSwipeRow._openRow == this;
+
+  @override
+  void dispose() {
+    if (HipSwipeRow._openRow == this) HipSwipeRow._openRow = null;
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void open() {
+    final other = HipSwipeRow._openRow;
+    if (other != null && other != this) other.close();
+    final wasOpen = _isOpen;
+    HipSwipeRow._openRow = this;
+    _ctrl.animateTo(1, curve: Curves.easeOutCubic);
+    // The tick lands as the buttons snap into place, not on every drag.
+    if (!wasOpen) Haptics.selection();
+    if (mounted) setState(() {});
+  }
+
+  void close() {
+    if (HipSwipeRow._openRow == this) HipSwipeRow._openRow = null;
+    if (!mounted) return;
+    _ctrl.animateBack(0, curve: Curves.easeOutCubic);
+    setState(() {});
+  }
+
+  void _dragStart(DragStartDetails d) {
+    _ctrl.stop();
+    _dragFrom = _offset;
+  }
+
+  void _dragUpdate(DragUpdateDetails d) {
+    // Leftwards opens. Past the buttons the row stays put: there is nothing
+    // further along to reach.
+    _dragFrom = (_dragFrom - d.delta.dx).clamp(0, HipSwipeRow.actionsWidth);
+    _ctrl.value = _dragFrom / HipSwipeRow.actionsWidth;
+  }
+
+  void _dragEnd(DragEndDetails d) {
+    final v = d.primaryVelocity ?? 0;
+    if (v < -300) {
+      open();
+    } else if (v > 300) {
+      close();
+    } else if (_offset > HipSwipeRow.actionsWidth / 2) {
+      open();
+    } else {
+      close();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.enabled) return widget.child;
+    final corners = HipRowSlot.cornersOf(context);
+    return ClipRRect(
+      borderRadius: corners,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        // Counted from where the finger went down, so the first few points
+        // of a swipe move the row too rather than being spent on deciding.
+        dragStartBehavior: DragStartBehavior.down,
+        onHorizontalDragStart: _dragStart,
+        onHorizontalDragUpdate: _dragUpdate,
+        onHorizontalDragEnd: _dragEnd,
+        // While open, a tap on the content closes the row instead of
+        // choosing the server; the child is shut off from pointers for it.
+        onTap: _isOpen ? close : null,
+        child: Stack(children: [
+          Positioned.fill(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                _SwipeButton(
+                  icon: Icons.edit_outlined,
+                  label: S.srvEdit,
+                  fg: Hip.blueDeep,
+                  bg: Hip.blueSoft,
+                  onTap: () {
+                    close();
+                    widget.onEdit();
+                  },
+                ),
+                _SwipeButton(
+                  icon: Icons.delete_outline,
+                  label: S.srvDelete,
+                  fg: Hip.danger,
+                  bg: Hip.danger.withValues(alpha: Hip.dm ? .14 : .08),
+                  onTap: () {
+                    close();
+                    widget.onDelete();
+                  },
+                ),
+              ]),
+            ),
+          ),
+          AnimatedBuilder(
+            animation: _ctrl,
+            builder: (context, child) => Transform.translate(
+              offset: Offset(-_offset, 0),
+              child: child,
+            ),
+            // The content paints its own ground so the buttons only show in
+            // the gap it leaves, not through it.
+            child: ColoredBox(
+              color: Hip.card,
+              child: IgnorePointer(ignoring: _isOpen, child: widget.child),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+class _SwipeButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color fg;
+  final Color bg;
+  final VoidCallback onTap;
+  const _SwipeButton({
+    required this.icon,
+    required this.label,
+    required this.fg,
+    required this.bg,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: label,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          width: HipSwipeRow.buttonWidth,
+          height: double.infinity,
+          color: bg,
+          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Icon(icon, size: 18, color: fg),
+            const SizedBox(height: 3),
+            Text(label, style: Hip.sans(600, 11.5, color: fg)),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+/// The small `hideip.net` tag on a server the fleet runs, for the lists and
+/// the header where the user's own servers sit beside it. Accent tone, no
+/// icon, smaller than a [HipBadge]: it tells the two apart and nothing more.
+class HipBrandTag extends StatelessWidget {
+  const HipBrandTag({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Hip.blueSoft,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(S.srvBrandTag,
+          style: Hip.sans(600, 10.5, color: Hip.blueDeep, letterSpacing: .1)),
+    );
+  }
+}
+
+/// The region around a list of [HipSwipeRow]s: a pointer landing off the
+/// open row, or a scroll starting anywhere inside, closes it.
+class HipSwipeArea extends StatelessWidget {
+  final Widget child;
+  const HipSwipeArea({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return NotificationListener<ScrollStartNotification>(
+      onNotification: (_) {
+        HipSwipeRow.closeOpen();
+        return false;
+      },
+      child: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (e) => HipSwipeRow.closeOpenUnlessAt(e.position),
+        child: child,
+      ),
     );
   }
 }

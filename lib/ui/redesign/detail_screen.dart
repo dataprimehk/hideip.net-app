@@ -14,6 +14,8 @@ import '../strings.dart';
 import 'hip.dart';
 import 'hip_sheet.dart';
 import 'shell.dart';
+import 'srv_edit.dart';
+import 'srv_location_picker.dart';
 
 /// The label to show for [l]: the name the user gave the server, or the one
 /// it was imported under.
@@ -63,10 +65,61 @@ class _DetailScreenState extends State<DetailScreen> {
 
   /// This screen was opened with a snapshot of the location. A rename or a
   /// subscription refresh rewrites the profile behind it, so the current one
-  /// is looked up by id on every build and the snapshot is only the fallback.
-  Location get _loc => widget.state.locations
-      .firstWhere((l) => l.id == widget.location.id,
-          orElse: () => widget.location);
+  /// is looked up by id on every build. An edit can change the endpoint and
+  /// with it the id, but it keeps the position, so that is the next answer;
+  /// the snapshot is only the last fallback.
+  Location get _loc {
+    final locs = widget.state.locations;
+    for (final l in locs) {
+      if (l.id == widget.location.id) return l;
+    }
+    final at = widget.location.index;
+    if (at >= 0 && at < locs.length && !locs[at].premium) return locs[at];
+    return widget.location;
+  }
+
+  /// Where this server is, in words, for the Location row: the user's own
+  /// choice says so, the lookup's answer stands on its own, and nothing
+  /// placed reads as not known.
+  String _placeLine(Location loc) {
+    if (!loc.placed) return S.srvLocationUnknown;
+    return loc.profile.ccOverride != null
+        ? S.srvLocationSetByYou(loc.placeLabel)
+        : loc.placeLabel;
+  }
+
+  /// Asks where the server is and stores the answer on the profile.
+  Future<void> _pickLocation() async {
+    final loc = _loc;
+    final p = loc.profile;
+    final place = await showSrvLocationPicker(
+      context,
+      cc: p.ccOverride ?? (loc.placed ? loc.cc : null),
+      city: p.cityOverride ?? loc.placeCity,
+      overridden: p.ccOverride != null,
+    );
+    if (place == null || !mounted) return;
+    final state = widget.state;
+    final match = state.locations.where((l) => l.id == loc.id);
+    final index = match.isEmpty ? loc.index : match.first.index;
+    await state.setServerLocation(index, cc: place.cc, city: place.city);
+    state.showToast(S.srvLocationSaved);
+  }
+
+  /// Opens the importer on this server's config; saving there puts the
+  /// result back in this position.
+  void _edit() {
+    final loc = _loc;
+    widget.nav.go(
+      HipScreen.import,
+      SrvEditCtx(
+        index: loc.index,
+        id: loc.id,
+        label: serverLabel(loc),
+        text: srvEditText(loc.profile),
+      ),
+    );
+  }
 
   Future<void> _test() async {
     setState(() => _testing = true);
@@ -225,6 +278,9 @@ class _DetailScreenState extends State<DetailScreen> {
                   onRename: _rename,
                   onRefresh:
                       subUrl == null ? null : () => _refreshSubscription(subUrl),
+                  onEdit: _edit,
+                  place: _placeLine(loc),
+                  onLocation: _pickLocation,
                 ),
               if (advanced) ...[
                 const HipSectionLabel(S.gRawConfig),
@@ -323,6 +379,14 @@ class ManageServerSection extends StatefulWidget {
   final void Function(String name) onRename;
   final VoidCallback? onRefresh;
 
+  /// Opens the config for editing. Null hides the row.
+  final VoidCallback? onEdit;
+
+  /// Where the server is, in words, and the picker behind the row. The row
+  /// is shown only with [onLocation].
+  final String? place;
+  final VoidCallback? onLocation;
+
   const ManageServerSection({
     super.key,
     required this.name,
@@ -333,6 +397,9 @@ class ManageServerSection extends StatefulWidget {
     this.lastUpdated,
     required this.onRename,
     this.onRefresh,
+    this.onEdit,
+    this.place,
+    this.onLocation,
   });
 
   @override
@@ -419,6 +486,20 @@ class _ManageServerSectionState extends State<ManageServerSection> {
             trailing: Icon(Icons.edit_outlined, size: 16, color: Hip.muted2),
             onTap: _start,
           ),
+        if (widget.onLocation != null)
+          HipListRow(
+            title: S.srvLocation,
+            subtitle: widget.place ?? S.srvLocationUnknown,
+            trailing: Icon(Icons.edit_outlined, size: 16, color: Hip.muted2),
+            onTap: widget.onLocation,
+          ),
+        if (widget.onEdit != null)
+          HipListRow(
+            title: S.srvEditConfig,
+            subtitle: S.srvEditConfigSub,
+            trailing: Icon(Icons.chevron_right, size: 18, color: Hip.muted2),
+            onTap: widget.onEdit,
+          ),
         if (widget.fromSubscription)
           HipListRow(
             title: S.gSubscription,
@@ -461,6 +542,11 @@ class _HeaderCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final proto = protoShort(location) ?? location.profile.protocol;
+    // A name suggested from the place already ends in the country; saying
+    // it twice would read as a stutter.
+    final title = name.endsWith(', ${location.country}')
+        ? name
+        : '$name, ${location.country}';
     final line = advanced
         ? S.tunnelChain(location.protoLabel, location.host)
         : location.premium
@@ -474,10 +560,18 @@ class _HeaderCard extends StatelessWidget {
         Expanded(
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('$name, ${location.country}',
-                overflow: TextOverflow.ellipsis,
-                style:
-                    Hip.sans(650, 15.5, color: Hip.ink, letterSpacing: -.15)),
+            Row(children: [
+              Flexible(
+                child: Text(title,
+                    overflow: TextOverflow.ellipsis,
+                    style: Hip.sans(650, 15.5,
+                        color: Hip.ink, letterSpacing: -.15)),
+              ),
+              if (location.premium) ...[
+                const SizedBox(width: 7),
+                const HipBrandTag(),
+              ],
+            ]),
             const SizedBox(height: 2),
             Text(line,
                 overflow: TextOverflow.ellipsis,

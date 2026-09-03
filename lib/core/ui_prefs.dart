@@ -28,6 +28,7 @@ class UiPrefs {
   static const _kRecents = 'ui_recents_v1';
   static const _kWonClaimed = 'ui_won_claimed_v1';
   static const _kVotePrimer = 'ui_vote_primer_v1';
+  static const _kComingNext = 'ui_comingnext_v1';
 
   /// How many recently used locations are remembered. Home shows at most a
   /// handful of them; the rest is the tail that lets one dropped server fall
@@ -91,6 +92,10 @@ class UiPrefs {
   /// offered. Once per install, whatever the answer was.
   final bool votePrimerSeen;
 
+  /// Whether the Coming next section on Locations is unfolded. Closed by
+  /// default; it stays the way the user last left it.
+  final bool comingNextOpen;
+
   const UiPrefs({
     this.advanced = false,
     this.onboarded = false,
@@ -110,6 +115,7 @@ class UiPrefs {
     this.recents = const [],
     this.wonClaimed = const {},
     this.votePrimerSeen = false,
+    this.comingNextOpen = false,
   });
 
   /// [recents] with [id] moved to the front, deduplicated and capped. The
@@ -142,6 +148,7 @@ class UiPrefs {
     List<String>? recents,
     Set<String>? wonClaimed,
     bool? votePrimerSeen,
+    bool? comingNextOpen,
   }) =>
       UiPrefs(
         advanced: advanced ?? this.advanced,
@@ -162,6 +169,7 @@ class UiPrefs {
         recents: recents ?? this.recents,
         wonClaimed: wonClaimed ?? this.wonClaimed,
         votePrimerSeen: votePrimerSeen ?? this.votePrimerSeen,
+        comingNextOpen: comingNextOpen ?? this.comingNextOpen,
       );
 
   static Future<UiPrefs> load() async {
@@ -185,6 +193,7 @@ class UiPrefs {
       recents: p.getStringList(_kRecents) ?? const [],
       wonClaimed: (p.getStringList(_kWonClaimed) ?? const []).toSet(),
       votePrimerSeen: p.getBool(_kVotePrimer) ?? false,
+      comingNextOpen: p.getBool(_kComingNext) ?? false,
     );
   }
 
@@ -221,5 +230,6 @@ class UiPrefs {
     await p.setStringList(_kRecents, recents);
     await p.setStringList(_kWonClaimed, wonClaimed.toList());
     await p.setBool(_kVotePrimer, votePrimerSeen);
+    await p.setBool(_kComingNext, comingNextOpen);
   }
 }

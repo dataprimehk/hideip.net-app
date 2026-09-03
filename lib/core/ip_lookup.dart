@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io' show InternetAddress;
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 import 'safe_http.dart';
 
 /// A located public address: coordinates plus whatever text the database knew.
@@ -41,6 +43,10 @@ class IpLookupData {
   final IpGeo? geo;
   final String? cc;
   final String? country;
+
+  /// The city by name, or null when the database had none. Kept here as
+  /// well as on [geo] because a range can be named without being placed.
+  final String? city;
   final String? isp;
 
   const IpLookupData({
@@ -48,6 +54,7 @@ class IpLookupData {
     this.geo,
     this.cc,
     this.country,
+    this.city,
     this.isp,
   });
 }
@@ -71,17 +78,32 @@ class IpLookup {
   static IpLookupData? _last;
   static DateTime? _lastAt;
 
+  /// Test hook: answers [countryFor] (and the fuller lookup behind it) for
+  /// a server address without touching the network. Null uses the endpoint.
+  @visibleForTesting
+  static Future<IpLookupData?> Function(String host)? lookupOverride;
+
   static Future<String?> current() async {
     if (_shotIp.isNotEmpty) return _shotIp;
     return (await _fetch())?.ip;
   }
 
-  /// The country an imported server sits in, for its flag and its map pin,
-  /// or null when nobody knows. This used to ask a third party, which learnt
-  /// every server a user imports; now it asks hideip.net's own endpoint,
-  /// which answers off local databases and logs nothing. The hostname is
-  /// resolved on the phone first, so only an address ever leaves it.
-  static Future<String?> countryFor(String host) async {
+  /// The country an imported server sits in, or null when nobody knows.
+  /// The narrow answer over [geoFor], kept for the callers that only want
+  /// the flag.
+  static Future<String?> countryFor(String host) async =>
+      (await geoFor(host))?.cc;
+
+  /// Where an imported server sits, for its flag, its name and its map pin:
+  /// the country code, the country and the city, whichever the databases
+  /// knew. Null when the address could not be looked up at all. This used to
+  /// ask a third party, which learnt every server a user imports; now it
+  /// asks hideip.net's own endpoint, which answers off local databases and
+  /// logs nothing. The hostname is resolved on the phone first, so only an
+  /// address ever leaves it.
+  static Future<IpLookupData?> geoFor(String host) async {
+    final override = lookupOverride;
+    if (override != null) return override(host);
     if (_shotIp.isNotEmpty) return null;
     final base = Uri.tryParse(_endpoint);
     if (base == null || !isAllowedIpEndpoint(base)) return null;
@@ -98,7 +120,7 @@ class IpLookup {
         timeout: _timeout,
       );
       if (response.statusCode != 200) return null;
-      return parseIpLookupBody(response.body)?.cc;
+      return parseIpLookupBody(response.body);
     } catch (_) {
       return null;
     }
@@ -181,6 +203,7 @@ IpLookupData? parseIpLookupBody(String body) {
     if (InternetAddress.tryParse(ip) == null) return null;
     final cc = _countryCode(value['cc']);
     final country = _text(value['country']);
+    final city = _text(value['city']);
     final isp = _text(value['isp']);
     final lat = value['latitude'];
     final lon = value['longitude'];
@@ -194,13 +217,14 @@ IpLookupData? parseIpLookupBody(String body) {
       geo = IpGeo(
         lat: lat.toDouble(),
         lon: lon.toDouble(),
-        city: _text(value['city']) ?? 'you',
+        city: city ?? 'you',
         cc: cc,
         country: country,
         isp: isp,
       );
     }
-    return IpLookupData(ip: ip, geo: geo, cc: cc, country: country, isp: isp);
+    return IpLookupData(
+        ip: ip, geo: geo, cc: cc, country: country, city: city, isp: isp);
   } catch (_) {
     return null;
   }
