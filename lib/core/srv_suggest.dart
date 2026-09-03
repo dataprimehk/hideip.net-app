@@ -21,8 +21,9 @@ ProxyProfile srvNameFromPlace(
   final cc = geo?.cc;
   if (cc == null || !Location.validCc(cc)) return p;
   final placed = p.copyWith(cc: cc, city: geo!.city);
-  if (!SrvNaming.isFallback(p.name, host: p.server, port: p.port))
+  if (!SrvNaming.isFallback(p.name, host: p.server, port: p.port)) {
     return placed;
+  }
   final base = SrvNaming.suggest(
     city: geo.city,
     country: geo.country ?? Location.countryName(cc),
