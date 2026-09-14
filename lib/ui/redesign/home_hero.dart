@@ -17,6 +17,7 @@ import 'ascii/hero_glow.dart';
 import 'detail_screen.dart' show removalFallsBackToAuto, rowPlace, serverLabel;
 import 'hero_compact.dart';
 import 'hero_ip_sheet.dart';
+import 'hero_scroll_edge.dart';
 import 'hero_search.dart';
 import 'hip.dart';
 import 'hip_sheet.dart';
@@ -51,6 +52,7 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
   final _ctaKey = GlobalKey();
   final _search = TextEditingController();
   final _searchFocus = FocusNode();
+  final _listScroll = ScrollController();
   String _query = '';
 
   /// While the search field has focus or holds a query, the hero folds down
@@ -92,6 +94,7 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
       ..removeListener(_onSearchFocus)
       ..dispose();
     _search.dispose();
+    _listScroll.dispose();
     super.dispose();
   }
 
@@ -480,8 +483,13 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
                                         alignment: Alignment.bottomCenter,
                                         clipBehavior: Clip.none,
                                         children: [
+                                          // 108: the card is 74 tall, so 34
+                                          // of field shows above it. Enough
+                                          // for the glyphs and the glow to
+                                          // read as a field, not a strip,
+                                          // and one more list row fits below.
                                           const SizedBox(
-                                              height: 132,
+                                              height: 108,
                                               width: double.infinity),
                                           Positioned(
                                             left: -10,
@@ -555,7 +563,7 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
                                         onKeep: () => nav.openPaywall(
                                             from: HipScreen.home),
                                       ),
-                                    const SizedBox(height: 16),
+                                    const SizedBox(height: 12),
                                     _HomeSeg(
                                         mapMode: mapMode,
                                         onChanged: _setMapMode),
@@ -577,7 +585,7 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
                   AnimatedContainer(
                     duration: Hip.dur(const Duration(milliseconds: 650)),
                     curve: const Cubic(.32, .72, 0, 1),
-                    height: mapMode ? 0 : 20,
+                    height: mapMode ? 0 : 16,
                   ),
                 ]),
                 // The map keeps living (camera and all) while collapsed; only
@@ -617,7 +625,10 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
                 duration: Hip.dur(const Duration(milliseconds: 300)),
                 opacity: mapMode ? 0 : 1,
                 child: HipSwipeArea(
-                  child: SingleChildScrollView(
+                  child: HeroScrollEdge(
+                    controller: _listScroll,
+                    child: SingleChildScrollView(
+                  controller: _listScroll,
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
                   // The results move up a little while the hero is folded:
                   // with a keyboard up every row of height counts.
@@ -634,6 +645,7 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
                     ),
                   ),
                 ),
+                  ),
                 ),
               ),
             ),
@@ -815,7 +827,7 @@ class _HomeSeg extends StatelessWidget {
           behavior: HitTestBehavior.opaque,
           child: Container(
             width: 118,
-            height: 44,
+            height: 40,
             alignment: Alignment.center,
             child: AnimatedDefaultTextStyle(
               duration: Hip.dur(const Duration(milliseconds: 300)),
@@ -887,7 +899,7 @@ class _HomeSearch extends StatelessWidget {
   Widget build(BuildContext context) {
     final white = Colors.white;
     return Container(
-      margin: const EdgeInsets.only(top: 14),
+      margin: const EdgeInsets.only(top: 10),
       padding: const EdgeInsets.only(left: 16),
       height: 46,
       decoration: BoxDecoration(
