@@ -12,6 +12,7 @@ import '../strings.dart';
 import 'detail_screen.dart';
 import 'hip.dart';
 import 'hip_sheet.dart';
+import 'hero_scroll_edge.dart';
 import 'locked_row.dart';
 import 'shell.dart';
 import 'srv_edit.dart';
@@ -489,6 +490,7 @@ class LocationsBody extends StatelessWidget {
         ),
         Expanded(
           child: HipSwipeArea(
+            child: HeroScrollEdge(
             child: ListView(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               children: [
@@ -542,6 +544,7 @@ class LocationsBody extends StatelessWidget {
                 ],
                 ?footer,
               ],
+            ),
             ),
           ),
         ),

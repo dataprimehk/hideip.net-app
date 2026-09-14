@@ -12,7 +12,6 @@ void main() {
           body: SizedBox(
             height: 300,
             child: HeroScrollEdge(
-              controller: c,
               child: ListView.builder(
                 controller: c,
                 itemCount: rows,
@@ -66,7 +65,6 @@ void main() {
         body: SizedBox(
           height: 300,
           child: HeroScrollEdge(
-            controller: c,
             child: ListView.builder(
               controller: c,
               itemCount: 20,

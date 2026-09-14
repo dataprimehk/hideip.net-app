@@ -153,6 +153,34 @@ void main() {
     await _dropKeyboard(tester);
   });
 
+  testWidgets('picking a row from Recent and fastest does not move it',
+      (tester) async {
+    _usePhone(tester);
+    final state = await _threeServers();
+    await tester.pumpWidget(_host(state));
+    await tester.pump();
+
+    List<String> titles() {
+      final rows = find.byType(HipListRow).evaluate().map((e) => e.widget);
+      return [
+        for (final r in rows.whereType<HipListRow>())
+          if (r.title != S.tAuto && r.title != S.homeAllLocations) r.title,
+      ];
+    }
+
+    final before = titles();
+    expect(before.length, 3);
+    // The last of the three: a pick pushes it to the front of the recents,
+    // which used to lift it to the top of the list right under the finger.
+    await tester.ensureVisible(find.text(before.last));
+    await tester.pump();
+    await tester.tap(find.text(before.last));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(titles(), before);
+    expect(state.prefs.recents.first, isNotEmpty);
+  });
+
   testWidgets('the fold animates and nothing overflows on the way',
       (tester) async {
     Hip.reducedMotion = false;

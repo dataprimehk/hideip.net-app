@@ -52,7 +52,13 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
   final _ctaKey = GlobalKey();
   final _search = TextEditingController();
   final _searchFocus = FocusNode();
-  final _listScroll = ScrollController();
+
+  /// The order of the Recent and fastest rows as last laid out, by id. A
+  /// pick from that list pushes the server to the front of the recents, and
+  /// a ping refresh reshuffles the fastest; neither may move rows under the
+  /// user's finger. The order is kept until the set of rows changes (a
+  /// server added or removed) or the app comes back to the foreground.
+  List<String>? _rowOrder;
   String _query = '';
 
   /// While the search field has focus or holds a query, the hero folds down
@@ -94,7 +100,6 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
       ..removeListener(_onSearchFocus)
       ..dispose();
     _search.dispose();
-    _listScroll.dispose();
     super.dispose();
   }
 
@@ -127,7 +132,11 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _readClipboard();
+    if (state == AppLifecycleState.resumed) {
+      _readClipboard();
+      // A fresh visit gets the fresh order: recents first, then fastest.
+      _rowOrder = null;
+    }
   }
 
   /// The keyboard can go down without the field losing focus (back gesture
@@ -626,9 +635,7 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
                 opacity: mapMode ? 0 : 1,
                 child: HipSwipeArea(
                   child: HeroScrollEdge(
-                    controller: _listScroll,
                     child: SingleChildScrollView(
-                  controller: _listScroll,
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
                   // The results move up a little while the hero is folded:
                   // with a keyboard up every row of height counts.
@@ -642,6 +649,8 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
                       on: on,
                       query: searching ? _query.trim() : null,
                       onResultTap: searching ? _endSearch : null,
+                      rowOrder: _rowOrder,
+                      onRowOrder: (ids) => _rowOrder = ids,
                     ),
                   ),
                 ),
@@ -983,12 +992,19 @@ class _HomeList extends StatelessWidget {
   /// search. Null outside a search.
   final VoidCallback? onResultTap;
 
+  /// The row order the screen last showed, and where a new one is reported.
+  /// See `_rowOrder` on the hero.
+  final List<String>? rowOrder;
+  final ValueChanged<List<String>> onRowOrder;
+
   const _HomeList({
     required this.state,
     required this.nav,
     required this.on,
     this.query,
     this.onResultTap,
+    this.rowOrder,
+    required this.onRowOrder,
   });
 
   int? _ms(Location l) {
@@ -1161,10 +1177,23 @@ class _HomeList extends StatelessWidget {
     final recent = <Location>[
       for (final id in state.prefs.recents) ?byId[id],
     ].take(4).toList();
-    final rows = <Location>[
+    final fresh = <Location>[
       ...recent,
       ...sorted.where((l) => recent.every((r) => r.id != l.id)),
     ].take(5).toList();
+    // The same five as last time keep their places; only a different set
+    // (a server added, removed, or newly in the top five) lays out anew.
+    final kept = rowOrder;
+    final freshIds = {for (final l in fresh) l.id};
+    final List<Location> rows;
+    if (kept != null &&
+        kept.length == fresh.length &&
+        kept.every(freshIds.contains)) {
+      rows = [for (final id in kept) byId[id]!];
+    } else {
+      rows = fresh;
+      onRowOrder([for (final l in fresh) l.id]);
+    }
 
     final fastestMs = _ms(fastest);
     final autoSub = fastestMs == null
