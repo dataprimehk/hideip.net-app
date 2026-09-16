@@ -22,7 +22,8 @@ Build 7. iOS 15 or later.
 ### Added
 - Edit an imported server in place. The detail screen has an Edit config row
   that reopens the importer on the original WireGuard file or link; saving
-  keeps the server's position, name and location.
+  keeps the server's position, name and location. The button reads Continue
+  while the config is being checked and Save changes once it is ready.
 - Swipe a server row to the left, on Home and on Locations, to reach Edit and
   Delete. The row stops on the two buttons whatever the length of the swipe;
   Delete asks first. hideip.net rows do not move.
@@ -43,7 +44,15 @@ Build 7. iOS 15 or later.
   the user typed, not only the city and country. Every word of the query has
   to match.
 - The Home screen folds to one line while the search field is in use, so the
-  results have the height, even with large text and the keyboard up.
+  results have the height, even with large text and the keyboard up. It
+  unfolds when the keyboard goes down, and a Cancel button ends the search.
+- The top of the Home screen is one list row shorter, and the list fades
+  under the Connect bar, on Home and on Locations, while there is more to
+  scroll.
+- Picking a server from Recent and fastest no longer moves it to the top of
+  the list. The order settles again when the app comes back to the front.
+- A row whose name already says the country shows the protocol under it
+  instead of repeating the country.
 - The whole address row on Home copies the address, not only the icon.
 - Coming next on Locations is folded by default; the header shows the count.
 - hideip.net servers carry a small tag where they sit beside imported ones.
