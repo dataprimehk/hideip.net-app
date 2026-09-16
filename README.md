@@ -61,7 +61,7 @@ build installs straight over the previous one and your profiles stay put. You
 can check the signing certificate yourself:
 
 ```sh
-apksigner verify --print-certs hideip.net-1.1.0-arm64-v8a.apk
+apksigner verify --print-certs hideip.net-1.1.1-arm64-v8a.apk
 ```
 
 It must print:
