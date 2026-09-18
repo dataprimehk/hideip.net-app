@@ -86,6 +86,25 @@ https://github.com/dataprimehk/hideip.net-app
 as a source. It tracks the GitHub releases and offers each new version as soon
 as it is tagged.
 
+## Deep links
+
+Panels and seller buttons can open the app with a subscription URL or share
+link already filled in. Preferred HTTPS form:
+
+```
+https://hideip.net/add#url=<urlencoded>
+```
+
+Transitional custom scheme (already used in third-party panels):
+
+```
+hideip://add?url=<urlencoded>
+```
+
+Full contract, aliases (`install-config`, `import`), pairing links, and
+store URLs: [docs/url-scheme.md](docs/url-scheme.md). Links only prefill the
+import screen; nothing is imported until the user confirms.
+
 ## Build
 
 You need the Flutter SDK (Dart 3.12+) and the Android SDK.
@@ -138,7 +157,7 @@ dart run flutter_launcher_icons
 - `ios/PacketTunnel/` the network extension that runs the core on iOS.
 - `native-core/` the pinned inputs and the verification record for the
   sing-box core build.
-- `docs/` the voting and app-events API contracts.
+- `docs/` the voting and app-events API contracts, and the public URL scheme.
 
 ## Permissions
 
