@@ -123,6 +123,12 @@ void main() {
     expect(find.byType(PremiumSalesCard), findsNothing);
     expect(find.text(S.tPremium), findsNothing);
 
+    if (!kAccountSignIn) {
+      expect(find.text(S.accountNumberTitle), findsNothing);
+      expect(find.text(S.setAccountNumberSub), findsNothing);
+      return;
+    }
+
     // The section and its one row show all the same.
     expect(find.text(S.setAccount.toUpperCase()), findsOneWidget);
     expect(find.text(S.accountNumberTitle), findsOneWidget);
@@ -145,8 +151,10 @@ void main() {
     await tester.pumpWidget(_settings(state, <HipScreen>[]));
     await tester.pump();
 
-    expect(find.textContaining('•••• 0319'), findsOneWidget);
-    expect(find.textContaining(S.setAccountNumberSignedIn), findsOneWidget);
+    expect(find.textContaining('•••• 0319'),
+        kAccountSignIn ? findsOneWidget : findsNothing);
+    expect(find.textContaining(S.setAccountNumberSignedIn),
+        kAccountSignIn ? findsOneWidget : findsNothing);
     // The Premium row is back, and it says how long the account runs,
     // never that it renews.
     expect(find.text(S.tPremium), findsOneWidget);
@@ -195,8 +203,14 @@ void main() {
 
     expect(find.textContaining('Manage in'), findsOneWidget);
     expect(find.text(S.pwRestore), findsNothing);
-    expect(find.text(S.pmAccountSubnote), findsOneWidget);
-    expect(find.text(S.accountNumberTitle), findsOneWidget);
+    expect(
+      find.text(S.pmAccountSubnote),
+      kAccountSignIn ? findsOneWidget : findsNothing,
+    );
+    expect(
+      find.text(S.accountNumberTitle),
+      kAccountSignIn ? findsOneWidget : findsNothing,
+    );
   });
 
   testWidgets('without a store subscription the store page stays away', (

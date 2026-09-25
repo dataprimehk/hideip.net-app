@@ -87,6 +87,7 @@ class HipNavStack {
   int get depth => _entries.length;
 
   void go(HipScreen next, [Object? nextCtx]) {
+    if (next == HipScreen.account && !kAccountSignIn) return;
     if (next == HipScreen.home) {
       _entries.clear();
     } else if (next != screen) {

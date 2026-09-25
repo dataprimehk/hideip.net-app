@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -29,6 +30,9 @@ class _Backend {
   final requests = <http.Request>[];
   bool active = true;
   int statusCode = 200;
+  int signinCode = 200;
+  Completer<void>? signinEntered;
+  Completer<void>? signinRelease;
   DateTime expires = DateTime.now().add(const Duration(days: 30));
   List<String> devices = ['dev_abc'];
 
@@ -43,6 +47,9 @@ class _Backend {
     final ms = expires.millisecondsSinceEpoch;
     switch (req.url.path) {
       case '/v1/account/signin':
+        signinEntered?.complete();
+        await signinRelease?.future;
+        if (signinCode != 200) return http.Response('', signinCode);
         if (statusCode != 200) {
           return http.Response(jsonEncode({'detail': 'x'}), statusCode);
         }
@@ -397,6 +404,180 @@ void main() {
   });
 
   group('a store subscription next to an account number', () {
+    for (final renewalDays in [90, 400]) {
+      test(
+        'a renewal queued during account takeover selects the longer source (days=$renewalDays)',
+        () async {
+          final now = DateTime.now();
+          await state.storeEntitlementForTesting(
+            Premium(
+              status: PremiumStatus.active,
+              renews: now.add(const Duration(days: 60)),
+            ),
+            _proof,
+          );
+          await pumpEventQueue();
+          await state.signInWithAccountNumber(_number);
+          await pumpEventQueue();
+          backend.expires = now.add(const Duration(days: 365));
+          backend.signinEntered = Completer<void>();
+          backend.signinRelease = Completer<void>();
+          final takeover = state.refreshAccount(force: true);
+          await backend.signinEntered!.future;
+          final renewal = state.storeEntitlementForTesting(
+            Premium(
+              status: PremiumStatus.active,
+              renews: now.add(Duration(days: renewalDays)),
+            ),
+            _proof,
+          );
+          backend.signinRelease!.complete();
+          await takeover;
+          await renewal;
+          final accountWins = renewalDays < 365;
+          expect(
+            state.premium.source,
+            accountWins ? PremiumSource.account : PremiumSource.store,
+          );
+          expect(await PremiumSub.url(), accountWins ? _subUrl : _storeUrl);
+          expect(
+            state.profiles.where((p) => p.premium),
+            hasLength(accountWins ? 2 : 1),
+          );
+          expect(
+            _provisions,
+            hasLength(accountWins ? 1 : 2),
+            reason: 'only the winning store renewal provisions',
+          );
+          await state.refreshAccount(force: true);
+          expect(await PremiumSub.url(), accountWins ? _subUrl : _storeUrl);
+        },
+      );
+    }
+
+    for (final priorProof in [false, true]) {
+      test(
+        'a store arrival during signout is provisioned with its own proof (prior=$priorProof)',
+        () async {
+          backend.expires = DateTime.now().add(const Duration(days: 300));
+          await state.signInWithAccountNumber(_number);
+          await pumpEventQueue();
+          if (priorProof) {
+            await state.storeEntitlementForTesting(
+              Premium(
+                status: PremiumStatus.active,
+                renews: DateTime.now().add(const Duration(days: 10)),
+              ),
+              _proof,
+            );
+            await pumpEventQueue();
+          }
+          const renewal = PurchasePayload.android(
+            purchaseToken: 'arriving-token',
+            productId: PremiumProducts.yearly,
+          );
+          final signingOut = state.signOutAccount();
+          final arrival = state.storeEntitlementForTesting(
+            Premium(
+              status: PremiumStatus.active,
+              renews: DateTime.now().add(const Duration(days: 30)),
+            ),
+            renewal,
+          );
+          await signingOut;
+          await arrival;
+          expect(state.premium.source, PremiumSource.store);
+          expect(state.premium.isOn, isTrue);
+          expect(await PremiumSub.url(), _storeUrl);
+          expect((await PremiumSub.proof())?.toJson(), renewal.toJson());
+          expect(_provisions, isNotEmpty);
+          expect(
+            jsonDecode(_provisions.last.body)['purchase_token'],
+            'arriving-token',
+          );
+        },
+      );
+    }
+
+    test(
+      'retains fresh store proofs without replacing a longer account',
+      () async {
+        backend.expires = DateTime.now().add(const Duration(days: 300));
+        await state.signInWithAccountNumber(_number);
+        await pumpEventQueue();
+        final ends = DateTime.now().add(const Duration(days: 30));
+        state.storeEntitlementForTesting(
+          Premium(status: PremiumStatus.active, renews: ends),
+          _proof,
+        );
+        await pumpEventQueue();
+        expect((await PremiumSub.proof())?.toJson(), _proof.toJson());
+        const renewal = PurchasePayload.android(
+          purchaseToken: 'renewal-token',
+          productId: PremiumProducts.yearly,
+        );
+        state.storeEntitlementForTesting(
+          Premium(
+            status: PremiumStatus.active,
+            renews: ends.add(const Duration(days: 30)),
+          ),
+          renewal,
+        );
+        // An older replay must not replace the newer purchase proof.
+        state.storeEntitlementForTesting(
+          Premium(status: PremiumStatus.active, renews: ends),
+          _proof,
+        );
+        await pumpEventQueue();
+        expect((await PremiumSub.proof())?.toJson(), renewal.toJson());
+        expect(state.premium.source, PremiumSource.account);
+        expect(await PremiumSub.url(), _subUrl);
+        expect(_provisions, isEmpty);
+        await state.signOutAccount();
+        expect(state.premium.source, PremiumSource.store);
+        expect(await PremiumSub.url(), _storeUrl);
+        expect(
+          jsonDecode(_provisions.single.body)['purchase_token'],
+          'renewal-token',
+        );
+      },
+    );
+
+    test(
+      'failed account takeover keeps store source and retries signin',
+      () async {
+        final ends = DateTime.now().add(const Duration(days: 60));
+        state.storeEntitlementForTesting(
+          Premium(status: PremiumStatus.active, renews: ends),
+          _proof,
+        );
+        await pumpEventQueue();
+        await state.signInWithAccountNumber(_number);
+        await pumpEventQueue();
+        expect(state.premium.source, PremiumSource.store);
+        expect(await PremiumSub.url(), _storeUrl);
+        backend.expires = DateTime.now().add(const Duration(days: 365));
+        backend.signinCode = 503;
+        await state.refreshAccount(force: true);
+        expect(state.premium.source, PremiumSource.store);
+        expect((await Premium.load()).source, PremiumSource.store);
+        expect(await PremiumSub.url(), _storeUrl);
+        expect(state.subToken, 'store_tok');
+        expect(
+          state.profiles.where((p) => p.premium).single.name,
+          'store-ams-01',
+        );
+        final attempts = backend.to('/v1/account/signin').length;
+        backend.signinCode = 200;
+        await state.refreshAccount(force: true);
+        expect(backend.to('/v1/account/signin'), hasLength(attempts + 1));
+        expect(state.premium.source, PremiumSource.account);
+        expect(await PremiumSub.url(), _subUrl);
+        expect(state.subToken, 'k9Q-token');
+        expect(state.profiles.where((p) => p.premium), hasLength(2));
+      },
+    );
+
     Future<void> storeLive() async {
       await PremiumSub.saveProof(_proof);
       state.storeEntitlementForTesting(

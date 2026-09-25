@@ -1353,7 +1353,7 @@ class _PremiumManageScreenState extends State<PremiumManageScreen> {
                     ],
                   ),
                 ),
-                if (account) ...[
+                if (account && kAccountSignIn) ...[
                   const HipSectionLabel(S.setAccount),
                   HipListGroup(
                     children: [

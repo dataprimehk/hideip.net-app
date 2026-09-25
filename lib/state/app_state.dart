@@ -197,7 +197,8 @@ class AppState extends ChangeNotifier {
   /// Feeds [p] in as if the store's purchase stream had reported it, so a
   /// test can start from a store entitlement without a store.
   @visibleForTesting
-  void storeEntitlementForTesting(Premium p) => _onStorePremium(p, null);
+  Future<void> storeEntitlementForTesting(Premium p, [PurchasePayload? proof]) =>
+      _onStorePremium(p, proof);
 
   /// Reads the kept account number the way a launch does, without the rest
   /// of [init].
@@ -462,13 +463,20 @@ class AppState extends ChangeNotifier {
 
   /// Buy the Premium subscription. The entitlement itself lands through the
   /// purchase stream (see [init]); this reports how the attempt ended.
-  Future<PurchaseOutcome> purchasePremium(PremiumPlan plan) =>
-      _purchases.buy(plan);
+  Future<PurchaseOutcome> purchasePremium(PremiumPlan plan) async {
+    final outcome = await _purchases.buy(plan);
+    if (outcome == PurchaseOutcome.success) {
+      // The stream queues the entitlement before completing the purchase.
+      await _premiumRefreshGate.run(() async {});
+    }
+    return outcome;
+  }
 
   /// Re-check the store for an existing subscription.
   Future<void> restorePurchases() async {
     final restored = await _purchases.restore();
     if (restored) {
+      await _premiumRefreshGate.run(() async {});
       showToast(S.toastRestored);
       return;
     }
@@ -483,9 +491,6 @@ class AppState extends ChangeNotifier {
   /// Exchange the signed purchase proof for tunnel credentials and pull the
   /// premium profiles in. Every step is retried on the next launch (or the
   /// next store event) if it fails here, so errors stay silent.
-  Future<void> _provisionPremium(PurchasePayload proof) =>
-      _premiumRefreshGate.run(() => _provisionPremiumLocked(proof));
-
   Future<void> _provisionPremiumLocked(PurchasePayload proof) async {
     await PremiumSub.saveProof(proof);
     final result = await _provisioning.provision(proof);
@@ -849,7 +854,10 @@ class AppState extends ChangeNotifier {
   /// A store entitlement from the purchase stream. It is always recorded;
   /// it goes into force unless an account number that lasts longer already
   /// is.
-  void _onStorePremium(Premium p, PurchasePayload? proof) {
+  Future<void> _onStorePremium(Premium p, PurchasePayload? proof) =>
+      _premiumRefreshGate.run(() => _applyStorePremiumLocked(p, proof));
+
+  Future<void> _applyStorePremiumLocked(Premium p, PurchasePayload? proof) async {
     // The store replays past transactions in arbitrary order (a stale
     // renewal can land right after the newest one); an entitlement only ever
     // moves forward. Plan changes are safe under this rule: in a
@@ -859,8 +867,19 @@ class AppState extends ChangeNotifier {
     if (held != null && p.renews != null && p.renews!.isBefore(held)) {
       return;
     }
+    // Keep entitlement, proof and source selection in one transaction with
+    // account takeover/signout. Neither a queued renewal nor a fallback may
+    // see half of a purchase, or decide ownership before the gate opens.
+    if (p.isOn && proof != null) {
+      try {
+        await PremiumSub.saveProof(proof);
+      } catch (_) {
+        // A storage failure must not cost a paid entitlement; provisioning
+        // below stores the proof again.
+      }
+    }
     _storePremium = p;
-    p.save(key: Premium.storeKey);
+    await p.save(key: Premium.storeKey);
     if (_premium.source == PremiumSource.account &&
         (!p.isOn || !_outlasts(p))) {
       notifyListeners();
@@ -868,10 +887,10 @@ class AppState extends ChangeNotifier {
     }
     _premium = p;
     notifyListeners();
-    p.save();
+    await p.save();
     // Every live entitlement re-provisions: a first purchase creates the
     // server profile, a renewal extends its lifetime server-side.
-    if (p.isOn && proof != null) _provisionPremium(proof);
+    if (p.isOn && proof != null) await _provisionPremiumLocked(proof);
   }
 
   /// The account number stopped being the entitlement in force on this
@@ -1091,10 +1110,14 @@ class AppState extends ChangeNotifier {
       return;
     }
     final wasOn = premium.isOn && _premium.source == PremiumSource.account;
-    _premium = candidate;
-    await _premium.save();
-    notifyListeners();
-    if (wasOn && await PremiumSub.url() != null) return;
+    if (wasOn && await PremiumSub.url() != null) {
+      _premium = candidate;
+      await _premium.save();
+      notifyListeners();
+      return;
+    }
+    // Keep the current source and its URL together until sign-in succeeds.
+    // A failed takeover must still try sign-in on the next status refresh.
     // The URL went with an expiry, or it belongs to the store subscription
     // this account now outlasts. This device's token brings the same device
     // back without spending a slot.

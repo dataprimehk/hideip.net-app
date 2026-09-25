@@ -3,6 +3,23 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hideip_vpn/ui/redesign/shell.dart';
 
 void main() {
+  test(
+    'account navigation follows the feature flag without losing context',
+    () {
+      final nav = HipNavStack();
+      nav.go(HipScreen.premium, 'manage');
+      nav.go(HipScreen.account);
+      expect(
+        nav.screen,
+        kAccountSignIn ? HipScreen.account : HipScreen.premium,
+      );
+      expect(nav.depth, kAccountSignIn ? 2 : 1);
+      if (!kAccountSignIn) expect(nav.ctx, 'manage');
+      nav.go(HipScreen.paywall);
+      expect(nav.screen, HipScreen.paywall);
+    },
+  );
+
   test('back returns to where the user came from, not up a fixed hierarchy',
       () {
     final nav = HipNavStack();
