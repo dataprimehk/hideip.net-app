@@ -22,7 +22,7 @@ class UserSubscriptionService {
   /// Fetch and parse one subscription URL. Null on any transient failure so
   /// the caller keeps the servers it already has (a flaky network must not
   /// strand a working import); a result with an empty profile list only on a
-  /// definitive "gone" (404/410 — the provider retired the link). Fresh
+  /// definitive "gone" (404/410: the provider retired the link). Fresh
   /// profiles are tagged with [url] so they stay grouped under their origin,
   /// and any plan headers the provider sent ride along as [SubFetch.info].
   Future<SubFetch?> fetch(String url) async {
