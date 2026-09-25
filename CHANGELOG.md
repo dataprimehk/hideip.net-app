@@ -3,6 +3,13 @@
 Notable changes to the hideip.net app. The same history is published at
 https://hideip.net/apps/changelog.
 
+## 1.2.0 (unreleased)
+
+Build 8.
+
+### Added
+- Sign in with an account number (Settings, Account number).
+
 ## 1.1.1 (2026-09-16)
 
 Build 7. iOS 15 or later.
