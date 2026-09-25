@@ -21,7 +21,7 @@ TextEditingValue _edit(
 );
 
 void main() {
-  group('the contract vectors', () {
+  group('the reference numbers', () {
     const valid = [
       '8236387788950319',
       '5997190828766207',

@@ -1410,6 +1410,25 @@ class _PremiumManageScreenState extends State<PremiumManageScreen> {
                     ],
                   ),
                 ],
+                // A store subscription known on this device keeps its own
+                // page reachable, whichever entitlement is in force.
+                if (account && state.hasStoreEntitlement) ...[
+                  const HipSectionLabel(S.pmBilling),
+                  HipListGroup(
+                    children: [
+                      HipListRow(
+                        title: S.pmManage(_storeName),
+                        subtitle: S.pmManageSub,
+                        trailing: Icon(
+                          Icons.open_in_new,
+                          size: 17,
+                          color: Hip.muted2,
+                        ),
+                        onTap: () => _openUrl(_manageUrl),
+                      ),
+                    ],
+                  ),
+                ],
                 if (!account) ...[
                   const HipSectionLabel(S.pmBilling),
                   HipListGroup(

@@ -6,9 +6,11 @@ import 'package:flutter/material.dart';
 import '../../core/deep_link.dart';
 import '../../core/device_link.dart';
 import '../../core/haptics.dart';
+import '../../core/premium.dart';
 import '../../core/sensitive_clipboard.dart';
 import '../../state/app_state.dart';
 import '../qr_scan_screen.dart';
+import '../strings.dart';
 import 'hip.dart';
 import 'hip_sheet.dart';
 import 'shell.dart';
@@ -82,9 +84,16 @@ class _LinkedDevicesScreenState extends State<LinkedDevicesScreen> {
     if (mounted) await _load();
   }
 
+  /// This phone's own entry when it is on the list through an account
+  /// number. It leaves by signing out, never from here.
+  String? get _ownId =>
+      widget.state.premium.source == PremiumSource.account
+          ? widget.state.accountDeviceId
+          : null;
+
   Future<void> _confirmRevoke(LinkedDevice device) async {
     final token = widget.state.subToken;
-    if (token == null) return;
+    if (token == null || device.id == _ownId) return;
     final yes = await showDialog<bool>(
       context: context,
       builder: (ctx) => Dialog(
@@ -203,7 +212,10 @@ class _LinkedDevicesScreenState extends State<LinkedDevicesScreen> {
                 HipSectionLabel('Devices (${devices.length})'),
                 HipListGroup(children: [
                   for (final d in devices)
-                    _DeviceRow(device: d, onRevoke: () => _confirmRevoke(d)),
+                    _DeviceRow(
+                        device: d,
+                        own: d.id == _ownId,
+                        onRevoke: () => _confirmRevoke(d)),
                 ]),
                 const HipSubnote(
                     'Swipe a device left, or tap the unlink icon, to cut off '
@@ -231,7 +243,11 @@ class _LinkedDevicesScreenState extends State<LinkedDevicesScreen> {
 class _DeviceRow extends StatelessWidget {
   final LinkedDevice device;
   final VoidCallback onRevoke;
-  const _DeviceRow({required this.device, required this.onRevoke});
+
+  /// This phone: marked, and without a way to remove it.
+  final bool own;
+  const _DeviceRow(
+      {required this.device, required this.onRevoke, this.own = false});
 
   static IconData iconFor(LinkedDeviceKind kind) => switch (kind) {
         LinkedDeviceKind.extension => Icons.language_outlined,
@@ -267,20 +283,24 @@ class _DeviceRow extends StatelessWidget {
           ]),
         ),
         const SizedBox(width: 12),
-        Semantics(
-          button: true,
-          child: GestureDetector(
-            onTap: onRevoke,
-            behavior: HitTestBehavior.opaque,
-            child: SizedBox(
-              width: 44,
-              height: 44,
-              child: Icon(Icons.link_off, size: 18, color: Hip.muted2),
+        if (own)
+          HipBadge.blue(S.accountThisDevice)
+        else
+          Semantics(
+            button: true,
+            child: GestureDetector(
+              onTap: onRevoke,
+              behavior: HitTestBehavior.opaque,
+              child: SizedBox(
+                width: 44,
+                height: 44,
+                child: Icon(Icons.link_off, size: 18, color: Hip.muted2),
+              ),
             ),
           ),
-        ),
       ]),
     );
+    if (own) return row;
     return Dismissible(
       key: ValueKey('linked-device:${device.id}'),
       direction: DismissDirection.endToStart,

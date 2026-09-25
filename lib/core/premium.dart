@@ -135,6 +135,10 @@ class PlanInfo {
 class Premium {
   static const _kPrefs = 'premium_v1';
 
+  /// Where the last store entitlement is kept on its own, so it can come
+  /// back into force when an account number stops being the one in force.
+  static const storeKey = 'premium_store_v1';
+
   final PremiumStatus status;
   final PremiumPlan? plan;
 
@@ -173,12 +177,18 @@ class Premium {
         source: source ?? this.source,
       );
 
-  /// Load the persisted standing. A subscription whose period lapsed while
-  /// the app was closed comes back as [PremiumStatus.expired]; the next store
-  /// event (a renewal arriving on the purchase stream) un-expires it.
-  static Future<Premium> load() async {
+  /// Whether this entitlement ends on its own date, as read by the device.
+  /// A store subscription does; an account number does not, because time
+  /// can be added to it anywhere and only the server knows when it ends.
+  bool get expiresByDate => source == PremiumSource.store;
+
+  /// Load the persisted standing. A store subscription whose period lapsed
+  /// while the app was closed comes back as [PremiumStatus.expired]; the
+  /// next store event (a renewal arriving on the purchase stream) un-expires
+  /// it. [key] reads a copy kept elsewhere, such as [storeKey].
+  static Future<Premium> load({String key = _kPrefs}) async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_kPrefs);
+    final raw = prefs.getString(key);
     if (raw == null || raw.isEmpty) return const Premium.none();
     try {
       final map = jsonDecode(raw) as Map<String, dynamic>;
@@ -188,30 +198,32 @@ class Premium {
       final renews = renewsMs == null
           ? null
           : DateTime.fromMillisecondsSinceEpoch(renewsMs);
-      if (renews != null &&
+      // Written before account numbers existed, a record has no source and
+      // is a store subscription.
+      final sourceName = map['source'] as String?;
+      final source =
+          PremiumSource.values.asNameMap()[sourceName] ?? PremiumSource.store;
+      if (source == PremiumSource.store &&
+          renews != null &&
           renews.isBefore(DateTime.now()) &&
           (status == PremiumStatus.trial || status == PremiumStatus.active)) {
         status = PremiumStatus.expired;
       }
-      // Written before account numbers existed, a record has no source and
-      // is a store subscription.
-      final sourceName = map['source'] as String?;
       return Premium(
         status: status,
         plan: planName == null ? null : PremiumPlan.values.byName(planName),
         renews: renews,
-        source: PremiumSource.values.asNameMap()[sourceName] ??
-            PremiumSource.store,
+        source: source,
       );
     } catch (_) {
       return const Premium.none();
     }
   }
 
-  Future<void> save() async {
+  Future<void> save({String key = _kPrefs}) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
-        _kPrefs,
+        key,
         jsonEncode({
           'status': status.name,
           'plan': plan?.name,

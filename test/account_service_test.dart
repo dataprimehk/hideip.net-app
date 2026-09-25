@@ -43,7 +43,7 @@ const _active = {
 
 void main() {
   group('sign in', () {
-    test('posts the contract body to /v1/account/signin', () async {
+    test('posts the documented body to /v1/account/signin', () async {
       final rec = _Recorder();
       await AccountService(
         client: rec.client(200, jsonEncode(_active)),
@@ -112,7 +112,7 @@ void main() {
         403: (_detail('account_revoked'), AccountResult.revoked),
         404: (_detail('unknown_account'), AccountResult.unknown),
         409: (_detail('device_limit_reached'), AccountResult.deviceLimit),
-        429: (_detail('too_many_attempts'), AccountResult.network),
+        429: (_detail('too_many_attempts'), AccountResult.tooManyAttempts),
         503: (_detail('account_api_not_configured'), AccountResult.network),
         500: ('', AccountResult.network),
       };
@@ -227,6 +227,11 @@ void main() {
         client: _Recorder().client(503, ''),
       ).status(_number);
       expect(down, isNull);
+
+      final busy = await AccountService(
+        client: _Recorder().client(429, _detail('too_many_attempts')),
+      ).status(_number);
+      expect(busy!.result, AccountResult.tooManyAttempts);
     });
   });
 

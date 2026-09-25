@@ -886,6 +886,27 @@ abstract final class S {
 
   /// Premium manage, for a subscription that came with an account number.
   static const pmAccountSubnote =
-      'This subscription is managed with an account number, not through the '
-      'store.';
+      'Premium on this device comes from your account number.';
+
+  /// The number was replaced on another device; this device still works.
+  static const accountNumberReplaced =
+      'This account number was changed on another device. Sign out, then '
+      'sign in with the new number.';
+
+  /// This device was taken off the account from another one. The number is
+  /// kept, so signing back in is one tap.
+  static const accountDeviceSignedOut = 'This device was signed out.';
+
+  /// The server is limiting attempts from this network for a while.
+  static const accountErrTooMany =
+      'Too many attempts. Try again in a few minutes.';
+
+  /// A new number was asked for, the answer never came, and the old number
+  /// no longer answers: it was most likely issued.
+  static const accountRotateLost =
+      'The new account number was probably issued but did not reach this '
+      'device. Contact support with your proof of purchase to get it.';
+
+  /// Signed in while a store subscription that lasts longer stays in force.
+  static const accountSaved = 'Account number saved.';
 }

@@ -12,13 +12,18 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 const _number = '8236387788950319';
 const _subUrl = 'https://api.test/v1/sub/dev_abc';
+const _storeUrl = 'https://api.test/v1/sub/store_tok';
+const _proof = PurchasePayload.android(
+  purchaseToken: 'play-token',
+  productId: PremiumProducts.yearly,
+);
 final _catalog = Uri.parse('https://mirror.test/catalog');
 
 String _link(String name) =>
     'vless://11111111-1111-1111-1111-111111111111@127.0.0.1:9'
     '?security=none#$name';
 
-/// The account API as the contract describes it, with the answers a test
+/// The account API as the backend documents it, with the answers a test
 /// can change and every request kept for asserting on.
 class _Backend {
   final requests = <http.Request>[];
@@ -90,13 +95,22 @@ class _Backend {
   });
 }
 
-/// Premium profiles served at the account's subscription URL; the signed
-/// catalog mirror is down, so the legacy path answers.
+/// Premium profiles served at the account's subscription URL, and a store
+/// purchase that provisions its own; the signed catalog mirror is down, so
+/// the legacy path answers.
+final _provisions = <http.Request>[];
 ProvisioningService _provisioning() => ProvisioningService(
   client: MockClient((req) async {
     if (req.url == _catalog) return http.Response('', 503);
+    if (req.url.path == '/v1/provision') {
+      _provisions.add(req);
+      return http.Response(jsonEncode({'subscription_url': _storeUrl}), 200);
+    }
     if (req.url.toString() == _subUrl) {
       return http.Response('${_link('de-fra-01')}\n${_link('ch-zur-02')}', 200);
+    }
+    if (req.url.toString() == _storeUrl) {
+      return http.Response(_link('store-ams-01'), 200);
     }
     return http.Response('', 404);
   }),
@@ -111,6 +125,7 @@ void main() {
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
+    _provisions.clear();
     await PremiumSub.clear();
     await const AccountStore().clear();
     backend = _Backend();
@@ -213,18 +228,53 @@ void main() {
     expect(backend.body(signins.last)['device_token'], 'k9Q-token');
   });
 
-  test('a device removed from elsewhere is signed out here', () async {
+  test(
+    'a device removed from elsewhere loses its servers, not the number',
+    () async {
+      await state.signInWithAccountNumber(_number);
+      await pumpEventQueue();
+
+      backend.devices = ['dev_other'];
+      await state.refreshAccount(force: true);
+
+      // The number stays, so signing back in is one tap.
+      expect(state.accountSignedIn, isTrue);
+      expect(state.accountNumber, _number);
+      expect(state.accountDeviceSignedOut, isTrue);
+      final stored = await const AccountStore().load();
+      expect(stored!.number, _number);
+      expect(stored.deviceToken, isNull);
+      expect(stored.deviceId, isNull);
+      // What the device held on the account is gone.
+      expect(state.premium.isOn, isFalse);
+      expect(state.profiles.where((p) => p.premium), isEmpty);
+      expect(state.subToken, isNull);
+      // No new sign-in quietly puts it back.
+      expect(backend.to('/v1/account/signin'), hasLength(1));
+
+      // Signing in again takes a fresh slot, on purpose.
+      backend.devices = ['dev_abc'];
+      await state.signInWithAccountNumber(_number);
+      await pumpEventQueue();
+      expect(state.accountDeviceSignedOut, isFalse);
+      expect(state.premium.isOn, isTrue);
+      expect(
+        backend.body(backend.to('/v1/account/signin').last)['device_token'],
+        isNull,
+      );
+    },
+  );
+
+  test('only signing out forgets the number', () async {
     await state.signInWithAccountNumber(_number);
     await pumpEventQueue();
-
     backend.devices = ['dev_other'];
-    await state.refreshAccount();
+    await state.refreshAccount(force: true);
+    expect(state.accountNumber, _number);
 
-    expect(state.accountSignedIn, isFalse);
-    expect(state.premium.isOn, isFalse);
-    expect(state.profiles.where((p) => p.premium), isEmpty);
-    // No new sign-in quietly puts it back.
-    expect(backend.to('/v1/account/signin'), hasLength(1));
+    await state.signOutAccount();
+    expect(state.accountNumber, isNull);
+    expect(await const AccountStore().load(), isNull);
   });
 
   test('a revoked account loses its servers but keeps the number', () async {
@@ -232,9 +282,9 @@ void main() {
     await pumpEventQueue();
 
     backend.statusCode = 403;
-    await state.refreshAccount();
+    await state.refreshAccount(force: true);
 
-    expect(state.accountProblem, AccountResult.revoked);
+    expect(state.accountIssue, AccountIssue.revoked);
     expect(state.accountSignedIn, isTrue);
     expect(state.premium.isOn, isFalse);
     expect(state.profiles.where((p) => p.premium), isEmpty);
@@ -242,11 +292,12 @@ void main() {
 
   test('a store subscription that lasts longer stays in force', () async {
     final storeEnds = DateTime.now().add(const Duration(days: 300));
-    // What the purchase stream leaves behind for a live store subscription.
-    state.premiumForTesting = Premium(
-      status: PremiumStatus.active,
-      plan: PremiumPlan.yearly,
-      renews: storeEnds,
+    state.storeEntitlementForTesting(
+      Premium(
+        status: PremiumStatus.active,
+        plan: PremiumPlan.yearly,
+        renews: storeEnds,
+      ),
     );
 
     await state.signInWithAccountNumber(_number);
@@ -256,6 +307,144 @@ void main() {
     expect(state.premium.source, PremiumSource.store);
     expect(state.premium.renews, storeEnds);
     expect(await PremiumSub.url(), isNull);
+  });
+
+  test('the server decides when an account ends, not the date', () async {
+    // A date already behind the device clock, while the server says active:
+    // time was added somewhere this device has not heard about yet, or the
+    // clock is wrong. Either way the account stays on.
+    backend.expires = DateTime.now().subtract(const Duration(days: 1));
+    await state.signInWithAccountNumber(_number);
+    await pumpEventQueue();
+
+    expect(state.premium.isOn, isTrue);
+    expect(state.premium.source, PremiumSource.account);
+    expect(state.profiles.where((p) => p.premium), hasLength(2));
+
+    backend.active = false;
+    await state.refreshAccount(force: true);
+    expect(state.premium.isOn, isFalse);
+    expect(state.premium.status, PremiumStatus.expired);
+    expect(state.accountNumber, _number);
+  });
+
+  test('a number replaced elsewhere leaves this device running', () async {
+    await state.signInWithAccountNumber(_number);
+    await pumpEventQueue();
+
+    backend.statusCode = 404;
+    await state.refreshAccount(force: true);
+
+    expect(state.accountIssue, AccountIssue.numberReplaced);
+    expect(state.premium.isOn, isTrue);
+    expect(await PremiumSub.url(), _subUrl);
+    expect(state.profiles.where((p) => p.premium), hasLength(2));
+    expect(state.accountNumber, _number);
+  });
+
+  test('the background check runs at most once in six hours', () async {
+    await state.signInWithAccountNumber(_number);
+    await pumpEventQueue();
+    final after = backend.to('/v1/account/status').length;
+
+    expect(await state.refreshAccount(), isNull);
+    expect(backend.to('/v1/account/status'), hasLength(after));
+
+    // The account screen always asks.
+    expect(await state.refreshAccount(force: true), isNotNull);
+    expect(backend.to('/v1/account/status'), hasLength(after + 1));
+  });
+
+  test('too many attempts is its own answer', () async {
+    await state.signInWithAccountNumber(_number);
+    await pumpEventQueue();
+
+    backend.statusCode = 429;
+    final status = await state.refreshAccount(force: true);
+    expect(status!.result, AccountResult.tooManyAttempts);
+    expect(state.premium.isOn, isTrue);
+  });
+
+  test('a lost rotation answer with the old number gone says so', () async {
+    await state.signInWithAccountNumber(_number);
+    await pumpEventQueue();
+
+    // The rotate answer is lost on the way; the old number is then unknown
+    // to the server.
+    final lost = AppState(
+      accounts: AccountService(
+        client: MockClient((req) async {
+          if (req.url.path == '/v1/account/rotate') {
+            throw http.ClientException('connection reset');
+          }
+          if (req.url.path == '/v1/account/status') {
+            return http.Response(
+              jsonEncode({'detail': 'unknown_account'}),
+              404,
+            );
+          }
+          return http.Response('', 500);
+        }),
+      ),
+      provisioning: _provisioning(),
+    );
+    // The same stored account, read the way a launch reads it.
+    await lost.loadAccountForTesting();
+
+    final r = await lost.rotateAccountNumber();
+    expect(r.maybeIssued, isTrue);
+    expect(lost.accountIssue, AccountIssue.numberReplaced);
+  });
+
+  group('a store subscription next to an account number', () {
+    Future<void> storeLive() async {
+      await PremiumSub.saveProof(_proof);
+      state.storeEntitlementForTesting(
+        Premium(
+          status: PremiumStatus.active,
+          plan: PremiumPlan.yearly,
+          renews: DateTime.now().add(const Duration(days: 10)),
+        ),
+      );
+    }
+
+    test('comes back on its own when the account is signed out', () async {
+      await storeLive();
+      // The account runs longer, so it takes over.
+      backend.expires = DateTime.now().add(const Duration(days: 300));
+      await state.signInWithAccountNumber(_number);
+      await pumpEventQueue();
+      expect(state.premium.source, PremiumSource.account);
+      expect(state.hasStoreEntitlement, isTrue);
+
+      await state.signOutAccount();
+      await pumpEventQueue();
+
+      expect(state.premium.source, PremiumSource.store);
+      expect(state.premium.isOn, isTrue);
+      expect(_provisions, isNotEmpty, reason: 'no manual restore needed');
+      expect(await PremiumSub.url(), _storeUrl);
+      expect(
+        state.profiles.where((p) => p.premium).single.name,
+        'store-ams-01',
+      );
+    });
+
+    test('comes back when the account runs out of time', () async {
+      await storeLive();
+      backend.expires = DateTime.now().add(const Duration(days: 300));
+      await state.signInWithAccountNumber(_number);
+      await pumpEventQueue();
+
+      backend.active = false;
+      await state.refreshAccount(force: true);
+      await pumpEventQueue();
+
+      expect(state.premium.source, PremiumSource.store);
+      expect(state.premium.isOn, isTrue);
+      expect(await PremiumSub.url(), _storeUrl);
+      expect(await PremiumSub.proof(), isNotNull);
+    });
   });
 
   group('the persisted entitlement', () {
@@ -286,14 +475,22 @@ void main() {
       expect((await Premium.load()).source, PremiumSource.store);
     });
 
-    test('an account entitlement lapses on load like a store one', () async {
+    test('a store entitlement lapses on load by its date', () async {
+      await Premium(
+        status: PremiumStatus.active,
+        renews: DateTime.now().subtract(const Duration(hours: 1)),
+      ).save();
+      expect((await Premium.load()).status, PremiumStatus.expired);
+    });
+
+    test('an account entitlement never lapses by the device date', () async {
       await Premium(
         status: PremiumStatus.active,
         renews: DateTime.now().subtract(const Duration(hours: 1)),
         source: PremiumSource.account,
       ).save();
       final p = await Premium.load();
-      expect(p.status, PremiumStatus.expired);
+      expect(p.status, PremiumStatus.active);
       expect(p.source, PremiumSource.account);
     });
   });

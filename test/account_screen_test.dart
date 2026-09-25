@@ -18,7 +18,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 const _number = '8236387788950319';
 
-/// The words C11 keeps out of the app, as a user would read them.
+/// Words that would point a user to a purchase outside the stores.
 const _forbidden = [
   't.me',
   'telegram',
@@ -58,6 +58,7 @@ HipNav _nav({List<HipScreen>? went}) => HipNav(
 class _Backend {
   int calls = 0;
   bool active = true;
+  List<String> devices = ['dev_abc', 'dev_two'];
 
   http.Client get client => MockClient((req) async {
     calls++;
@@ -86,18 +87,13 @@ class _Backend {
           'expires_ms': ms,
           'kind': 'monthly',
           'devices': [
-            {
-              'id': 'dev_abc',
-              'kind': 'phone',
-              'name': 'Android phone',
-              'created_at': 1756800000,
-            },
-            {
-              'id': 'dev_two',
-              'kind': 'desktop',
-              'name': 'Desktop',
-              'created_at': 1756800000,
-            },
+            for (final id in devices)
+              {
+                'id': id,
+                'kind': id == 'dev_abc' ? 'phone' : 'desktop',
+                'name': id == 'dev_abc' ? 'Android phone' : 'Desktop',
+                'created_at': 1756800000,
+              },
           ],
           'device_limit': 5,
         }),
@@ -295,6 +291,50 @@ void main() {
 
     expect(find.text('•••• •••• •••• 0319'), findsOneWidget);
     expect(find.text(S.accountOutOfTime), findsOneWidget);
+  });
+
+  testWidgets('storage that fails says so and frees the button', (
+    tester,
+  ) async {
+    final vault = MemorySecureKeyVault()..failWrites = true;
+    SecretPrefs.installKeyVaultForTesting(vault);
+    await tester.pumpWidget(_host(_state(backend)));
+
+    await tester.enterText(find.byType(TextField), _number);
+    await tester.pump();
+    await tester.tap(find.widgetWithText(HipCta, S.accountCtaSignIn));
+    await _settle(tester);
+
+    expect(find.text(S.accountErrNetwork), findsOneWidget);
+    expect(find.text(S.pwDoneTitle), findsNothing);
+    expect(
+      _signInButton(tester).onTap,
+      isNotNull,
+      reason: 'the screen is not left busy',
+    );
+  });
+
+  testWidgets('taken off from elsewhere, the number waits for one tap', (
+    tester,
+  ) async {
+    final state = _state(backend);
+    await tester.pumpWidget(const SizedBox());
+    unawaited(state.signInWithAccountNumber(_number));
+    await _settle(tester);
+
+    backend.devices = ['dev_two'];
+    await tester.pumpWidget(_host(state));
+    await _settle(tester);
+
+    expect(find.text('•••• •••• •••• 0319'), findsOneWidget);
+    expect(find.text(S.accountDeviceSignedOut), findsOneWidget);
+    expect(state.accountNumber, _number);
+
+    backend.devices = ['dev_abc', 'dev_two'];
+    await tester.tap(find.widgetWithText(HipCta, S.accountCtaSignIn));
+    await _settle(tester);
+    expect(find.text(S.pwDoneTitle), findsOneWidget);
+    expect(state.premium.isOn, isTrue);
   });
 
   testWidgets('the sign-in form carries none of the forbidden words', (

@@ -50,11 +50,13 @@ class _AccountScreenState extends State<AccountScreen> {
   bool _busy = false;
   String? _error;
   bool _done = false;
+  bool _savedOnly = false;
   bool _revealed = false;
 
   AccountStatus? _status;
   bool _loading = false;
   bool _statusFailed = false;
+  String? _statusError;
 
   AppState get _state => widget.state;
 
@@ -88,17 +90,31 @@ class _AccountScreenState extends State<AccountScreen> {
     setState(() {
       _loading = true;
       _statusFailed = false;
+      _statusError = null;
     });
-    final status = await _state.refreshAccount();
-    if (!mounted) return;
-    setState(() {
-      _loading = false;
-      if (status != null && status.result == AccountResult.ok) {
-        _status = status;
-      } else if (status == null) {
-        _statusFailed = true;
+    AccountStatus? status;
+    try {
+      // Opening this screen always asks, however recently the background
+      // check did.
+      status = await _state.refreshAccount(force: true);
+    } catch (_) {
+      status = null;
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          if (status != null && status.result == AccountResult.ok) {
+            _status = status;
+          } else if (status == null) {
+            _statusFailed = true;
+            _statusError = S.accountErrNetwork;
+          } else if (status.result == AccountResult.tooManyAttempts) {
+            _statusFailed = true;
+            _statusError = S.accountErrTooMany;
+          }
+        });
       }
-    });
+    }
   }
 
   Future<void> _paste() async {
@@ -116,34 +132,52 @@ class _AccountScreenState extends State<AccountScreen> {
     );
   }
 
-  Future<void> _signIn() async {
-    if (!_valid || _busy) return;
+  Future<void> _signIn() => _signInWith(_digits);
+
+  /// Signs in with [digits]: the number typed into the field, or the one
+  /// already kept when this device was signed out from elsewhere.
+  Future<void> _signInWith(String digits) async {
+    if (!isValidAccountNumber(digits) || _busy) return;
     FocusScope.of(context).unfocus();
     setState(() {
       _busy = true;
       _error = null;
     });
-    final result = await _state.signInWithAccountNumber(_digits);
-    if (!mounted) return;
-    if (result.result == AccountResult.inactive) {
-      // Signed in to an account with no time on it: the signed-in view says
-      // so, and keeps the number for when time is added.
-      _field.clear();
-    }
-    setState(() {
-      _busy = false;
-      switch (result.result) {
-        case AccountResult.ok:
-          Haptics.success();
-          _done = true;
-        case AccountResult.inactive:
-          _error = null;
-        default:
-          Haptics.error();
-          _error = _errorFor(result.result, result.deviceLimit);
+    AccountSignIn? result;
+    try {
+      result = await _state.signInWithAccountNumber(digits);
+    } catch (_) {
+      result = null;
+    } finally {
+      if (mounted) {
+        final r = result;
+        if (r?.result == AccountResult.inactive) {
+          // Signed in to an account with no time on it: the signed-in view
+          // says so, and keeps the number for when time is added.
+          _field.clear();
+        }
+        setState(() {
+          _busy = false;
+          switch (r?.result) {
+            case AccountResult.ok:
+              Haptics.success();
+              // A store subscription that runs longer stays in force; the
+              // number is kept, and the screen says only that.
+              _savedOnly = _state.premium.source != PremiumSource.account;
+              _done = true;
+            case AccountResult.inactive:
+              _error = null;
+            default:
+              Haptics.error();
+              _error = _errorFor(
+                r?.result ?? AccountResult.network,
+                r?.deviceLimit ?? AccountService.defaultDeviceLimit,
+              );
+          }
+        });
+        if (r?.result == AccountResult.inactive) _loadStatus();
       }
-    });
-    if (result.result == AccountResult.inactive) _loadStatus();
+    }
   }
 
   static String _errorFor(AccountResult r, int limit) => switch (r) {
@@ -151,6 +185,7 @@ class _AccountScreenState extends State<AccountScreen> {
     AccountResult.unknown => S.accountErrUnknown,
     AccountResult.revoked => S.accountErrRevoked,
     AccountResult.deviceLimit => S.accountErrDeviceLimit(limit),
+    AccountResult.tooManyAttempts => S.accountErrTooMany,
     _ => S.accountErrNetwork,
   };
 
@@ -245,7 +280,12 @@ class _AccountScreenState extends State<AccountScreen> {
       danger: true,
     );
     if (!ok || !mounted) return;
-    final result = await _state.removeAccountDevice(device.id);
+    AccountResult result;
+    try {
+      result = await _state.removeAccountDevice(device.id);
+    } catch (_) {
+      result = AccountResult.network;
+    }
     if (!mounted) return;
     if (result == AccountResult.ok) {
       Haptics.success();
@@ -317,10 +357,35 @@ class _AccountScreenState extends State<AccountScreen> {
     ]);
     if (go != true || !mounted) return;
     setState(() => _busy = true);
-    final result = await _state.rotateAccountNumber(revokeDevices: also);
+    AccountRotate result;
+    try {
+      result = await _state.rotateAccountNumber(revokeDevices: also);
+    } catch (_) {
+      result = const AccountRotate(AccountResult.network);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
     if (!mounted) return;
-    setState(() => _busy = false);
     final fresh = result.accountNumber;
+    if (result.maybeIssued) {
+      // The old number is gone and the new one never arrived. Only support
+      // can hand it over now, and the user should hear that plainly rather
+      // than be told to try again.
+      Haptics.error();
+      await widget.nav.showSheet<void>([
+        const HipSheetTitle(S.accountRotate),
+        const HipSheetBody(S.accountRotateLost),
+        HipSheetActions(
+          children: [
+            Builder(
+              builder: (c) =>
+                  HipCta(S.aClose, onTap: () => Navigator.of(c).pop()),
+            ),
+          ],
+        ),
+      ]);
+      return;
+    }
     if (result.result != AccountResult.ok || fresh == null) {
       Haptics.error();
       _state.showToast(
@@ -334,7 +399,7 @@ class _AccountScreenState extends State<AccountScreen> {
       const HipSheetTitle(S.accountRotateDone),
       Padding(
         padding: const EdgeInsets.only(top: 14),
-        child: SelectableText(
+        child: Text(
           displayAccountNumber(fresh),
           style: Hip.mono(600, 22, color: Hip.ink, letterSpacing: 1.5),
         ),
@@ -364,7 +429,11 @@ class _AccountScreenState extends State<AccountScreen> {
       danger: true,
     );
     if (!ok || !mounted) return;
-    await _state.signOutAccount();
+    try {
+      await _state.signOutAccount();
+    } catch (_) {
+      if (mounted) _state.showToast(S.accountErrNetwork);
+    }
     if (!mounted) return;
     setState(() {
       _revealed = false;
@@ -428,6 +497,7 @@ class _AccountScreenState extends State<AccountScreen> {
                 inputFormatters: const [AccountNumberFormatter()],
                 autocorrect: false,
                 enableSuggestions: false,
+                enableIMEPersonalizedLearning: false,
                 textInputAction: TextInputAction.done,
                 onSubmitted: (_) => _signIn(),
                 style: Hip.mono(600, 24, color: Hip.ink, letterSpacing: 2),
@@ -496,19 +566,23 @@ class _AccountScreenState extends State<AccountScreen> {
   Widget _standing() {
     final words = Hip.sans(500, 13.5, color: Hip.muted, height: 1.45);
     final nums = Hip.mono(600, 12.5, color: Hip.muted, height: 1.45);
-    final problem = _state.accountProblem;
-    if (problem == AccountResult.revoked) {
+    final issue = _state.accountIssue;
+    if (issue == AccountIssue.revoked) {
       return Text(
         S.accountErrRevoked,
         style: words.copyWith(color: Hip.danger),
       );
     }
-    if (problem == AccountResult.unknown) {
-      return Text(S.accountErrUnknown, style: words);
+    if (issue == AccountIssue.numberReplaced) {
+      return Text(S.accountNumberReplaced, style: words);
     }
+    if (_state.accountDeviceSignedOut) {
+      return Text(S.accountDeviceSignedOut, style: words);
+    }
+    // The server's word, not the date: time can be added from anywhere.
     final expires = _state.accountExpires;
-    final active = expires != null && expires.isAfter(DateTime.now());
-    if (active) {
+    if (_state.accountActive) {
+      if (expires == null) return const SizedBox.shrink();
       final date = formatPremiumDate(expires);
       return Text.rich(_monoIn(S.accountActiveUntil(date), date, words, nums));
     }
@@ -549,6 +623,16 @@ class _AccountScreenState extends State<AccountScreen> {
             ),
             const SizedBox(height: 8),
             _standing(),
+            if (_state.accountDeviceSignedOut) ...[
+              const SizedBox(height: 12),
+              HipCta(
+                S.accountCtaSignIn,
+                connect: true,
+                onTap: _busy
+                    ? null
+                    : () => _signInWith(_state.accountNumber ?? ''),
+              ),
+            ],
             const SizedBox(height: 12),
             Wrap(
               spacing: 8,
@@ -571,13 +655,21 @@ class _AccountScreenState extends State<AccountScreen> {
           ],
         ),
       ),
+      if (_error != null && _state.accountDeviceSignedOut)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
+          child: Text(
+            _error!,
+            style: Hip.sans(500, 13.5, color: Hip.danger, height: 1.45),
+          ),
+        ),
       const HipSubnote(S.accountKeepSafe),
       HipSectionLabel(S.accountDevices),
       if (_statusFailed)
         HipListGroup(
           children: [
             HipListRow(
-              title: S.accountErrNetwork,
+              title: _statusError ?? S.accountErrNetwork,
               trailing: Icon(Icons.refresh, size: 17, color: Hip.muted2),
               onTap: _loadStatus,
             ),
@@ -652,11 +744,11 @@ class _AccountScreenState extends State<AccountScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    S.pwDonePaid,
+                    _savedOnly ? S.accountSaved : S.pwDonePaid,
                     textAlign: TextAlign.center,
                     style: Hip.sans(400, 13.5, color: Hip.muted, height: 1.5),
                   ),
-                  if (date != null) ...[
+                  if (date != null && !_savedOnly) ...[
                     const SizedBox(height: 4),
                     Text.rich(
                       _monoIn(

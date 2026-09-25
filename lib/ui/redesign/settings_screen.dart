@@ -416,6 +416,9 @@ class _SettingsScreenState extends State<SettingsScreen>
   InlineSpan _accountNumberSubtitle(AppState state) {
     final number = state.accountNumber;
     if (number == null) return monoWithin(S.setAccountNumberSub, const []);
+    if (state.accountDeviceSignedOut) {
+      return monoWithin(S.accountDeviceSignedOut, const []);
+    }
     final masked = maskAccountNumber(number, short: true);
     return TextSpan(children: [
       TextSpan(
@@ -479,7 +482,12 @@ class _SettingsScreenState extends State<SettingsScreen>
     // manage yet; the rest of the Account section shows either way.
     final sellCard = sellable && premium.status == PremiumStatus.none;
     final accountRows = <Widget>[
-      if ((sellable || premium.isOn) && !sellCard)
+      // An account number keeps its row even without a store behind the
+      // app, so an account out of time says so here too.
+      if ((sellable ||
+              premium.isOn ||
+              premium.source == PremiumSource.account) &&
+          !sellCard)
         HipListRow(
           leading: const HipFlag(cc: '', child: PremiumCubeIcon()),
           title: S.tPremium,

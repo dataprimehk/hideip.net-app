@@ -40,7 +40,10 @@ enum AccountResult {
   /// The account already has as many devices as it may have (409).
   deviceLimit,
 
-  /// Could not reach the server, too many attempts, or any other answer.
+  /// Too many attempts from this network in a short while (429).
+  tooManyAttempts,
+
+  /// Could not reach the server, or any other answer.
   network,
 }
 
@@ -114,11 +117,16 @@ class AccountRotate {
   final DateTime? expires;
   final bool devicesRevoked;
 
+  /// The answer was lost, but the old number no longer works: the new one
+  /// was most likely issued and never arrived.
+  final bool maybeIssued;
+
   const AccountRotate(
     this.result, {
     this.accountNumber,
     this.expires,
     this.devicesRevoked = false,
+    this.maybeIssued = false,
   });
 }
 
@@ -155,14 +163,15 @@ class AccountService {
       )
       .timeout(timeout);
 
-  /// The answer to a failed call, per the contract's error table. A server
-  /// that is overloaded or rate limiting reads the same as one that cannot
-  /// be reached: the user can only try again either way.
+  /// The answer to a failed call. A server that is down or answers
+  /// something unexpected reads the same as one that cannot be reached: the
+  /// user can only try again either way.
   static AccountResult _failure(int status) => switch (status) {
     400 => AccountResult.invalid,
     403 => AccountResult.revoked,
     404 => AccountResult.unknown,
     409 => AccountResult.deviceLimit,
+    429 => AccountResult.tooManyAttempts,
     _ => AccountResult.network,
   };
 

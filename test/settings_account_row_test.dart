@@ -5,10 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hideip_vpn/core/account_service.dart';
 import 'package:hideip_vpn/core/account_store.dart';
+import 'package:hideip_vpn/core/premium.dart';
 import 'package:hideip_vpn/core/provisioning.dart';
 import 'package:hideip_vpn/core/secret_prefs.dart';
 import 'package:hideip_vpn/state/app_state.dart';
 import 'package:hideip_vpn/ui/redesign/hip.dart';
+import 'package:hideip_vpn/ui/redesign/paywall_screen.dart';
 import 'package:hideip_vpn/ui/redesign/settings_screen.dart';
 import 'package:hideip_vpn/ui/redesign/shell.dart';
 import 'package:hideip_vpn/ui/strings.dart';
@@ -34,6 +36,57 @@ Widget _settings(AppState state, List<HipScreen> went) => MaterialApp(
     body: SettingsScreen(state: state, nav: _nav(went)),
   ),
 );
+
+/// A state signed in to an account number whose sign-in answers [active],
+/// with the store entitlement [store] reported first when given.
+Future<AppState> _signedIn(
+  WidgetTester tester, {
+  required bool active,
+  Premium? store,
+}) async {
+  final ms = DateTime.now()
+      .add(Duration(days: active ? 300 : -3))
+      .millisecondsSinceEpoch;
+  final state = AppState(
+    accounts: AccountService(
+      client: MockClient((req) async {
+        if (req.url.path == '/v1/account/signin') {
+          return http.Response(
+            jsonEncode({
+              'active': active,
+              'expires_ms': ms,
+              'subscription_url': active
+                  ? 'https://api.test/v1/sub/dev_abc'
+                  : null,
+              'device': active
+                  ? {'id': 'dev_abc', 'kind': 'phone', 'name': 'x'}
+                  : null,
+              'device_token': active ? 'tok' : null,
+              'device_limit': 5,
+            }),
+            200,
+          );
+        }
+        return http.Response('', 503);
+      }),
+    ),
+    provisioning: ProvisioningService(
+      client: MockClient((_) async => http.Response('', 503)),
+      catalogSources: [Uri.parse('https://mirror.test/catalog')],
+    ),
+  );
+  if (store != null) state.storeEntitlementForTesting(store);
+  await tester.pumpWidget(const SizedBox());
+  unawaited(state.signInWithAccountNumber('8236387788950319'));
+  for (var i = 0; i < 30; i++) {
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 5)),
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+  }
+  expect(state.accountSignedIn, isTrue);
+  return state;
+}
 
 void main() {
   // Settings is a lazy ListView; a tall surface builds every section.
@@ -87,42 +140,7 @@ void main() {
   });
 
   testWidgets('signed in, the row shows the last four digits', (tester) async {
-    final ms = DateTime.now()
-        .add(const Duration(days: 30))
-        .millisecondsSinceEpoch;
-    final state = AppState(
-      accounts: AccountService(
-        client: MockClient((req) async {
-          if (req.url.path == '/v1/account/signin') {
-            return http.Response(
-              jsonEncode({
-                'active': true,
-                'expires_ms': ms,
-                'subscription_url': 'https://api.test/v1/sub/dev_abc',
-                'device': {'id': 'dev_abc', 'kind': 'phone', 'name': 'x'},
-                'device_token': 'tok',
-                'device_limit': 5,
-              }),
-              200,
-            );
-          }
-          return http.Response('', 503);
-        }),
-      ),
-      provisioning: ProvisioningService(
-        client: MockClient((_) async => http.Response('', 503)),
-        catalogSources: [Uri.parse('https://mirror.test/catalog')],
-      ),
-    );
-    await tester.pumpWidget(const SizedBox());
-    unawaited(state.signInWithAccountNumber('8236387788950319'));
-    for (var i = 0; i < 30; i++) {
-      await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 5)),
-      );
-      await tester.pump(const Duration(milliseconds: 50));
-    }
-    expect(state.accountSignedIn, isTrue);
+    final state = await _signedIn(tester, active: true);
 
     await tester.pumpWidget(_settings(state, <HipScreen>[]));
     await tester.pump();
@@ -136,5 +154,66 @@ void main() {
     expect(find.textContaining('renews'), findsNothing);
     // The card that sells stays away from someone who is in.
     expect(find.byType(PremiumSalesCard), findsNothing);
+  });
+
+  testWidgets('with no store behind the app, an account out of time says so', (
+    tester,
+  ) async {
+    final state = await _signedIn(tester, active: false);
+    expect(state.plansOffered, isFalse);
+
+    await tester.pumpWidget(_settings(state, <HipScreen>[]));
+    await tester.pump();
+
+    expect(find.text(S.tPremium), findsOneWidget);
+    expect(find.text(S.accountOutOfTime), findsOneWidget);
+  });
+
+  testWidgets('Premium manage keeps the store page for a store subscription', (
+    tester,
+  ) async {
+    final state = await _signedIn(
+      tester,
+      active: true,
+      store: Premium(
+        status: PremiumStatus.active,
+        plan: PremiumPlan.monthly,
+        renews: DateTime.now().add(const Duration(days: 5)),
+      ),
+    );
+    expect(state.premium.source, PremiumSource.account);
+    expect(state.hasStoreEntitlement, isTrue);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PremiumManageScreen(state: state, nav: _nav(<HipScreen>[])),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.textContaining('Manage in'), findsOneWidget);
+    expect(find.text(S.pwRestore), findsNothing);
+    expect(find.text(S.pmAccountSubnote), findsOneWidget);
+    expect(find.text(S.accountNumberTitle), findsOneWidget);
+  });
+
+  testWidgets('without a store subscription the store page stays away', (
+    tester,
+  ) async {
+    final state = await _signedIn(tester, active: true);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PremiumManageScreen(state: state, nav: _nav(<HipScreen>[])),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.textContaining('Manage in'), findsNothing);
+    expect(find.text(S.pwRestore), findsNothing);
   });
 }

@@ -55,6 +55,17 @@ enum Mix { byo, mixed, hip }
 /// declined state, because that state turns Connect off.
 enum VpnPerm { unknown, granted, denied }
 
+/// What the server said about an account number itself, as opposed to its
+/// time.
+enum AccountIssue {
+  /// Shut down for good (a refund, for one). It will not come back.
+  revoked,
+
+  /// Replaced with a new number on another device. This device is still on
+  /// the account; the number it holds no longer answers.
+  numberReplaced,
+}
+
 /// What a list of [profiles] plus an entitlement adds up to.
 ///
 /// The rule, from `HideIP App 1.1.0.html`:
@@ -172,17 +183,27 @@ class AppState extends ChangeNotifier {
   /// gate stays server-side receipt validation.
   Premium get premium {
     final r = _premium.renews;
-    if (_premium.isOn && r != null && r.isBefore(DateTime.now())) {
+    // An account number ends when the server says so, never by the date on
+    // this device: time can be added to it from anywhere.
+    if (_premium.expiresByDate &&
+        _premium.isOn &&
+        r != null &&
+        r.isBefore(DateTime.now())) {
       return _premium.copyWith(status: PremiumStatus.expired);
     }
     return _premium;
   }
 
-  /// Puts [p] in force without a store or a server behind it, so a test can
-  /// start from an entitlement the app would otherwise only reach through
-  /// the purchase stream.
+  /// Feeds [p] in as if the store's purchase stream had reported it, so a
+  /// test can start from a store entitlement without a store.
   @visibleForTesting
-  set premiumForTesting(Premium p) => _premium = p;
+  void storeEntitlementForTesting(Premium p) => _onStorePremium(p, null);
+
+  /// Reads the kept account number the way a launch does, without the rest
+  /// of [init].
+  @visibleForTesting
+  Future<void> loadAccountForTesting() async =>
+      _account = await _accountStore.load();
 
   /// Whether the provisioning backend has finished with this subscription:
   /// the subscription URL is retired and a re-provision with the stored
@@ -320,6 +341,11 @@ class AppState extends ChangeNotifier {
     // reconnect / on-demand rules) with no Dart in the loop.
     VpnController.setKillSwitch(_prefs.killSwitch);
     _premium = await Premium.load();
+    final store = await Premium.load(key: Premium.storeKey);
+    // Before 1.2.0 the entitlement in force was always the store's.
+    _storePremium = store.status != PremiumStatus.none
+        ? store
+        : (_premium.source == PremiumSource.store ? _premium : null);
     _account = await _accountStore.load();
     iapLog(
       '[iap] loaded: ${_premium.status.name} plan=${_premium.plan?.name}'
@@ -328,23 +354,7 @@ class AppState extends ChangeNotifier {
     // The store is the source of truth: every entitlement it reports (a
     // purchase, a restore, a renewal from a previous session) lands here.
     _purchases.init(
-      onPremium: (p, proof) {
-        // The store replays past transactions in arbitrary order (a stale
-        // renewal can land right after the newest one); an entitlement only
-        // ever moves forward. Plan changes are safe under this rule: in a
-        // subscription group the replacing transaction always starts at or
-        // after the old one's period end.
-        final held = _premium.renews;
-        if (held != null && p.renews != null && p.renews!.isBefore(held)) {
-          return;
-        }
-        _premium = p;
-        notifyListeners();
-        p.save();
-        // Every live entitlement re-provisions: a first purchase creates the
-        // server profile, a renewal extends its lifetime server-side.
-        if (p.isOn && proof != null) _provisionPremium(proof);
-      },
+      onPremium: _onStorePremium,
       // The catalog loads asynchronously; the paywall entry points are gated
       // on availability, so a rebuild has to follow when it flips.
       onAvailability: notifyListeners,
@@ -363,7 +373,9 @@ class AppState extends ChangeNotifier {
       // The entitlement says account number, but the number itself could
       // not be read back (a restore onto a device whose Keystore never held
       // the key, for one). Nothing on this device can use it any more.
-      await _premiumRefreshGate.run(_dropAccountEntitlement);
+      await _premiumRefreshGate.run(
+        () => _accountFallsAway(const Premium.none()),
+      );
     }
     final savedIdx = await ProfileStore.loadSelectedIndex();
     if (savedIdx >= 0 && savedIdx < _profiles.length) _selected = savedIdx;
@@ -372,7 +384,7 @@ class AppState extends ChangeNotifier {
     _refreshPremiumProfiles();
     // An account number's time is only known to the server (a top-up made
     // elsewhere, a device removed from another phone): ask in the
-    // background, never holding up the start.
+    // background, never holding up the start, and not on every launch.
     unawaited(refreshAccount());
     // Same for the user's own subscription imports: providers rotate servers
     // behind their URL, so re-pull each one.
@@ -620,7 +632,13 @@ class AppState extends ChangeNotifier {
       if (premium.status == PremiumStatus.expired &&
           _profiles.any(isPremiumProfile)) {
         _applyPremiumProfiles(const []);
-        await PremiumSub.clear();
+        // An account number's servers go, but a store purchase proof on
+        // disk stays: it is what brings a store subscription back.
+        if (_premium.source == PremiumSource.account) {
+          await PremiumSub.forgetSubscription();
+        } else {
+          await PremiumSub.clear();
+        }
         // The WireGuard peer goes with it; the backend drops the peers on its
         // side when the store notification lands, and holding a stale profile
         // here would only produce a tunnel that cannot hand shake.
@@ -661,15 +679,16 @@ class AppState extends ChangeNotifier {
       await _refreshWireGuard(renewed);
     }
     if (refresh?.expired ?? false) {
-      await _premiumSubscriptionEnded();
       if (account) {
-        // The number stays: the account is out of time, or this device was
-        // taken off it, and only the server can say which.
-        _premium = _premium.copyWith(status: PremiumStatus.expired);
-        await _premium.save();
-        notifyListeners();
-        unawaited(refreshAccount());
+        // The server has spoken for this URL: the account is out of time,
+        // or this device was taken off it. The number stays, a store
+        // subscription still running comes back, and the status call that
+        // follows says which of the two it was.
+        await _accountFallsAway(_premium.copyWith(status: PremiumStatus.expired));
+        unawaited(refreshAccount(force: true));
+        return;
       }
+      await _premiumSubscriptionEnded();
       return;
     }
     final fresh = refresh?.profiles;
@@ -749,39 +768,61 @@ class AppState extends ChangeNotifier {
   final AccountService _accounts;
   final AccountStore _accountStore = const AccountStore();
   AccountCredentials? _account;
-  AccountResult? _accountProblem;
+  AccountIssue? _accountIssue;
 
-  /// Whether an account number is signed in on this device. Stays true for an
-  /// account that has run out of time: the number is kept for when time is
-  /// added, and only signing out forgets it.
+  /// How often the account is asked about on its own, in the background.
+  /// Opening the account screen always asks.
+  static const accountStatusInterval = Duration(hours: 6);
+
+  /// The last store entitlement, kept apart from the one in force: while an
+  /// account number runs the app, a store subscription is still what it is,
+  /// and it comes back when the account stops being the one in force.
+  Premium? _storePremium;
+
+  /// Whether the store has reported a subscription on this device, live or
+  /// not. Premium manage keeps the store's own page reachable for it.
+  bool get hasStoreEntitlement =>
+      _storePremium != null && _storePremium!.status != PremiumStatus.none;
+
+  /// Whether an account number is kept on this device. Stays true for an
+  /// account that has run out of time, and for one this device was taken
+  /// off: the number is kept so signing back in is one tap. Only signing
+  /// out forgets it.
   bool get accountSignedIn => _account != null;
 
-  /// The signed-in account number, canonical, or null. A secret: shown
-  /// masked unless the user asks, and never logged.
+  /// The kept account number, canonical, or null. A secret: shown masked
+  /// unless the user asks, and never logged.
   String? get accountNumber => _account?.number;
 
   /// This device's entry on the account, for the "This device" badge.
   String? get accountDeviceId => _account?.deviceId;
 
-  /// When the signed-in account's time runs out, as last heard.
+  /// When the account's time runs out, as the server last said.
   DateTime? get accountExpires => _account?.expires;
 
-  /// What the server said about the number the last time it was asked, when
-  /// that was not an answer about its time: [AccountResult.revoked] (shut
-  /// down for good) or [AccountResult.unknown] (the number was replaced from
-  /// another device; this one keeps working until signed out).
-  AccountResult? get accountProblem => _accountProblem;
+  /// Whether the server last said the account has time.
+  bool get accountActive => _account?.active ?? false;
 
-  /// The entitlement an account of [kind] with [expires] adds up to. A
-  /// trial reads as active: it is a day of access, not a store trial that
-  /// turns into a charge, and nothing about it should say otherwise.
-  static Premium _accountPremium(String? kind, DateTime? expires,
-      {required bool active}) {
-    final on = active &&
-        expires != null &&
-        expires.isAfter(DateTime.now());
+  /// The account has time but this device is not on it: it was taken off
+  /// from another device. Signing in again puts it back.
+  bool get accountDeviceSignedOut =>
+      _account != null && _account!.active && !_account!.hasDevice;
+
+  /// What the server said about the number itself the last time it was
+  /// asked, when that was not an answer about its time.
+  AccountIssue? get accountIssue => _accountIssue;
+
+  /// The entitlement an account of [kind] adds up to, by the server's word
+  /// ([active]) and never by the date. A trial reads as active: it is a
+  /// day of access, not a store trial that turns into a charge, and the
+  /// home screen's reminder before a store trial charges must not show.
+  static Premium _accountPremium(
+    String? kind,
+    DateTime? expires, {
+    required bool active,
+  }) {
     return Premium(
-      status: on ? PremiumStatus.active : PremiumStatus.expired,
+      status: active ? PremiumStatus.active : PremiumStatus.expired,
       plan: switch (kind) {
         'monthly' => PremiumPlan.monthly,
         'yearly' => PremiumPlan.yearly,
@@ -805,6 +846,59 @@ class AppState extends ChangeNotifier {
     return !mine.isBefore(theirs);
   }
 
+  /// A store entitlement from the purchase stream. It is always recorded;
+  /// it goes into force unless an account number that lasts longer already
+  /// is.
+  void _onStorePremium(Premium p, PurchasePayload? proof) {
+    // The store replays past transactions in arbitrary order (a stale
+    // renewal can land right after the newest one); an entitlement only ever
+    // moves forward. Plan changes are safe under this rule: in a
+    // subscription group the replacing transaction always starts at or
+    // after the old one's period end.
+    final held = _storePremium?.renews;
+    if (held != null && p.renews != null && p.renews!.isBefore(held)) {
+      return;
+    }
+    _storePremium = p;
+    p.save(key: Premium.storeKey);
+    if (_premium.source == PremiumSource.account &&
+        (!p.isOn || !_outlasts(p))) {
+      notifyListeners();
+      return;
+    }
+    _premium = p;
+    notifyListeners();
+    p.save();
+    // Every live entitlement re-provisions: a first purchase creates the
+    // server profile, a renewal extends its lifetime server-side.
+    if (p.isOn && proof != null) _provisionPremium(proof);
+  }
+
+  /// The account number stopped being the entitlement in force on this
+  /// device. Its servers go; a store subscription still running comes back
+  /// in its place without a restore, and otherwise [leftover] says where
+  /// things stand.
+  Future<void> _accountFallsAway(Premium leftover) async {
+    await _premiumSubscriptionEnded();
+    _premiumEnded = false;
+    final store = _storePremium;
+    final proof = await PremiumSub.proof();
+    final renews = store?.renews;
+    final storeLive = store != null &&
+        store.isOn &&
+        (renews == null || renews.isAfter(DateTime.now()));
+    if (storeLive && proof != null) {
+      _premium = store;
+      await _premium.save();
+      notifyListeners();
+      await _provisionPremiumLocked(proof);
+      return;
+    }
+    _premium = leftover;
+    await _premium.save();
+    notifyListeners();
+  }
+
   /// Sign this device in with [number]. On success the premium servers
   /// arrive the same way they do after a store purchase. An account with no
   /// time left keeps the number, so time added later brings it back.
@@ -823,29 +917,34 @@ class AppState extends ChangeNotifier {
     );
     switch (result.result) {
       case AccountResult.ok:
-        await _premiumRefreshGate.run(() => _adoptAccount(
-              AccountCredentials(
-                number: digits,
-                deviceToken: result.deviceToken,
-                deviceId: result.deviceId,
-                kind: same ? held.kind : null,
-                expires: result.expires,
-              ),
-              result.subscriptionUrl!,
-            ));
+        await _premiumRefreshGate.run(
+          () => _adoptAccount(
+            AccountCredentials(
+              number: digits,
+              deviceToken: result.deviceToken,
+              deviceId: result.deviceId,
+              kind: same ? held.kind : null,
+              expires: result.expires,
+            ),
+            result.subscriptionUrl!,
+          ),
+        );
         // The kind of the last payment and the device list only come with
         // the status call.
-        unawaited(refreshAccount());
+        unawaited(refreshAccount(force: true));
       case AccountResult.inactive:
-        await _premiumRefreshGate.run(() => _accountOutOfTime(
-              AccountCredentials(
-                number: digits,
-                deviceToken: same ? held.deviceToken : null,
-                deviceId: same ? held.deviceId : null,
-                kind: same ? held.kind : null,
-                expires: result.expires,
-              ),
-            ));
+        await _premiumRefreshGate.run(
+          () => _accountOutOfTime(
+            AccountCredentials(
+              number: digits,
+              deviceToken: same ? held.deviceToken : null,
+              deviceId: same ? held.deviceId : null,
+              kind: same ? held.kind : null,
+              expires: result.expires,
+              active: false,
+            ),
+          ),
+        );
       default:
         break;
     }
@@ -855,12 +954,12 @@ class AppState extends ChangeNotifier {
   /// Stores [creds] and, when the account outlasts what is in force, makes
   /// it the entitlement and provisions from [url].
   Future<void> _adoptAccount(AccountCredentials creds, String url) async {
-    _account = creds;
-    _accountProblem = null;
+    // Stored first: a number that could not be kept is not signed in.
     await _accountStore.save(creds);
-    final candidate =
-        _accountPremium(creds.kind, creds.expires, active: true);
-    if (!candidate.isOn || !_outlasts(candidate)) {
+    _account = creds;
+    _accountIssue = null;
+    final candidate = _accountPremium(creds.kind, creds.expires, active: true);
+    if (!_outlasts(candidate)) {
       // A store subscription that runs longer stays in force; the number is
       // kept for when it does not.
       notifyListeners();
@@ -875,53 +974,67 @@ class AppState extends ChangeNotifier {
   /// Stores [creds] for an account with no time left. Its servers go, the
   /// number stays.
   Future<void> _accountOutOfTime(AccountCredentials creds) async {
-    _account = creds;
-    _accountProblem = null;
     await _accountStore.save(creds);
-    if (premium.isOn && _premium.source != PremiumSource.account) {
+    _account = creds;
+    _accountIssue = null;
+    if (_premium.source != PremiumSource.account && premium.isOn) {
       notifyListeners();
       return;
     }
-    final wasOn = _premium.source == PremiumSource.account;
-    _premium = _accountPremium(creds.kind, creds.expires, active: false);
-    await _premium.save();
-    if (wasOn) {
-      await _premiumSubscriptionEnded();
-    } else {
-      notifyListeners();
-    }
+    await _accountFallsAway(
+      _accountPremium(creds.kind, creds.expires, active: false),
+    );
   }
 
-  /// Asks the server how the signed-in account stands and brings this
-  /// device in line: time added elsewhere comes back, time run out takes
-  /// the servers away, a number shut down stops working. Returns the answer
-  /// for the account screen, or null when there was none (not signed in,
-  /// or the server could not be reached).
-  Future<AccountStatus?> refreshAccount() async {
+  /// Asks the server how the kept account stands and brings this device in
+  /// line: time added elsewhere comes back, time run out takes the servers
+  /// away, a number shut down stops working. In the background this runs
+  /// at most once per [accountStatusInterval]; [force] asks regardless (the
+  /// account screen does, every time it opens). Returns the answer, or null
+  /// when there was none (not signed in, not due yet, or the server could
+  /// not be reached).
+  Future<AccountStatus?> refreshAccount({bool force = false}) async {
     final held = _account;
     if (held == null) return null;
+    final now = DateTime.now();
+    if (!force) {
+      final last = await _accountStore.lastStatusAt();
+      if (last != null &&
+          now.difference(last) < accountStatusInterval &&
+          !now.isBefore(last)) {
+        return null;
+      }
+    }
     final status = await _accounts.status(held.number);
     if (status == null) return null;
-    // Signed out or rotated while the answer was on its way.
+    await _accountStore.markStatusAt(now);
+    // Signed out, or a new number, while the answer was on its way.
     if (_account?.number != held.number) return status;
     switch (status.result) {
       case AccountResult.ok:
-        _accountProblem = null;
+        _accountIssue = null;
         await _premiumRefreshGate.run(() => _applyAccountStanding(status));
       case AccountResult.revoked:
-        _accountProblem = AccountResult.revoked;
-        if (_premium.source == PremiumSource.account) {
-          await _premiumRefreshGate.run(() async {
-            _premium = _premium.copyWith(status: PremiumStatus.expired);
-            await _premium.save();
-            await _premiumSubscriptionEnded();
-          });
-        }
+        _accountIssue = AccountIssue.revoked;
+        await _premiumRefreshGate.run(() async {
+          final creds = held.withStanding(active: false);
+          _account = creds;
+          await _accountStore.saveStanding(
+            kind: creds.kind,
+            expires: creds.expires,
+            active: false,
+          );
+          if (_premium.source == PremiumSource.account) {
+            await _accountFallsAway(
+              _accountPremium(creds.kind, creds.expires, active: false),
+            );
+          }
+        });
       case AccountResult.unknown:
-        // The number was replaced on another device. The device itself is
-        // still on the account and keeps working; the screen says why the
-        // number no longer answers.
-        _accountProblem = AccountResult.unknown;
+        // The number was replaced on another device. This device is still
+        // on the account and keeps working; nothing is decided from here,
+        // least of all from the date. The screen says what to do.
+        _accountIssue = AccountIssue.numberReplaced;
       default:
         break;
     }
@@ -932,27 +1045,48 @@ class AppState extends ChangeNotifier {
   Future<void> _applyAccountStanding(AccountStatus status) async {
     final held = _account;
     if (held == null) return;
+    final creds = held.withStanding(
+      kind: status.kind,
+      expires: status.expires,
+      active: status.active,
+    );
     final devices = status.devices;
-    final id = held.deviceId;
+    final id = creds.deviceId;
     if (status.active &&
+        creds.hasDevice &&
         id != null &&
         devices != null &&
         !devices.any((d) => d.id == id)) {
-      // Taken off the account from another device. Signing in again would
-      // quietly put back a device someone chose to remove, so this one is
-      // signed out instead.
-      await _forgetAccount();
+      // Taken off the account from another device. Signing in again on its
+      // own would quietly put back a device someone chose to remove, so the
+      // device is let go and the number kept: one tap signs it back in.
+      _account = creds.withoutDevice();
+      await _accountStore.save(_account!);
+      if (_premium.source == PremiumSource.account) {
+        await _accountFallsAway(const Premium.none());
+      } else {
+        notifyListeners();
+      }
       return;
     }
-    final creds = held.withStanding(kind: status.kind, expires: status.expires);
     _account = creds;
-    await _accountStore.saveStanding(kind: creds.kind, expires: creds.expires);
+    await _accountStore.saveStanding(
+      kind: creds.kind,
+      expires: creds.expires,
+      active: creds.active,
+    );
     if (!status.active) {
       await _accountOutOfTime(creds);
       return;
     }
+    if (!creds.hasDevice) {
+      // Time on the account, but this device is not on it: it waits for the
+      // user to sign in again rather than taking a slot on its own.
+      notifyListeners();
+      return;
+    }
     final candidate = _accountPremium(creds.kind, creds.expires, active: true);
-    if (!candidate.isOn || !_outlasts(candidate)) {
+    if (!_outlasts(candidate)) {
       notifyListeners();
       return;
     }
@@ -988,7 +1122,7 @@ class AppState extends ChangeNotifier {
     if (held == null) return AccountResult.invalid;
     final result = await _accounts.revokeDevice(held.number, deviceId);
     if (result == AccountResult.revoked) {
-      _accountProblem = AccountResult.revoked;
+      _accountIssue = AccountIssue.revoked;
       notifyListeners();
     }
     return result;
@@ -997,22 +1131,39 @@ class AppState extends ChangeNotifier {
   /// Swaps the account number for a new one. With [revokeDevices] every
   /// device is signed out, this one too, so this one signs straight back in
   /// with the new number.
+  ///
+  /// When the answer is lost on the way, the old number is asked about: if
+  /// it is no longer known, the new one was most likely issued and never
+  /// arrived, which the result says with [AccountRotate.maybeIssued].
   Future<AccountRotate> rotateAccountNumber({
     bool revokeDevices = false,
   }) async {
     final held = _account;
     if (held == null) return const AccountRotate(AccountResult.invalid);
-    final result =
-        await _accounts.rotate(held.number, revokeDevices: revokeDevices);
+    final result = await _accounts.rotate(
+      held.number,
+      revokeDevices: revokeDevices,
+    );
     final fresh = result.accountNumber;
     if (result.result != AccountResult.ok || fresh == null) {
       if (result.result == AccountResult.revoked) {
-        _accountProblem = AccountResult.revoked;
+        _accountIssue = AccountIssue.revoked;
         notifyListeners();
+      }
+      if (result.result == AccountResult.network) {
+        final check = await _accounts.status(held.number);
+        if (check?.result == AccountResult.unknown) {
+          _accountIssue = AccountIssue.numberReplaced;
+          notifyListeners();
+          return const AccountRotate(
+            AccountResult.network,
+            maybeIssued: true,
+          );
+        }
       }
       return result;
     }
-    _accountProblem = null;
+    _accountIssue = null;
     _account = AccountCredentials(
       number: fresh,
       // Signed out along with every other device, the old token is dead.
@@ -1020,6 +1171,7 @@ class AppState extends ChangeNotifier {
       deviceId: revokeDevices ? null : held.deviceId,
       kind: held.kind,
       expires: result.expires ?? held.expires,
+      active: held.active,
     );
     await _accountStore.save(_account!);
     notifyListeners();
@@ -1029,7 +1181,7 @@ class AppState extends ChangeNotifier {
 
   /// Forgets the account on this device and takes this device off it. The
   /// premium servers go with it; the number itself keeps working anywhere
-  /// it is entered again.
+  /// it is entered again. The only way the number leaves the device.
   Future<void> signOutAccount() async {
     final held = _account;
     if (held == null) return;
@@ -1042,22 +1194,13 @@ class AppState extends ChangeNotifier {
 
   Future<void> _forgetAccount() async {
     _account = null;
-    _accountProblem = null;
+    _accountIssue = null;
     await _accountStore.clear();
     if (_premium.source == PremiumSource.account) {
-      await _dropAccountEntitlement();
+      await _accountFallsAway(const Premium.none());
     } else {
       notifyListeners();
     }
-  }
-
-  /// The account entitlement is gone from this device: the same clean-up as
-  /// a subscription the backend retired, and no entitlement left behind.
-  Future<void> _dropAccountEntitlement() async {
-    _premium = const Premium.none();
-    await _premium.save();
-    await _premiumSubscriptionEnded();
-    _premiumEnded = false;
   }
 
   // --- User subscriptions --------------------------------------------------

@@ -26,8 +26,12 @@ class AccountCredentials {
   /// What the last payment was: `monthly`, `yearly` or `trial`.
   final String? kind;
 
-  /// When the account's time runs out.
+  /// When the account's time runs out, as the server last said.
   final DateTime? expires;
+
+  /// Whether the server last said the account has time. The device never
+  /// works this out from [expires]: time can be added from anywhere.
+  final bool active;
 
   const AccountCredentials({
     required this.number,
@@ -35,17 +39,34 @@ class AccountCredentials {
     this.deviceId,
     this.kind,
     this.expires,
+    this.active = true,
   });
 
+  /// Whether this device is on the account. False after an account with no
+  /// time was entered, or after this device was taken off the account.
+  bool get hasDevice => deviceToken != null;
+
   /// The same credentials with a newer standing from the server.
-  AccountCredentials withStanding({String? kind, DateTime? expires}) =>
-      AccountCredentials(
-        number: number,
-        deviceToken: deviceToken,
-        deviceId: deviceId,
-        kind: kind ?? this.kind,
-        expires: expires ?? this.expires,
-      );
+  AccountCredentials withStanding({
+    String? kind,
+    DateTime? expires,
+    bool? active,
+  }) => AccountCredentials(
+    number: number,
+    deviceToken: deviceToken,
+    deviceId: deviceId,
+    kind: kind ?? this.kind,
+    expires: expires ?? this.expires,
+    active: active ?? this.active,
+  );
+
+  /// The same number with this device no longer on the account.
+  AccountCredentials withoutDevice() => AccountCredentials(
+    number: number,
+    kind: kind,
+    expires: expires,
+    active: active,
+  );
 }
 
 class AccountStore {
@@ -56,6 +77,8 @@ class AccountStore {
   static const kDeviceId = 'premium_account_device_id';
   static const kKind = 'premium_account_kind';
   static const kExpiresMs = 'premium_account_expires_ms';
+  static const kActive = 'premium_account_active';
+  static const kStatusAtMs = 'premium_account_status_at_ms';
 
   /// What is stored, or null when this device is not signed in.
   Future<AccountCredentials?> load() async {
@@ -69,6 +92,7 @@ class AccountStore {
       deviceId: _nonEmpty(await SecretPrefs.readString(kDeviceId)),
       kind: prefs.getString(kKind),
       expires: ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms),
+      active: prefs.getBool(kActive) ?? true,
     );
   }
 
@@ -78,12 +102,21 @@ class AccountStore {
     await SecretPrefs.writeString(kNumber, credentials.number);
     await _secret(kDeviceToken, credentials.deviceToken);
     await _secret(kDeviceId, credentials.deviceId);
-    await saveStanding(kind: credentials.kind, expires: credentials.expires);
+    await saveStanding(
+      kind: credentials.kind,
+      expires: credentials.expires,
+      active: credentials.active,
+    );
   }
 
-  /// Updates the kind and the expiry only; the secrets stay as they are.
-  Future<void> saveStanding({String? kind, DateTime? expires}) async {
+  /// Updates the standing only; the secrets stay as they are.
+  Future<void> saveStanding({
+    String? kind,
+    DateTime? expires,
+    bool active = true,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(kActive, active);
     if (kind == null) {
       await prefs.remove(kKind);
     } else {
@@ -104,7 +137,21 @@ class AccountStore {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(kKind);
     await prefs.remove(kExpiresMs);
+    await prefs.remove(kActive);
+    await prefs.remove(kStatusAtMs);
   }
+
+  /// When the server was last asked about the account, or null if never.
+  Future<DateTime?> lastStatusAt() async {
+    final ms = (await SharedPreferences.getInstance()).getInt(kStatusAtMs);
+    return ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms);
+  }
+
+  Future<void> markStatusAt(DateTime at) async =>
+      (await SharedPreferences.getInstance()).setInt(
+        kStatusAtMs,
+        at.millisecondsSinceEpoch,
+      );
 
   static Future<void> _secret(String key, String? value) => value == null
       ? SecretPrefs.deleteString(key)
