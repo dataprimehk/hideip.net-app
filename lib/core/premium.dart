@@ -14,6 +14,11 @@ enum PremiumStatus { none, trial, active, expired }
 
 enum PremiumPlan { monthly, yearly }
 
+/// Where an entitlement comes from: a store subscription, or an account
+/// number signed in on this device. The two are separate entitlements; the
+/// app runs on whichever lasts longer.
+enum PremiumSource { store, account }
+
 /// Store product identifiers, identical on both stores by design.
 class PremiumProducts {
   static const monthly = 'net.hideip.vpn.premium.monthly';
@@ -132,17 +137,41 @@ class Premium {
 
   final PremiumStatus status;
   final PremiumPlan? plan;
+
+  /// When the period ends. For a store subscription that is the renewal
+  /// date; an account number does not renew, so for one it is simply the
+  /// day its time runs out.
   final DateTime? renews;
+  final PremiumSource source;
 
   const Premium.none()
       : status = PremiumStatus.none,
         plan = null,
-        renews = null;
+        renews = null,
+        source = PremiumSource.store;
 
-  const Premium({required this.status, this.plan, this.renews});
+  const Premium({
+    required this.status,
+    this.plan,
+    this.renews,
+    this.source = PremiumSource.store,
+  });
 
   bool get isOn =>
       status == PremiumStatus.trial || status == PremiumStatus.active;
+
+  Premium copyWith({
+    PremiumStatus? status,
+    PremiumPlan? plan,
+    DateTime? renews,
+    PremiumSource? source,
+  }) =>
+      Premium(
+        status: status ?? this.status,
+        plan: plan ?? this.plan,
+        renews: renews ?? this.renews,
+        source: source ?? this.source,
+      );
 
   /// Load the persisted standing. A subscription whose period lapsed while
   /// the app was closed comes back as [PremiumStatus.expired]; the next store
@@ -164,10 +193,15 @@ class Premium {
           (status == PremiumStatus.trial || status == PremiumStatus.active)) {
         status = PremiumStatus.expired;
       }
+      // Written before account numbers existed, a record has no source and
+      // is a store subscription.
+      final sourceName = map['source'] as String?;
       return Premium(
         status: status,
         plan: planName == null ? null : PremiumPlan.values.byName(planName),
         renews: renews,
+        source: PremiumSource.values.asNameMap()[sourceName] ??
+            PremiumSource.store,
       );
     } catch (_) {
       return const Premium.none();
@@ -182,6 +216,7 @@ class Premium {
           'status': status.name,
           'plan': plan?.name,
           'renews': renews?.millisecondsSinceEpoch,
+          'source': source.name,
         }));
   }
 }
