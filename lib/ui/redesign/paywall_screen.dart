@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/account_number.dart';
 import '../../core/haptics.dart';
 import '../../core/location.dart';
 import '../../core/ping.dart';
@@ -759,6 +760,44 @@ class PaywallOffer extends StatelessWidget {
   }
 }
 
+/// The quiet way out of a paywall for someone who already has an account
+/// number: one line of text, below everything else, never a button that
+/// competes with the offer.
+class AccountSignInLink extends StatelessWidget {
+  final VoidCallback onTap;
+
+  /// On the paywall's dark surface rather than the app's own.
+  final bool onDark;
+  const AccountSignInLink({
+    super.key,
+    required this.onTap,
+    this.onDark = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
+          child: Text(
+            S.accountSignInLink,
+            textAlign: TextAlign.center,
+            style: Hip.sans(
+              500,
+              14,
+              color: onDark ? Colors.white.withValues(alpha: .55) : Hip.muted,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// The paywall as it is laid out: the close header, then the offer filling
 /// everything under it. Split out from the screen so the whole thing can be
 /// measured at a given screen size without a store behind it.
@@ -914,21 +953,32 @@ class _PaywallScreenState extends State<PaywallScreen> {
       children: [
         PaywallLayout(
           onClose: _back,
-          offer: PaywallOffer(
-            yearly: widget.state.planInfo(PremiumPlan.yearly),
-            monthly: widget.state.planInfo(PremiumPlan.monthly),
-            plan: _plan,
-            onPlan: (p) => setState(() => _plan = p),
-            city: _city,
-            locationCount: _locationCount,
-            trialEnds: _trialEnds,
-            storeName: _storeName,
-            failed: _phase == _PwPhase.error,
-            storeMessage: widget.state.purchases.lastError,
-            onBuy: _buy,
-            onRestore: _restore,
-            onTerms: () => _openUrl(_termsUrl),
-            onPrivacy: () => _openUrl(_privacyUrl),
+          offer: Column(
+            children: [
+              Expanded(
+                child: PaywallOffer(
+                  yearly: widget.state.planInfo(PremiumPlan.yearly),
+                  monthly: widget.state.planInfo(PremiumPlan.monthly),
+                  plan: _plan,
+                  onPlan: (p) => setState(() => _plan = p),
+                  city: _city,
+                  locationCount: _locationCount,
+                  trialEnds: _trialEnds,
+                  storeName: _storeName,
+                  failed: _phase == _PwPhase.error,
+                  storeMessage: widget.state.purchases.lastError,
+                  onBuy: _buy,
+                  onRestore: _restore,
+                  onTerms: () => _openUrl(_termsUrl),
+                  onPrivacy: () => _openUrl(_privacyUrl),
+                ),
+              ),
+              if (kAccountSignIn)
+                AccountSignInLink(
+                  onDark: true,
+                  onTap: () => widget.nav.go(HipScreen.account),
+                ),
+            ],
           ),
         ),
         if (_phase == _PwPhase.buying) _buyingOverlay(),
@@ -1199,6 +1249,28 @@ class PremiumManageScreen extends StatefulWidget {
 class _PremiumManageScreenState extends State<PremiumManageScreen> {
   bool _restoring = false;
 
+  /// The account number's line under the plan name: the day its time runs
+  /// out, with the date in mono, or that it has run out.
+  InlineSpan _accountLine(bool expired, DateTime? until) {
+    if (expired || until == null) {
+      return const TextSpan(text: S.accountOutOfTime);
+    }
+    final date = formatPremiumDate(until);
+    final line = S.accountActiveUntil(date);
+    final at = line.indexOf(date);
+    if (at < 0) return TextSpan(text: line);
+    return TextSpan(
+      children: [
+        TextSpan(text: line.substring(0, at)),
+        TextSpan(
+          text: date,
+          style: Hip.mono(600, 12.5, color: Hip.muted),
+        ),
+        TextSpan(text: line.substring(at + date.length)),
+      ],
+    );
+  }
+
   Future<void> _restore() async {
     if (_restoring) return;
     setState(() => _restoring = true);
@@ -1213,6 +1285,10 @@ class _PremiumManageScreenState extends State<PremiumManageScreen> {
     final p = state.premium;
     final info = state.planInfo(p.plan ?? PremiumPlan.yearly);
     final expired = p.status == PremiumStatus.expired;
+    // An account number has no store behind it: no price, no renewal, no
+    // store page and nothing to restore. It has a number instead.
+    final account = p.source == PremiumSource.account;
+    final until = p.renews;
     final statusBadge = switch (p.status) {
       PremiumStatus.active => HipBadge.ok(S.pmActive),
       PremiumStatus.trial => HipBadge.blue(S.tFreeTrial),
@@ -1257,12 +1333,18 @@ class _PremiumManageScreenState extends State<PremiumManageScreen> {
                               ],
                             ),
                             const SizedBox(height: 2),
-                            Text(
-                              expired
-                                  ? S.setPremiumEnded
-                                  : S.pmPlanName(info.name),
-                              style: Hip.sans(550, 13, color: Hip.muted),
-                            ),
+                            if (account)
+                              Text.rich(
+                                _accountLine(expired, until),
+                                style: Hip.sans(550, 13, color: Hip.muted),
+                              )
+                            else
+                              Text(
+                                expired
+                                    ? S.setPremiumEnded
+                                    : S.pmPlanName(info.name),
+                                style: Hip.sans(550, 13, color: Hip.muted),
+                              ),
                           ],
                         ),
                       ),
@@ -1271,7 +1353,31 @@ class _PremiumManageScreenState extends State<PremiumManageScreen> {
                     ],
                   ),
                 ),
-                if (!expired) ...[
+                if (account) ...[
+                  const HipSectionLabel(S.setAccount),
+                  HipListGroup(
+                    children: [
+                      HipListRow(
+                        title: S.accountNumberTitle,
+                        subtitle: state.accountNumber == null
+                            ? null
+                            : maskAccountNumber(
+                                state.accountNumber!,
+                                short: true,
+                              ),
+                        subtitleMono: true,
+                        trailing: Icon(
+                          Icons.chevron_right,
+                          size: 17,
+                          color: Hip.muted2,
+                        ),
+                        onTap: () => nav.go(HipScreen.account),
+                      ),
+                    ],
+                  ),
+                  const HipSubnote(S.pmAccountSubnote),
+                ],
+                if (!expired && !account) ...[
                   const HipSectionLabel(S.pmSubscription),
                   HipListGroup(
                     children: [
@@ -1304,40 +1410,42 @@ class _PremiumManageScreenState extends State<PremiumManageScreen> {
                     ],
                   ),
                 ],
-                const HipSectionLabel(S.pmBilling),
-                HipListGroup(
-                  children: [
-                    HipListRow(
-                      title: S.pmManage(_storeName),
-                      subtitle: S.pmManageSub,
-                      trailing: Icon(
-                        Icons.open_in_new,
-                        size: 17,
-                        color: Hip.muted2,
+                if (!account) ...[
+                  const HipSectionLabel(S.pmBilling),
+                  HipListGroup(
+                    children: [
+                      HipListRow(
+                        title: S.pmManage(_storeName),
+                        subtitle: S.pmManageSub,
+                        trailing: Icon(
+                          Icons.open_in_new,
+                          size: 17,
+                          color: Hip.muted2,
+                        ),
+                        onTap: () => _openUrl(_manageUrl),
                       ),
-                      onTap: () => _openUrl(_manageUrl),
-                    ),
-                    HipListRow(
-                      title: _restoring ? S.pmChecking : S.pwRestore,
-                      trailing: _restoring
-                          ? SizedBox(
-                              width: 15,
-                              height: 15,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
+                      HipListRow(
+                        title: _restoring ? S.pmChecking : S.pwRestore,
+                        trailing: _restoring
+                            ? SizedBox(
+                                width: 15,
+                                height: 15,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Hip.muted2,
+                                ),
+                              )
+                            : Icon(
+                                Icons.chevron_right,
+                                size: 17,
                                 color: Hip.muted2,
                               ),
-                            )
-                          : Icon(
-                              Icons.chevron_right,
-                              size: 17,
-                              color: Hip.muted2,
-                            ),
-                      onTap: _restoring ? null : _restore,
-                    ),
-                  ],
-                ),
-                HipSubnote(S.pmSubnote(_storeName)),
+                        onTap: _restoring ? null : _restore,
+                      ),
+                    ],
+                  ),
+                  HipSubnote(S.pmSubnote(_storeName)),
+                ],
                 if (expired)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(0, 14, 0, 24),
@@ -1449,6 +1557,8 @@ class TrialExpiredScreen extends StatelessWidget {
                   quiet: true,
                   onTap: () => nav.openImport(),
                 ),
+                if (kAccountSignIn)
+                  AccountSignInLink(onTap: () => nav.go(HipScreen.account)),
               ],
             ),
           ),

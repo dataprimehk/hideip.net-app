@@ -815,4 +815,77 @@ abstract final class S {
   static const srvNameHint = 'Name';
   static const srvNamedFromPlace =
       'The name comes from where the address is. Change it above if you like.';
+
+  // ---------------------------------------------------------------------
+  // Account number (1.2.0). Signing in with a 16-digit account number
+  // instead of a store purchase. Nothing here says where a number comes
+  // from; the screen is a sign-in and only that.
+  // ---------------------------------------------------------------------
+
+  /// The screen title, and the Settings row that leads to it.
+  static const accountNumberTitle = 'Account number';
+
+  /// The quiet link under the paywall offer.
+  static const accountSignInLink = 'Already have an account number? Sign in';
+  static const accountHelp =
+      'Enter the 16-digit account number of your hideip.net subscription. '
+      'It works instead of a username and password.';
+  static const accountFieldHint = '0000 0000 0000 0000';
+  static const accountCtaSignIn = 'Sign in';
+  static const accountPaste = 'Paste';
+
+  /// Why a sign-in did not go through. The server's own words are never
+  /// shown; these are.
+  static const accountErrInvalid =
+      'That does not look like an account number. Check the digits and try '
+      'again.';
+  static const accountErrUnknown = 'This account number is not recognized.';
+  static const accountErrRevoked = 'This account number is no longer valid.';
+  static String accountErrDeviceLimit(int n) =>
+      'This account is already signed in on $n devices. Remove one from '
+      'another device first.';
+  static const accountErrNetwork =
+      'Could not reach hideip.net. Check your connection and try again.';
+
+  /// Where the account stands. It does not renew, so its date is the day
+  /// its time runs out, never a renewal.
+  static const accountOutOfTime = 'This account has run out of time.';
+  static String accountActiveUntil(String date) => 'Active until $date';
+  static String accountEndedOn(String date) => 'Ended on $date';
+
+  /// The devices on the account.
+  static const accountThisDevice = 'This device';
+  static const accountDevices = 'Signed-in devices';
+  static String accountRemoveDevice(String name) => 'Remove $name?';
+
+  /// The number itself, masked until asked for.
+  static const accountReveal = 'Show account number';
+  static const accountHide = 'Hide';
+  static const accountCopy = 'Copy';
+  static const accountCopied = 'Account number copied';
+  static const accountKeepSafe =
+      'Anyone with this number can use your subscription. It is the only way '
+      'to access it and it cannot be recovered.';
+
+  /// A new number for the same account.
+  static const accountRotate = 'Get a new account number';
+  static const accountRotateBody =
+      'Your time and devices stay. The old number stops working right away.';
+  static const accountRotateAlso = 'Also sign out other devices';
+  static const accountRotateDone = 'New account number ready. Save it now.';
+
+  /// Signing out on this device.
+  static const accountSignOut = 'Sign out on this device';
+  static const accountSignOutBody =
+      'Premium servers are removed from this device. You can sign in again '
+      'with your account number.';
+
+  /// The Settings row.
+  static const setAccountNumberSub = 'Sign in or manage your account number';
+  static const setAccountNumberSignedIn = 'Signed in';
+
+  /// Premium manage, for a subscription that came with an account number.
+  static const pmAccountSubnote =
+      'This subscription is managed with an account number, not through the '
+      'store.';
 }

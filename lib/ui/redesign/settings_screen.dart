@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/account_number.dart';
 import '../../core/notifications.dart';
 import '../../core/premium.dart';
 import '../../core/ui_prefs.dart';
@@ -384,7 +385,21 @@ class _SettingsScreenState extends State<SettingsScreen>
     if (mounted) setState(() => _perm = perm);
   }
 
-  InlineSpan _premiumSubtitle(Premium p) => switch (p.status) {
+  InlineSpan _premiumSubtitle(Premium p) {
+    if (p.source == PremiumSource.account) return _accountSubtitle(p);
+    return _storeSubtitle(p);
+  }
+
+  /// An account number does not renew: its line is the day its time runs
+  /// out, and once that has passed, only that it has.
+  InlineSpan _accountSubtitle(Premium p) {
+    final r = p.renews;
+    if (!p.isOn || r == null) return monoWithin(S.accountOutOfTime, const []);
+    final date = formatPremiumDate(r);
+    return monoWithin(S.accountActiveUntil(date), [date]);
+  }
+
+  InlineSpan _storeSubtitle(Premium p) => switch (p.status) {
         PremiumStatus.trial => monoWithin(
             S.setPremiumTrial(formatPremiumDate(p.renews!)),
             [formatPremiumDate(p.renews!)]),
@@ -395,6 +410,21 @@ class _SettingsScreenState extends State<SettingsScreen>
         PremiumStatus.expired => monoWithin(S.setPremiumEnded, const []),
         PremiumStatus.none => monoWithin(S.setPremiumNone, const []),
       };
+
+  /// The Account number row's subtitle: an invitation while signed out,
+  /// and the last four digits once signed in.
+  InlineSpan _accountNumberSubtitle(AppState state) {
+    final number = state.accountNumber;
+    if (number == null) return monoWithin(S.setAccountNumberSub, const []);
+    final masked = maskAccountNumber(number, short: true);
+    return TextSpan(children: [
+      TextSpan(
+        text: '${S.setAccountNumberSignedIn}  ·  ',
+        style: Hip.sans(400, Hip.bodySize, color: Hip.muted),
+      ),
+      TextSpan(text: masked, style: Hip.mono(600, 12.5, color: Hip.muted)),
+    ]);
+  }
 
   /// The subscription already covers five devices. An explanation with an
   /// action, not a notice in passing, so it gets a sheet.
@@ -445,6 +475,39 @@ class _SettingsScreenState extends State<SettingsScreen>
     // regardless (plansOffered stays true while premium is on).
     final sellable = kPlansAvailable && state.plansOffered;
     final active = state.activeLocation;
+    // The card stands in for the Premium row while there is nothing to
+    // manage yet; the rest of the Account section shows either way.
+    final sellCard = sellable && premium.status == PremiumStatus.none;
+    final accountRows = <Widget>[
+      if ((sellable || premium.isOn) && !sellCard)
+        HipListRow(
+          leading: const HipFlag(cc: '', child: PremiumCubeIcon()),
+          title: S.tPremium,
+          titleBadge: premium.isOn ? HipBadge.ok(S.setPremiumOn) : null,
+          subtitleSpan: _premiumSubtitle(premium),
+          trailing: _chevron(),
+          onTap: () => nav.go(HipScreen.premium),
+        ),
+      // Only a phone that actually holds a provisioned subscription can hand
+      // access to anything else, so the row appears with the token rather
+      // than with the entitlement.
+      if (state.canLinkDevices)
+        HipListRow(
+          leading: _grayTile(Icons.devices_outlined),
+          title: S.setLinkedDevices,
+          subtitle: S.setLinkedDevicesSub,
+          trailing: _chevron(),
+          onTap: () => nav.go(HipScreen.linkedDevices),
+        ),
+      if (kAccountSignIn)
+        HipListRow(
+          leading: _grayTile(Icons.pin_outlined),
+          title: S.accountNumberTitle,
+          subtitleSpan: _accountNumberSubtitle(state),
+          trailing: _chevron(),
+          onTap: () => nav.go(HipScreen.account),
+        ),
+    ];
     return SafeArea(
       child: Column(children: [
         HipNavHead(title: S.tSettings, onBack: () => nav.go(HipScreen.home)),
@@ -452,35 +515,16 @@ class _SettingsScreenState extends State<SettingsScreen>
           child: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             children: [
-              if (sellable && premium.status == PremiumStatus.none)
+              if (sellCard)
                 PremiumSalesCard(
                   yearlyPrice: state.planInfo(PremiumPlan.yearly).price,
                   onTap: () => nav.openPaywall(from: HipScreen.settings),
-                )
-              else if (sellable) ...[
+                ),
+              // Always there, with or without a store behind the app: an
+              // account number signs in where no purchase can be made.
+              if (accountRows.isNotEmpty) ...[
                 const SettingsSectionHeader(Icons.person_outline, S.setAccount),
-                HipListGroup(children: [
-                  HipListRow(
-                    leading: const HipFlag(cc: '', child: PremiumCubeIcon()),
-                    title: S.tPremium,
-                    titleBadge:
-                        premium.isOn ? HipBadge.ok(S.setPremiumOn) : null,
-                    subtitleSpan: _premiumSubtitle(premium),
-                    trailing: _chevron(),
-                    onTap: () => nav.go(HipScreen.premium),
-                  ),
-                  // Only a phone that actually holds a provisioned
-                  // subscription can hand access to anything else, so the row
-                  // appears with the token rather than with the entitlement.
-                  if (state.canLinkDevices)
-                    HipListRow(
-                      leading: _grayTile(Icons.devices_outlined),
-                      title: S.setLinkedDevices,
-                      subtitle: S.setLinkedDevicesSub,
-                      trailing: _chevron(),
-                      onTap: () => nav.go(HipScreen.linkedDevices),
-                    ),
-                ]),
+                HipListGroup(children: accountRows),
               ],
               const SettingsSectionHeader(Icons.tune_outlined, S.setInterface),
               HipListGroup(children: [

@@ -11,6 +11,7 @@ import '../../core/import_payload.dart';
 import '../../core/location.dart';
 import '../../core/ui_prefs.dart';
 import '../../state/app_state.dart';
+import 'account_screen.dart';
 import 'detail_screen.dart';
 import 'hip.dart';
 import 'hip_sheet.dart';
@@ -31,6 +32,13 @@ import 'settings_screen.dart';
 final bool kPlansAvailable = defaultTargetPlatform == TargetPlatform.iOS ||
     defaultTargetPlatform == TargetPlatform.android;
 
+/// Whether the ways into signing in with an account number are shown. On by
+/// default; a build made with `--dart-define=HIP_ACCOUNT_SIGNIN=false` hides
+/// every entry point (the Settings row, the links under the paywall) while
+/// the screen and the code behind it stay in place.
+const bool kAccountSignIn =
+    bool.fromEnvironment('HIP_ACCOUNT_SIGNIN', defaultValue: true);
+
 enum HipScreen {
   onboarding,
   home,
@@ -42,6 +50,7 @@ enum HipScreen {
   premium,
   trialExpired,
   linkedDevices,
+  account,
 }
 
 /// One entry on the in-app back stack: the screen and the context bag it was
@@ -463,6 +472,7 @@ class _HipShellState extends State<HipShell>
         HipScreen.trialExpired => TrialExpiredScreen(state: state, nav: _nav),
         HipScreen.linkedDevices =>
           LinkedDevicesScreen(state: state, nav: _nav),
+        HipScreen.account => AccountScreen(state: state, nav: _nav),
       };
 
   Color _bgFor(HipScreen s) =>
