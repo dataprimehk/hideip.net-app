@@ -693,11 +693,11 @@ abstract final class S {
   static const obB1Cta = 'Get started';
   static const obB1Note = 'No account · No logs';
 
-  static const obB2Title = 'One tap\nhides it.';
+  static const obB2Title = 'A server\nhides it.';
   static const obB2Accent = 'hides';
   static const obB2Body =
-      'Websites see an address from hideip.net, never yours. One button turns '
-      'it on and off.';
+      "Websites see the server's address, not yours. No free servers are "
+      'built in: add your own link, or use hideip.net locations.';
   static const obB2TechKey = 'SEEN AS';
   static const obB2TechIp = '198.51.100.24';
   static const obB2TechPlace = 'Frankfurt, DE';
