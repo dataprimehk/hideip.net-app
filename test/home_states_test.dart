@@ -72,6 +72,30 @@ void main() {
     expect(find.text(S.tConnect), findsNothing);
   });
 
+  testWidgets('B0 without plans on offer drops See Premium locations',
+      (tester) async {
+    await tester.pumpWidget(host(Column(children: [
+      const HomeEmptyBlock(),
+      HomeCtaBar(
+        empty: true,
+        connected: false,
+        disconnecting: false,
+        connecting: false,
+        offline: false,
+        denied: false,
+        onConnect: () {},
+        onCancel: () {},
+        onDisconnect: () {},
+        onAdd: () {},
+      ),
+    ])));
+
+    // No catalog means Locations has no premium section to open onto, so
+    // the button would lead to an empty screen.
+    expect(find.text(S.tAddConn), findsOneWidget);
+    expect(find.text(S.b0SeePremium), findsNothing);
+  });
+
   // --- B1 -----------------------------------------------------------------
   testWidgets('B1 shows the real address as exposed', (tester) async {
     await tester.pumpWidget(host(const HomeStatusCard(
