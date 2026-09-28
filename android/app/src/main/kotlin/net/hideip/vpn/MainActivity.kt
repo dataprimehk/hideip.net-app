@@ -25,6 +25,7 @@ import java.util.UUID
  *   start(config) -> launches HideipVpnService with the sing-box config JSON
  *   stop() -> stops the tunnel
  *   status() -> {running, error}
+ *   installerPackage() -> the package that installed this copy, or null
  */
 class MainActivity : FlutterActivity() {
 
@@ -97,6 +98,10 @@ class MainActivity : FlutterActivity() {
                         result.success(true)
                     }
                     "setSensitiveClipboard" -> setSensitiveClipboard(call, result)
+                    // Who installed this copy. The Play review sheet is only
+                    // requested when the answer is the Play Store; the same
+                    // APK also ships through GitHub and F-Droid style repos.
+                    "installerPackage" -> result.success(installerPackage())
                     "openVpnSettings" -> {
                         try {
                             startActivity(Intent(Settings.ACTION_VPN_SETTINGS))
@@ -118,6 +123,17 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    private fun installerPackage(): String? = try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            packageManager.getInstallSourceInfo(packageName).installingPackageName
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.getInstallerPackageName(packageName)
+        }
+    } catch (e: Exception) {
+        null
     }
 
     private fun setSensitiveClipboard(

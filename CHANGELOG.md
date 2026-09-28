@@ -9,6 +9,11 @@ Build 8.
 
 ### Added
 - Sign in with an account number (Settings, Account number).
+- The store's own rating sheet may appear after a few connections that
+  worked. It is asked for at most once per version and once every 120 days,
+  never on the first launch or after a failed connection. On Android it is
+  only asked for when Google Play installed the app; builds from GitHub or
+  an F-Droid repo never request it.
 
 ## 1.1.1 (2026-09-16)
 

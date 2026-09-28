@@ -22,6 +22,7 @@ import '../core/profile_store.dart';
 import '../core/provisioning.dart';
 import '../core/proxy_profile.dart';
 import '../core/purchase_service.dart';
+import '../core/review_launcher.dart';
 import '../core/share_link_parser.dart';
 import '../core/singbox_config.dart';
 import '../core/srv_naming.dart';
@@ -143,6 +144,10 @@ class AppState extends ChangeNotifier {
   bool _showConnectFailed = false;
   Timer? _slowTimer;
   Timer? _failTimer;
+  // Runs from a connect landing until the tunnel has stayed up long enough
+  // to count as a success for the rating prompt.
+  Timer? _reviewHold;
+  final ReviewPrompter _review = ReviewPrompter();
   late final ConnectivityWatch _connectivity =
       ConnectivityWatch(onChanged: _onConnectivity);
   bool _offline = false;
@@ -335,6 +340,7 @@ class AppState extends ChangeNotifier {
   Future<void> init() async {
     _prefs = await UiPrefs.load();
     _count(AppEvent.firstOpen);
+    unawaited(_review.onLaunch());
     // Keep the native side's copy of the Always-on opt-in current (the service
     // reads it on system-initiated starts, when no Dart is running).
     VpnController.setAlwaysOn(_prefs.alwaysOn);
@@ -1316,6 +1322,7 @@ class AppState extends ChangeNotifier {
     _toastTimer?.cancel();
     _slowTimer?.cancel();
     _failTimer?.cancel();
+    _reviewHold?.cancel();
     unawaited(_connectivity.dispose());
     _purchases.dispose();
     super.dispose();
@@ -1588,6 +1595,7 @@ class AppState extends ChangeNotifier {
       notifyListeners();
       if (target != null) await _claimWin(target);
       _count(AppEvent.firstConnect);
+      _holdForReview(generation);
       _refreshIpAfterToggle();
       // With WireGuard up, watch for the handshake actually completing and
       // fall back to stealth without user involvement if it never does.
@@ -1623,6 +1631,7 @@ class AppState extends ChangeNotifier {
     if (_conn != ConnState.connecting) return;
     _connectGeneration++;
     _clearConnectTimers();
+    _reviewHold?.cancel();
     try {
       await VpnController.stop();
     } catch (_) {
@@ -1660,7 +1669,35 @@ class AppState extends ChangeNotifier {
       _connectedAt = null;
       // Offline suppresses the sheet entirely: see [connect].
       _showConnectFailed = !_offline;
+      if (!_offline) unawaited(_review.onFailure());
       notifyListeners();
+    });
+  }
+
+  /// Counts this connect toward the rating prompt once it has stayed up for
+  /// [ReviewPrompter.holdFor] and has carried traffic back. A disconnect, a
+  /// cancel or another connect moves the generation on and the count is
+  /// dropped; so does an error raised by the status poll in the meantime.
+  /// The downlink check is the same proof the WireGuard probe uses: a tunnel
+  /// that only looks up has received nothing, while a working one has the
+  /// IP lookup this connect started coming back through it.
+  void _holdForReview(int generation) {
+    _reviewHold?.cancel();
+    _reviewHold = Timer(_review.holdFor, () async {
+      _reviewHold = null;
+      bool stillUp() =>
+          generation == _connectGeneration &&
+          _conn == ConnState.connected &&
+          _error == null;
+      if (!stillUp()) return;
+      final VpnStats stats;
+      try {
+        stats = await VpnController.stats();
+      } catch (_) {
+        return;
+      }
+      if (stats.downlinkTotal <= 0 || !stillUp()) return;
+      unawaited(_review.onConnectionHeld());
     });
   }
 
@@ -1719,6 +1756,7 @@ class AppState extends ChangeNotifier {
     // reconnect a tunnel the user has already dismissed.
     _connectGeneration++;
     _clearConnectTimers();
+    _reviewHold?.cancel();
     try {
       await VpnController.stop();
     } catch (_) {
@@ -1900,6 +1938,8 @@ class AppState extends ChangeNotifier {
   void _setError(String msg) {
     _conn = ConnState.error;
     _error = msg;
+    _reviewHold?.cancel();
+    unawaited(_review.onFailure());
     Haptics.error();
     notifyListeners();
   }
