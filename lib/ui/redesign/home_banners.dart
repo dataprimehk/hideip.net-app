@@ -145,10 +145,12 @@ class HomeClipboardBanner extends StatelessWidget {
 }
 
 /// B14: the system VPN configuration was declined. One calm line, one way
-/// out, no red and no blame.
+/// out, no red and no blame. The way out is the request itself: the system
+/// shows it again on the next attempt, and there is no settings switch that
+/// grants it instead.
 class HomeDeniedBanner extends StatelessWidget {
-  final VoidCallback onOpenSettings;
-  const HomeDeniedBanner({super.key, required this.onOpenSettings});
+  final VoidCallback onTryAgain;
+  const HomeDeniedBanner({super.key, required this.onTryAgain});
 
   @override
   Widget build(BuildContext context) {
@@ -164,7 +166,7 @@ class HomeDeniedBanner extends StatelessWidget {
         const SizedBox(width: 8),
         _BannerAction(
           label: S.b14Action,
-          onTap: onOpenSettings,
+          onTap: onTryAgain,
           color: white,
           background: white.withValues(alpha: .12),
         ),

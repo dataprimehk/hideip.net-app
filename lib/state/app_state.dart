@@ -52,7 +52,8 @@ enum Mix { byo, mixed, hip }
 /// [unknown] is not [denied]. `prepare()` answering false can mean the user
 /// said no, or that the answer never came back inside the guard window, or
 /// that the channel broke; only a real refusal may put the app into the
-/// declined state, because that state turns Connect off.
+/// declined state, because that state puts the declined banner up. Connect
+/// stays live in it: the next attempt raises the system dialog again.
 enum VpnPerm { unknown, granted, denied }
 
 /// What the server said about an account number itself, as opposed to its
@@ -1542,8 +1543,9 @@ class AppState extends ChangeNotifier {
         _conn = ConnState.disconnected;
         _error = null;
         // A guard that fired is not an answer from the user: the permission
-        // stays unknown and the next Connect asks again. A refusal is an
-        // answer, and it is what turns Connect off until settings change.
+        // stays unknown. A refusal is an answer and it raises the declined
+        // banner, but Connect stays live: the system dialog is the only place
+        // the permission can be given, and the next Connect shows it again.
         if (!timedOut) _vpnPerm = VpnPerm.denied;
         notifyListeners();
         return;

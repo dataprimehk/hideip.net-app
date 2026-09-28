@@ -561,9 +561,7 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
                                         }),
                                       ),
                                     if (denied)
-                                      HomeDeniedBanner(
-                                          onOpenSettings:
-                                              VpnController.openVpnSettings),
+                                      HomeDeniedBanner(onTryAgain: _connect),
                                     if (_trialEndsTomorrow(state))
                                       HomeTrialBanner(
                                         price: state
@@ -676,7 +674,6 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
                       disconnecting: _disconnecting,
                       connecting: state.isBusy,
                       offline: state.offline,
-                      denied: denied,
                       darkSurface: mapMode,
                       onConnect: _connect,
                       onCancel: state.cancel,
@@ -734,7 +731,6 @@ class HomeCtaBar extends StatelessWidget {
   final bool disconnecting;
   final bool connecting;
   final bool offline;
-  final bool denied;
   final bool darkSurface;
 
   final VoidCallback onConnect;
@@ -753,7 +749,6 @@ class HomeCtaBar extends StatelessWidget {
     required this.disconnecting,
     required this.connecting,
     required this.offline,
-    required this.denied,
     required this.onConnect,
     required this.onCancel,
     required this.onDisconnect,
@@ -798,7 +793,9 @@ class HomeCtaBar extends StatelessWidget {
         S.tConnect,
         key: const ValueKey('cta-on'),
         connect: true,
-        onTap: offline || denied ? null : onConnect,
+        // A declined VPN request leaves Connect live: the system dialog can
+        // only be raised again from here, never from Android settings.
+        onTap: offline ? null : onConnect,
       );
     }
 

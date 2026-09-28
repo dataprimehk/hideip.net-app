@@ -88,8 +88,8 @@ abstract final class S {
 
   // B14, the system VPN permission was declined.
   static const b14Line =
-      'The VPN configuration was declined, so connecting is not possible yet.';
-  static const b14Action = aOpenSettings;
+      'The VPN request was declined. Connecting needs it.';
+  static const b14Action = aTryAgain;
 
   // B15, no network at all.
   static const b15Status = 'No connection';
