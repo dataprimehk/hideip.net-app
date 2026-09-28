@@ -41,6 +41,12 @@ class OnboardingScreen extends StatefulWidget {
 const String _progOn = '█';
 const String _progOff = '░';
 
+/// The context that reopens onboarding on the choice screen instead of beat
+/// one. The choice stamps it on itself before it opens the paywall, so both
+/// ways out of the paywall (its X and the system back) land where the user
+/// left, not three beats earlier.
+const Map<String, Object> kObAtChoice = {'at': 'choice'};
+
 /// How many beats come before the choice screen.
 const int _beats = 3;
 
@@ -92,6 +98,10 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   void initState() {
     super.initState();
     widget.nav.claimBack(_sysBack);
+    if (_atChoice) {
+      _step = _beats;
+      _ascii.setGlobe(false);
+    }
   }
 
   @override
@@ -121,6 +131,13 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     if (ctx is bool) return ctx;
     if (ctx is Map) return ctx['replay'] == true;
     return false;
+  }
+
+  /// Whether the screen was reopened on the choice (see [kObAtChoice]).
+  /// Never during a replay: a replay has no choice screen to return to.
+  bool get _atChoice {
+    final ctx = widget.nav.ctx();
+    return !_replay && ctx is Map && ctx['at'] == kObAtChoice['at'];
   }
 
   bool get _plans => kPlansAvailable && widget.state.plansOffered;
@@ -197,6 +214,9 @@ class _OnboardingScreenState extends State<OnboardingScreen>
 
   void _openPaywall() {
     Haptics.selection();
+    // Re-entering onboarding only swaps its context; the stack keeps it, so
+    // coming back from the paywall reopens this screen and not beat one.
+    widget.nav.go(HipScreen.onboarding, kObAtChoice);
     widget.nav.openPaywall(from: HipScreen.onboarding);
   }
 

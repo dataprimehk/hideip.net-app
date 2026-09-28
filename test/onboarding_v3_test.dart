@@ -216,6 +216,26 @@ void main() {
       expect(log.imported, isTrue);
     });
 
+    testWidgets('the choice context reopens the choice, not beat one',
+        (tester) async {
+      // What the paywall's close leads back to.
+      final log = _NavLog()..ctx = kObAtChoice;
+      await _pumpOnboarding(tester, state: AppState(), nav: _navFor(log));
+      expect(find.text(S.obChoiceTitle), findsOneWidget);
+      expect(find.text(S.obB1Title), findsNothing);
+
+      // Back still walks the beats from there.
+      await tester.tap(find.byIcon(Icons.chevron_left));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text(S.obB3Title), findsOneWidget);
+    });
+
+    testWidgets('a replay ignores the choice context', (tester) async {
+      final log = _NavLog()..ctx = const {'replay': true, 'at': 'choice'};
+      await _pumpOnboarding(tester, state: AppState(), nav: _navFor(log));
+      expect(find.text(S.obB1Title), findsOneWidget);
+    });
+
     testWidgets('replay ends after the third beat, without the choice',
         (tester) async {
       final log = _NavLog()..ctx = const {'replay': true};

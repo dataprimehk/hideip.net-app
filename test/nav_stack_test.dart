@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:hideip_vpn/ui/redesign/onboarding_screen.dart';
 import 'package:hideip_vpn/ui/redesign/shell.dart';
 
 void main() {
@@ -102,5 +103,20 @@ void main() {
     expect(nav.backTarget, HipScreen.home);
     nav.back();
     expect(nav.screen, HipScreen.home);
+  });
+
+  test('closing the paywall from onboarding reopens the choice screen', () {
+    // First run: onboarding is the root, with no context.
+    final nav = HipNavStack(screen: HipScreen.onboarding);
+    // The choice stamps itself before it opens the offer ...
+    nav.go(HipScreen.onboarding, kObAtChoice);
+    nav.go(HipScreen.paywall);
+    expect(nav.backTarget, HipScreen.onboarding);
+
+    // ... so the way back carries it, and the stack is empty again.
+    nav.back();
+    expect(nav.screen, HipScreen.onboarding);
+    expect(nav.ctx, kObAtChoice);
+    expect(nav.depth, 0);
   });
 }
