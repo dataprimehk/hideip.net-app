@@ -589,6 +589,24 @@ void main() {
       );
     }
 
+    test('a running store subscription is what sign-out promises stays', () async {
+      expect(state.storeEntitlementLive, isFalse);
+      await storeLive();
+      await pumpEventQueue();
+      expect(state.storeEntitlementLive, isTrue);
+      // A lapsed one keeps its page but carries nothing past sign-out.
+      state.storeEntitlementForTesting(
+        Premium(
+          status: PremiumStatus.expired,
+          plan: PremiumPlan.yearly,
+          renews: DateTime.now().add(const Duration(days: 11)),
+        ),
+      );
+      await pumpEventQueue();
+      expect(state.hasStoreEntitlement, isTrue);
+      expect(state.storeEntitlementLive, isFalse);
+    });
+
     test('comes back on its own when the account is signed out', () async {
       await storeLive();
       // The account runs longer, so it takes over.

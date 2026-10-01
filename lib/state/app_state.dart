@@ -789,6 +789,15 @@ class AppState extends ChangeNotifier {
   bool get hasStoreEntitlement =>
       _storePremium != null && _storePremium!.status != PremiumStatus.none;
 
+  /// Whether a store subscription would keep Premium on after the account
+  /// number leaves: the same test the fallback itself applies.
+  bool get storeEntitlementLive {
+    final store = _storePremium;
+    if (store == null || !store.isOn) return false;
+    final renews = store.renews;
+    return renews == null || renews.isAfter(DateTime.now());
+  }
+
   /// Whether an account number is kept on this device. Stays true for an
   /// account that has run out of time, and for one this device was taken
   /// off: the number is kept so signing back in is one tap. Only signing

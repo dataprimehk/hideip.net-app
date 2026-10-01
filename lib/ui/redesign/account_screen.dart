@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -424,7 +425,13 @@ class _AccountScreenState extends State<AccountScreen> {
   Future<void> _signOut() async {
     final ok = await _confirm(
       title: S.accountSignOut,
-      body: S.accountSignOutBody,
+      body: _state.storeEntitlementLive
+          ? S.accountSignOutBodyStore(
+              defaultTargetPlatform == TargetPlatform.iOS
+                  ? 'App Store'
+                  : 'Google Play',
+            )
+          : S.accountSignOutBody,
       action: S.accountSignOut,
       danger: true,
     );

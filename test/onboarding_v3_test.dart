@@ -235,7 +235,13 @@ void main() {
 
     test('the intro no longer promises "no account" next to an account number',
         () {
-      for (final line in [S.obB1Note, S.obChoiceNote, S.c2Anon]) {
+      for (final line in [
+        S.obB1Note,
+        S.obChoiceNote,
+        S.c2Anon,
+        S.setSellBody,
+        S.pwNoLogs,
+      ]) {
         expect(line.toLowerCase(), isNot(contains('no account')));
       }
     });

@@ -227,7 +227,7 @@ void main() {
       expect(find.text('Every location, stealth by default.'), findsOneWidget);
       expect(
           find.text(
-              'All hideip.net locations, Speed mode, no logs, no account.'),
+              'All hideip.net locations, Speed mode, no logs, no email.'),
           findsOneWidget);
       expect(find.text('Try 7 days free'), findsOneWidget);
       expect(find.textContaining(r'Then $29.99 per year. Cancel anytime.'),

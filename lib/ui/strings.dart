@@ -459,7 +459,7 @@ abstract final class S {
   // selling stops the moment someone has paid.
   static const setSellTitle = 'Every location, stealth by default.';
   static const setSellBody =
-      'All hideip.net locations, Speed mode, no logs, no account.';
+      'All hideip.net locations, Speed mode, no logs, no email.';
   static const setSellCta = 'Try 7 days free';
   static String setSellLegal(String price) =>
       'Then |$price| per year. Cancel anytime.';
@@ -559,7 +559,7 @@ abstract final class S {
   static const pwSpeed = 'Speed mode on every hideip.net location';
   static const pwSpeedSub = 'WireGuard where the network allows it.';
   static const pwBlocked = 'Works on networks that block VPNs';
-  static const pwNoLogs = 'No logs, no account, no email';
+  static const pwNoLogs = 'No logs, no email, no sign up';
   static const pwDevices = 'Up to five devices';
   static const pwSave = 'Save 50%';
   static String pwPer(String per) => 'per $per';
@@ -747,7 +747,7 @@ abstract final class S {
       'opening the app for the first time, adding your first connection, '
       'and completing your first successful connect. Each one carries only '
       'its own name and whether you are on Android or iOS. No IP address, '
-      'no account and no device identifier travels with it.';
+      'no account number and no device identifier travels with it.';
 
   // 1.1.1, home hero
   // ---------------------------------------------------------------------
@@ -885,6 +885,12 @@ abstract final class S {
   static const accountSignOutBody =
       'Premium servers are removed from this device. You can sign in again '
       'with your account number.';
+
+  /// Signing out while a store subscription is still running: Premium
+  /// stays, only the number leaves.
+  static String accountSignOutBodyStore(String store) =>
+      'Premium stays on through the $store subscription. The account number '
+      'can be entered again at any time.';
 
   /// The Settings row.
   static const setAccountNumberSub = 'Sign in or manage your account number';
