@@ -411,6 +411,20 @@ class _SettingsScreenState extends State<SettingsScreen>
         PremiumStatus.none => monoWithin(S.setPremiumNone, const []),
       };
 
+  /// The one Premium row an account number gets: where the account stands,
+  /// by the server's word.
+  InlineSpan _accountHomeSubtitle(AppState state) {
+    if (state.accountDeviceSignedOut) {
+      return monoWithin(S.accountDeviceSignedOut, const []);
+    }
+    final until = state.accountExpires;
+    if (!state.accountActive || until == null) {
+      return monoWithin(S.accountOutOfTime, const []);
+    }
+    final date = formatPremiumDate(until);
+    return monoWithin(S.accountActiveUntil(date), [date]);
+  }
+
   /// The Account number row's subtitle: an invitation while signed out,
   /// and the last four digits once signed in.
   InlineSpan _accountNumberSubtitle(AppState state) {
@@ -481,10 +495,27 @@ class _SettingsScreenState extends State<SettingsScreen>
     // The card stands in for the Premium row while there is nothing to
     // manage yet; the rest of the Account section shows either way.
     final sellCard = sellable && premium.status == PremiumStatus.none;
+    // With an account number, the number is the Premium: one row, to the
+    // screen that holds the number, its time, its billing and its devices.
+    // A store subscription in force on its own keeps its Premium page and
+    // Linked devices, as before.
+    final accountHome = kAccountSignIn &&
+        state.accountSignedIn &&
+        !(premium.isOn && premium.source == PremiumSource.store);
     final accountRows = <Widget>[
+      if (accountHome)
+        HipListRow(
+          leading: const HipFlag(cc: '', child: PremiumCubeIcon()),
+          title: S.tPremium,
+          titleBadge: premium.isOn ? HipBadge.ok(S.setPremiumOn) : null,
+          subtitleSpan: _accountHomeSubtitle(state),
+          trailing: _chevron(),
+          onTap: () => nav.go(HipScreen.account),
+        ),
       // An account number keeps its row even without a store behind the
       // app, so an account out of time says so here too.
-      if ((sellable ||
+      if (!accountHome &&
+          (sellable ||
               premium.isOn ||
               premium.source == PremiumSource.account) &&
           !sellCard)
@@ -499,7 +530,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       // Only a phone that actually holds a provisioned subscription can hand
       // access to anything else, so the row appears with the token rather
       // than with the entitlement.
-      if (state.canLinkDevices)
+      if (state.canLinkDevices && !accountHome)
         HipListRow(
           leading: _grayTile(Icons.devices_outlined),
           title: S.setLinkedDevices,
@@ -507,7 +538,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           trailing: _chevron(),
           onTap: () => nav.go(HipScreen.linkedDevices),
         ),
-      if (kAccountSignIn)
+      if (kAccountSignIn && !accountHome)
         HipListRow(
           leading: _grayTile(Icons.pin_outlined),
           title: S.accountNumberTitle,

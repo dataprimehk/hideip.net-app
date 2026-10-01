@@ -904,10 +904,6 @@ abstract final class S {
   static const setAccountNumberSub = 'Sign in or manage your account number';
   static const setAccountNumberSignedIn = 'Signed in';
 
-  /// Premium manage, for a subscription that came with an account number.
-  static const pmAccountSubnote =
-      'Premium on this device comes from your account number.';
-
   /// The number was replaced on another device; this device still works.
   static const accountNumberReplaced =
       'This account number was changed on another device. Sign out, then '
@@ -929,4 +925,56 @@ abstract final class S {
 
   /// Signed in while a store subscription that lasts longer stays in force.
   static const accountSaved = 'Account number saved.';
+
+  // ---------------------------------------------------------------------
+  // One account number (1.2.0). The number is the Premium; a store
+  // subscription is how time gets added to it.
+  // ---------------------------------------------------------------------
+
+  static String accountExplainStore(String store) =>
+      'Your account number is your Premium. Your $store subscription adds '
+      'time to it.';
+  static const accountExplain = 'Your account number is your Premium.';
+
+  /// The number a store purchase just made, shown once.
+  static const accountFreshTitle = 'Your account number';
+  static const accountFreshBody =
+      'Premium is tied to this number. Save it to use Premium on your other '
+      'devices. You can always see it again here.';
+
+  /// The billing row, and its way to the store's own page.
+  static String accountBilling(String store, String date) =>
+      '$store subscription · renews $date';
+  static String accountBillingUndated(String store) => '$store subscription';
+  static const accountManage = 'Manage';
+  static String accountManageStore(String store) => 'Manage in $store';
+
+  /// Deleting the number for good. The store subscription is the store's.
+  static const accountDelete = 'Delete account number';
+  static const accountDeleteBody =
+      'The number stops working and every device is signed out. This cannot '
+      'be undone.';
+  static String accountDeleteBodyStore(String store) =>
+      'The number stops working and every device is signed out. This cannot '
+      'be undone. Your $store subscription is not cancelled by this: it keeps '
+      'billing until you cancel it in $store.';
+  static const accountDeleted = 'Account number deleted';
+
+  /// Signed in through a purchase restored here, with no number on this
+  /// device to show.
+  static String accountNoNumberHere(String store) =>
+      'This device is signed in through your $store purchase. To use Premium '
+      'on another device, get a new account number.';
+  static String accountLinkedElsewhere(String store) =>
+      'This $store subscription already adds time to a different account '
+      'number.';
+
+  /// Signing out while the store subscription adds time to the number.
+  static String accountSignOutBodyLinked(String store) =>
+      'This device signs out of the account number. Your $store subscription '
+      'keeps adding time to it. Restore purchases signs this device back in.';
+
+  /// Linking another device from the account.
+  static const accountLinkDevice = 'Link a device';
+  static const accountLinkCode = 'Show a code instead';
 }

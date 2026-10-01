@@ -37,17 +37,29 @@ Widget _settings(AppState state, List<HipScreen> went) => MaterialApp(
   ),
 );
 
+/// A state whose store subscription adds time to its account number.
+class _LinkedState extends AppState {
+  _LinkedState({super.accounts, super.provisioning});
+
+  @override
+  bool get storeLinked => true;
+  @override
+  String? get storeName => 'App Store';
+}
+
 /// A state signed in to an account number whose sign-in answers [active],
-/// with the store entitlement [store] reported first when given.
+/// with the store entitlement [store] reported first when given. With
+/// [linked] the store subscription adds time to the number.
 Future<AppState> _signedIn(
   WidgetTester tester, {
   required bool active,
   Premium? store,
+  bool linked = false,
 }) async {
   final ms = DateTime.now()
       .add(Duration(days: active ? 300 : -3))
       .millisecondsSinceEpoch;
-  final state = AppState(
+  final state = (linked ? _LinkedState.new : AppState.new)(
     accounts: AccountService(
       client: MockClient((req) async {
         if (req.url.path == '/v1/account/signin') {
@@ -145,23 +157,57 @@ void main() {
     expect(went, [HipScreen.account]);
   });
 
-  testWidgets('signed in, the row shows the last four digits', (tester) async {
+  testWidgets('signed in, one Premium row leads to the account', (
+    tester,
+  ) async {
     final state = await _signedIn(tester, active: true);
+    expect(state.canLinkDevices, isTrue);
 
-    await tester.pumpWidget(_settings(state, <HipScreen>[]));
+    final went = <HipScreen>[];
+    await tester.pumpWidget(_settings(state, went));
     await tester.pump();
 
-    expect(find.textContaining('•••• 0319'),
-        kAccountSignIn ? findsOneWidget : findsNothing);
-    expect(find.textContaining(S.setAccountNumberSignedIn),
-        kAccountSignIn ? findsOneWidget : findsNothing);
-    // The Premium row is back, and it says how long the account runs,
-    // never that it renews.
+    // The Premium row says how long the account runs, never that it
+    // renews.
     expect(find.text(S.tPremium), findsOneWidget);
     expect(find.textContaining('Active until'), findsOneWidget);
     expect(find.textContaining('renews'), findsNothing);
     // The card that sells stays away from someone who is in.
     expect(find.byType(PremiumSalesCard), findsNothing);
+    if (!kAccountSignIn) return;
+
+    // One story: the number, its time and its devices live behind the one
+    // row, so neither a second number row nor Linked devices shows.
+    expect(find.text(S.accountNumberTitle), findsNothing);
+    expect(find.text(S.setLinkedDevices), findsNothing);
+    await tester.tap(find.text(S.tPremium));
+    expect(went, [HipScreen.account]);
+  });
+
+  testWidgets('a store subscription in force keeps its own rows', (
+    tester,
+  ) async {
+    final state = await _signedIn(
+      tester,
+      active: true,
+      store: Premium(
+        status: PremiumStatus.active,
+        plan: PremiumPlan.yearly,
+        renews: DateTime.now().add(const Duration(days: 400)),
+      ),
+    );
+    expect(state.premium.source, PremiumSource.store);
+
+    final went = <HipScreen>[];
+    await tester.pumpWidget(_settings(state, went));
+    await tester.pump();
+
+    expect(find.text(S.tPremium), findsOneWidget);
+    expect(find.textContaining('renews'), findsOneWidget);
+    expect(find.textContaining('•••• 0319'),
+        kAccountSignIn ? findsOneWidget : findsNothing);
+    await tester.tap(find.text(S.tPremium));
+    expect(went, [HipScreen.premium]);
   });
 
   testWidgets('with no store behind the app, an account out of time says so', (
@@ -204,13 +250,35 @@ void main() {
     expect(find.textContaining('Manage in'), findsOneWidget);
     expect(find.text(S.pwRestore), findsNothing);
     expect(
-      find.text(S.pmAccountSubnote),
+      find.text(S.accountExplain),
       kAccountSignIn ? findsOneWidget : findsNothing,
     );
     expect(
       find.text(S.accountNumberTitle),
       kAccountSignIn ? findsOneWidget : findsNothing,
     );
+  });
+
+  testWidgets('Premium manage says a linked store adds time to the number', (
+    tester,
+  ) async {
+    final state = await _signedIn(tester, active: true, linked: true);
+    expect(state.premium.source, PremiumSource.account);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PremiumManageScreen(state: state, nav: _nav(<HipScreen>[])),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.text(S.accountExplainStore('App Store')),
+      kAccountSignIn ? findsOneWidget : findsNothing,
+    );
+    expect(find.text(S.accountExplain), findsNothing);
   });
 
   testWidgets('without a store subscription the store page stays away', (
