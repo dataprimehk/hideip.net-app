@@ -680,14 +680,16 @@ void main() {
       String linked = 'joined',
       String? number,
       DateTime? ends,
+      String deviceId = 'dev_abc',
+      String deviceToken = 'k9Q-token',
     }) => {
       'linked': linked,
       'number': number,
       'active': true,
       'expires_ms': (ends ?? accountEnds).millisecondsSinceEpoch,
       'kind': 'yearly',
-      'device_token': 'k9Q-token',
-      'device': {'id': 'dev_abc', 'kind': 'phone', 'name': 'Android phone'},
+      'device_token': deviceToken,
+      'device': {'id': deviceId, 'kind': 'phone', 'name': 'Android phone'},
       'subscription_url': _subUrl,
       'device_limit': 5,
       'store': {
@@ -770,6 +772,55 @@ void main() {
       expect((await Premium.load()).renews, accountEnds);
       // Play gives the device no date of its own to show.
       expect(state.storeRenews, storeEnds);
+    });
+
+    test('a number out of time is named, so a purchase renews it', () async {
+      backend.active = false;
+      backend.expires = DateTime.now().subtract(const Duration(days: 3));
+      await state.signInWithAccountNumber(_number);
+      await pumpEventQueue();
+      expect(state.accountDeviceSignedOut, isFalse);
+      _provisionAccount = account();
+      await purchase();
+
+      final body = sent(_provisions.single);
+      expect(body['account_number'], _number);
+      expect(body.containsKey('device_token'), isFalse);
+      expect(state.accountNumber, _number);
+      expect(state.freshAccountNumber, isNull);
+      expect(state.premium.source, PremiumSource.account);
+      expect(state.premium.isOn, isTrue);
+      expect(state.accountCanManage, isTrue);
+    });
+
+    test('another account answering does not keep this number', () async {
+      await state.signInWithAccountNumber(_number);
+      await pumpEventQueue();
+      // The subscription already pays for a different account, which signs
+      // this device in under its own entry.
+      _provisionAccount = account(
+        linked: 'existing',
+        deviceId: 'dev_other',
+        deviceToken: 'other-token',
+      );
+      await purchase();
+
+      expect(state.accountSignedIn, isTrue);
+      expect(state.accountNumber, isNull);
+      expect(state.accountNumberKnown, isFalse);
+      final stored = await const AccountStore().load();
+      expect(stored!.number, isNull);
+      expect(stored.deviceToken, 'other-token');
+    });
+
+    test('the same entry handed back keeps this number', () async {
+      await state.signInWithAccountNumber(_number);
+      await pumpEventQueue();
+      _provisionAccount = account(linked: 'existing', deviceToken: 'renewed');
+      await purchase();
+
+      expect(state.accountNumber, _number);
+      expect((await const AccountStore().load())!.deviceToken, 'renewed');
     });
 
     test('a purchase joins the number this device is signed in to', () async {

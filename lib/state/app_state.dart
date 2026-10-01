@@ -980,13 +980,16 @@ class AppState extends ChangeNotifier {
   /// Null when it did; otherwise the answer, for the rule from before store
   /// purchases went onto account numbers.
   Future<ProvisionResult?> _provisionV2Locked(PurchasePayload proof) async {
-    final token = _account?.deviceToken;
+    final held = _account;
     final result = await _provisioning.provision(
       proof,
       v2: true,
-      deviceToken: token,
+      deviceToken: held?.deviceToken,
+      // A number with no place on it (its time ran out) is still the account
+      // the purchase is for.
+      accountNumber: held?.deviceToken == null ? held?.number : null,
     );
-    return await _takeStoreAccount(result, token) ? null : result;
+    return await _takeStoreAccount(result) ? null : result;
   }
 
   /// Makes the account a `v: 2` provision answered with the entitlement in
@@ -994,10 +997,7 @@ class AppState extends ChangeNotifier {
   /// entry, and the account's own date. True when it did. An answer without
   /// an account (a backend that does not put purchases on accounts) or with
   /// an error leaves everything to the earlier rule.
-  Future<bool> _takeStoreAccount(
-    ProvisionResult result,
-    String? sentToken,
-  ) async {
+  Future<bool> _takeStoreAccount(ProvisionResult result) async {
     if (result.status == ProvisionStatus.gone) {
       if (!_storeLink.checked) {
         await _setStoreLink(_storeLink.copyWith(checked: true));
@@ -1019,11 +1019,15 @@ class AppState extends ChangeNotifier {
       return false;
     }
     final held = _account;
-    // The account this device sent its token for: the number it knows
-    // stays. Any other account only has a number here when it was made in
-    // this very answer.
+    // The number this device knows stays only when the server answered for
+    // the account this device is on: it joined the account this device named,
+    // or it hands back this device's own entry. Any other account only has a
+    // number here when it was made in this very answer.
     final same =
-        sentToken != null && held != null && held.deviceToken == sentToken;
+        held != null &&
+        (acc.linked == 'joined' ||
+            (acc.deviceId != null && acc.deviceId == held.deviceId) ||
+            (acc.deviceToken != null && acc.deviceToken == held.deviceToken));
     final creds = AccountCredentials(
       number: acc.number ?? (same ? held.number : null),
       deviceToken: acc.deviceToken,
