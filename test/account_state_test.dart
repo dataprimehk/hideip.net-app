@@ -12,6 +12,7 @@ import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const _number = '8236387788950319';
+const _fresh = '5997190828766207';
 const _subUrl = 'https://api.test/v1/sub/dev_abc';
 const _storeUrl = 'https://api.test/v1/sub/store_tok';
 const _proof = PurchasePayload.android(
@@ -35,6 +36,7 @@ class _Backend {
   Completer<void>? signinRelease;
   DateTime expires = DateTime.now().add(const Duration(days: 30));
   List<String> devices = ['dev_abc'];
+  bool? storeLinked;
 
   Map<String, dynamic> body(http.Request r) =>
       jsonDecode(r.body) as Map<String, dynamic>;
@@ -92,11 +94,19 @@ class _Backend {
               for (final id in devices) {'id': id, 'kind': 'phone', 'name': id},
             ],
             'device_limit': 5,
+            'store_linked': ?storeLinked,
           }),
           200,
         );
       case '/v1/account/revoke':
         return http.Response(jsonEncode({'ok': true, 'revoked': 1}), 200);
+      case '/v1/account/rotate':
+        return http.Response(
+          jsonEncode({'account_number': _fresh, 'expires_ms': ms}),
+          200,
+        );
+      case '/v1/account/delete':
+        return http.Response(jsonEncode({'deleted': true}), 200);
     }
     return http.Response('', 404);
   });
@@ -104,14 +114,23 @@ class _Backend {
 
 /// Premium profiles served at the account's subscription URL, and a store
 /// purchase that provisions its own; the signed catalog mirror is down, so
-/// the legacy path answers.
+/// the legacy path answers. [_provisionAccount] is the `account` block a
+/// backend that puts purchases on account numbers adds; null is one that
+/// does not.
 final _provisions = <http.Request>[];
+Map<String, dynamic>? _provisionAccount;
 ProvisioningService _provisioning() => ProvisioningService(
   client: MockClient((req) async {
     if (req.url == _catalog) return http.Response('', 503);
     if (req.url.path == '/v1/provision') {
       _provisions.add(req);
-      return http.Response(jsonEncode({'subscription_url': _storeUrl}), 200);
+      return http.Response(
+        jsonEncode({
+          'subscription_url': _storeUrl,
+          'account': ?_provisionAccount,
+        }),
+        200,
+      );
     }
     if (req.url.toString() == _subUrl) {
       return http.Response('${_link('de-fra-01')}\n${_link('ch-zur-02')}', 200);
@@ -133,6 +152,7 @@ void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     _provisions.clear();
+    _provisionAccount = null;
     await PremiumSub.clear();
     await const AccountStore().clear();
     backend = _Backend();
@@ -643,6 +663,519 @@ void main() {
       expect(state.premium.isOn, isTrue);
       expect(await PremiumSub.url(), _storeUrl);
       expect(await PremiumSub.proof(), isNotNull);
+    });
+  });
+
+  group('a store purchase on the account number', () {
+    final accountEnds = DateTime.fromMillisecondsSinceEpoch(
+      DateTime.now().add(const Duration(days: 400)).millisecondsSinceEpoch,
+    );
+    final storeEnds = DateTime.fromMillisecondsSinceEpoch(
+      DateTime.now().add(const Duration(days: 35)).millisecondsSinceEpoch,
+    );
+    // Play hands the app no expiry; the device makes one up a year out.
+    final madeUp = DateTime.now().add(const Duration(days: 365));
+
+    Map<String, dynamic> account({
+      String linked = 'joined',
+      String? number,
+      DateTime? ends,
+    }) => {
+      'linked': linked,
+      'number': number,
+      'active': true,
+      'expires_ms': (ends ?? accountEnds).millisecondsSinceEpoch,
+      'kind': 'yearly',
+      'device_token': 'k9Q-token',
+      'device': {'id': 'dev_abc', 'kind': 'phone', 'name': 'Android phone'},
+      'subscription_url': _subUrl,
+      'device_limit': 5,
+      'store': {
+        'platform': 'android',
+        'expires_ms': storeEnds.millisecondsSinceEpoch,
+      },
+    };
+
+    Future<void> purchase({DateTime? renews}) async {
+      await state.storeEntitlementForTesting(
+        Premium(
+          status: PremiumStatus.active,
+          plan: PremiumPlan.yearly,
+          renews: renews ?? madeUp,
+        ),
+        _proof,
+      );
+      await pumpEventQueue();
+    }
+
+    Map<String, dynamic> sent(http.Request r) =>
+        jsonDecode(r.body) as Map<String, dynamic>;
+
+    test('a first purchase makes a number and shows it once', () async {
+      _provisionAccount = account(linked: 'new', number: _number);
+      await purchase();
+
+      final body = sent(_provisions.single);
+      expect(body['v'], 2);
+      expect(body.containsKey('device_token'), isFalse);
+      expect(body['device'], {'kind': 'phone', 'name': 'Android phone'});
+
+      expect(state.premium.source, PremiumSource.account);
+      expect(state.premium.isOn, isTrue);
+      expect(state.accountSignedIn, isTrue);
+      expect(state.accountNumber, _number);
+      expect(state.accountNumberKnown, isTrue);
+      expect(state.accountCanManage, isTrue);
+      expect(state.freshAccountNumber, _number);
+      expect(await PremiumSub.url(), _subUrl);
+      expect(state.profiles.where((p) => p.premium), hasLength(2));
+      expect(state.subToken, 'k9Q-token');
+      final stored = await const AccountStore().load();
+      expect(stored!.number, _number);
+      expect(stored.deviceToken, 'k9Q-token');
+      expect(stored.deviceId, 'dev_abc');
+
+      // The store is how the account is paid for.
+      expect(state.storeLinked, isTrue);
+      expect(state.storeName, 'Google Play');
+      expect(state.storeRenews, storeEnds);
+      expect(state.storeLinkedElsewhere, isFalse);
+      expect(state.hasStoreEntitlement, isTrue);
+
+      // The number waits to be seen across a restart, and only until then.
+      final later = AppState(
+        accounts: AccountService(client: backend.client),
+        provisioning: _provisioning(),
+      );
+      await later.loadAccountForTesting();
+      expect(later.freshAccountNumber, _number);
+      later.ackFreshAccountNumber();
+      expect(later.freshAccountNumber, isNull);
+      await pumpEventQueue();
+      final again = AppState(
+        accounts: AccountService(client: backend.client),
+        provisioning: _provisioning(),
+      );
+      await again.loadAccountForTesting();
+      expect(again.freshAccountNumber, isNull);
+      expect(again.accountNumber, _number);
+    });
+
+    test('the date is the server one, not one the device made up', () async {
+      _provisionAccount = account(linked: 'new', number: _number);
+      await purchase();
+
+      expect(state.premium.renews, accountEnds);
+      expect(state.accountExpires, accountEnds);
+      expect((await Premium.load()).renews, accountEnds);
+      // Play gives the device no date of its own to show.
+      expect(state.storeRenews, storeEnds);
+    });
+
+    test('a purchase joins the number this device is signed in to', () async {
+      await state.signInWithAccountNumber(_number);
+      await pumpEventQueue();
+      _provisionAccount = account();
+      await purchase();
+
+      expect(sent(_provisions.single)['device_token'], 'k9Q-token');
+      expect(state.premium.source, PremiumSource.account);
+      expect(state.premium.renews, accountEnds);
+      expect(state.accountNumber, _number);
+      expect(state.freshAccountNumber, isNull);
+      expect(state.storeLinked, isTrue);
+      expect(await PremiumSub.url(), _subUrl);
+    });
+
+    test('a renewal goes onto the linked account it pays for', () async {
+      _provisionAccount = account(linked: 'new', number: _number);
+      await purchase();
+      final later = DateTime.fromMillisecondsSinceEpoch(
+        accountEnds.add(const Duration(days: 30)).millisecondsSinceEpoch,
+      );
+      _provisionAccount = account(linked: 'existing', ends: later);
+      await purchase(renews: madeUp.add(const Duration(days: 30)));
+
+      expect(_provisions, hasLength(2));
+      expect(sent(_provisions.last)['device_token'], 'k9Q-token');
+      expect(state.premium.source, PremiumSource.account);
+      expect(state.premium.renews, later);
+      expect(state.accountNumber, _number);
+      expect(state.freshAccountNumber, _number);
+    });
+
+    test('a restore without the number signs in all the same', () async {
+      _provisionAccount = account(linked: 'existing');
+      await purchase();
+
+      expect(state.accountSignedIn, isTrue);
+      expect(state.accountNumberKnown, isFalse);
+      expect(state.accountNumber, isNull);
+      expect(state.accountCanManage, isTrue);
+      expect(state.freshAccountNumber, isNull);
+      expect(state.premium.source, PremiumSource.account);
+      expect(state.premium.isOn, isTrue);
+      expect(state.profiles.where((p) => p.premium), hasLength(2));
+
+      // It survives a restart without a number.
+      final later = AppState(
+        accounts: AccountService(client: backend.client),
+        provisioning: _provisioning(),
+      );
+      await later.loadAccountForTesting();
+      expect(later.accountSignedIn, isTrue);
+      expect(later.accountNumber, isNull);
+
+      // The account is asked about with this device's token.
+      await state.refreshAccount(force: true);
+      expect(backend.body(backend.to('/v1/account/status').last), {
+        'device_token': 'k9Q-token',
+      });
+      expect(state.premium.isOn, isTrue);
+
+      // Removing a device works the same way.
+      expect(await state.removeAccountDevice('dev_other'), AccountResult.ok);
+      expect(backend.body(backend.to('/v1/account/revoke').single), {
+        'device_token': 'k9Q-token',
+        'device_id': 'dev_other',
+      });
+
+      // A new number is how it gets one, and it keeps it.
+      final r = await state.rotateAccountNumber();
+      expect(r.accountNumber, _fresh);
+      expect(backend.body(backend.to('/v1/account/rotate').single), {
+        'device_token': 'k9Q-token',
+        'revoke_devices': false,
+      });
+      expect(state.accountNumber, _fresh);
+      expect(state.accountNumberKnown, isTrue);
+      expect((await const AccountStore().load())!.number, _fresh);
+      expect(state.premium.isOn, isTrue);
+    });
+
+    test('taken off elsewhere without a number, the device lets go', () async {
+      _provisionAccount = account(linked: 'existing');
+      await purchase();
+      backend.statusCode = 404;
+      await state.refreshAccount(force: true);
+
+      expect(state.accountSignedIn, isFalse);
+      expect(state.premium.isOn, isFalse);
+      expect(state.profiles.where((p) => p.premium), isEmpty);
+      // A renewal on its own does not put it back.
+      await purchase(renews: madeUp.add(const Duration(days: 30)));
+      expect(_provisions, hasLength(1));
+      expect(state.accountSignedIn, isFalse);
+    });
+
+    test('a subscription on another number leaves this one alone', () async {
+      backend.expires = DateTime.now().add(const Duration(days: 300));
+      await state.signInWithAccountNumber(_number);
+      await pumpEventQueue();
+      _provisionAccount = {'error': 'linked_elsewhere', 'device_limit': 5};
+      await purchase(renews: DateTime.now().add(const Duration(days: 400)));
+
+      expect(state.storeLinkedElsewhere, isTrue);
+      expect(state.storeLinked, isFalse);
+      expect(state.accountNumber, _number);
+      expect((await const AccountStore().load())!.number, _number);
+      // The earlier rule still runs the device: here the store lasts longer.
+      expect(state.premium.source, PremiumSource.store);
+      expect(await PremiumSub.url(), _storeUrl);
+    });
+
+    test('a full account runs the purchase the way it ran before', () async {
+      _provisionAccount = {'error': 'device_limit_reached', 'device_limit': 5};
+      await purchase();
+
+      expect(state.accountSignedIn, isFalse);
+      expect(state.storeLinked, isFalse);
+      expect(state.premium.source, PremiumSource.store);
+      expect(state.premium.isOn, isTrue);
+      expect(await PremiumSub.url(), _storeUrl);
+      expect(
+        state.profiles.where((p) => p.premium).single.name,
+        'store-ams-01',
+      );
+    });
+
+    test('without an account block nothing changes from before', () async {
+      await purchase();
+
+      expect(sent(_provisions.single)['v'], 2);
+      expect(state.accountSignedIn, isFalse);
+      expect(state.storeLinked, isFalse);
+      expect(state.storeLinkedElsewhere, isFalse);
+      expect(state.premium.source, PremiumSource.store);
+      expect(state.premium.renews, madeUp);
+      expect(await PremiumSub.url(), _storeUrl);
+    });
+
+    test('a device signed out from elsewhere cannot manage', () async {
+      await state.signInWithAccountNumber(_number);
+      await pumpEventQueue();
+      expect(state.accountCanManage, isTrue);
+      backend.devices = ['dev_other'];
+      await state.refreshAccount(force: true);
+      expect(state.accountDeviceSignedOut, isTrue);
+      expect(state.accountCanManage, isFalse);
+
+      expect(
+        await state.removeAccountDevice('dev_other'),
+        AccountResult.invalid,
+      );
+      final r = await state.rotateAccountNumber();
+      expect(r.result, AccountResult.invalid);
+      expect(backend.to('/v1/account/revoke'), isEmpty);
+      expect(backend.to('/v1/account/rotate'), isEmpty);
+      expect(state.accountNumber, _number);
+    });
+
+    test('a revoked number cannot be managed either', () async {
+      await state.signInWithAccountNumber(_number);
+      await pumpEventQueue();
+      backend.statusCode = 403;
+      await state.refreshAccount(force: true);
+      expect(state.accountCanManage, isFalse);
+      expect(
+        await state.removeAccountDevice('dev_other'),
+        AccountResult.invalid,
+      );
+      expect((await state.rotateAccountNumber()).result, AccountResult.invalid);
+      expect(backend.to('/v1/account/revoke'), isEmpty);
+      expect(backend.to('/v1/account/rotate'), isEmpty);
+    });
+
+    test('not signed in, there is nothing to manage', () async {
+      expect(state.accountCanManage, isFalse);
+      expect(state.accountNumberKnown, isFalse);
+      expect(
+        await state.removeAccountDevice('dev_abc'),
+        AccountResult.invalid,
+      );
+      expect((await state.rotateAccountNumber()).result, AccountResult.invalid);
+      expect(await state.deleteAccountNumber(), AccountResult.invalid);
+      expect(backend.requests, isEmpty);
+    });
+
+    test('deleting the number forgets it and keeps the billing', () async {
+      _provisionAccount = account(linked: 'new', number: _number);
+      await purchase();
+
+      expect(await state.deleteAccountNumber(), AccountResult.ok);
+      expect(backend.body(backend.to('/v1/account/delete').single), {
+        'account_number': _number,
+      });
+      expect(state.accountSignedIn, isFalse);
+      expect(state.accountNumber, isNull);
+      expect(state.freshAccountNumber, isNull);
+      expect(await const AccountStore().load(), isNull);
+      expect(await const AccountStore().freshNumber(), isNull);
+      expect(state.premium.isOn, isFalse);
+      expect(await PremiumSub.url(), isNull);
+      expect(state.profiles.where((p) => p.premium), isEmpty);
+      expect(state.storeLinked, isFalse);
+      // The store side is untouched: still on record, proof kept.
+      expect(state.hasStoreEntitlement, isTrue);
+      expect(state.storeName, 'Google Play');
+      expect(await PremiumSub.proof(), isNotNull);
+
+      // A renewal does not quietly make a new number.
+      await purchase(renews: madeUp.add(const Duration(days: 30)));
+      expect(_provisions, hasLength(1));
+      expect(state.accountSignedIn, isFalse);
+    });
+
+    test('a failed delete keeps everything', () async {
+      _provisionAccount = account(linked: 'new', number: _number);
+      await purchase();
+      final failing = AppState(
+        accounts: AccountService(
+          client: MockClient((_) async => http.Response('', 503)),
+        ),
+        provisioning: _provisioning(),
+      );
+      await failing.loadAccountForTesting();
+
+      expect(await failing.deleteAccountNumber(), AccountResult.network);
+      expect(failing.accountNumber, _number);
+      expect((await const AccountStore().load())!.number, _number);
+    });
+
+    test('signing out of a linked account stays signed out', () async {
+      _provisionAccount = account(linked: 'new', number: _number);
+      await purchase();
+
+      await state.signOutAccount();
+      await pumpEventQueue();
+      expect(state.accountSignedIn, isFalse);
+      expect(state.premium.isOn, isFalse);
+      expect(_provisions, hasLength(1), reason: 'the store does not take over');
+      expect(backend.body(backend.to('/v1/account/revoke').single), {
+        'account_number': _number,
+        'device_id': 'dev_abc',
+      });
+
+      // A renewal on its own leaves it there; a restore brings it back.
+      await purchase(renews: madeUp.add(const Duration(days: 30)));
+      expect(state.accountSignedIn, isFalse);
+      expect(_provisions, hasLength(1));
+
+      _provisionAccount = account(linked: 'existing');
+      await state.restorePurchases();
+      await purchase(renews: madeUp.add(const Duration(days: 60)));
+      expect(_provisions, hasLength(2));
+      expect(state.accountSignedIn, isTrue);
+      expect(state.accountNumberKnown, isFalse);
+      expect(state.premium.isOn, isTrue);
+    });
+
+    test('an account run out while the store pays is topped up at once', () async {
+      _provisionAccount = account(linked: 'new', number: _number);
+      await purchase();
+      backend.active = false;
+      final topped = DateTime.fromMillisecondsSinceEpoch(
+        accountEnds.add(const Duration(days: 365)).millisecondsSinceEpoch,
+      );
+      _provisionAccount = account(linked: 'existing', ends: topped);
+
+      await state.refreshAccount(force: true);
+
+      expect(_provisions, hasLength(2));
+      expect(sent(_provisions.last)['device_token'], 'k9Q-token');
+      expect(state.premium.isOn, isTrue);
+      expect(state.premium.renews, topped);
+      expect(state.accountNumber, _number);
+      expect(await PremiumSub.url(), _subUrl);
+    });
+
+    test('a past date with the store still paying skips the wait', () async {
+      _provisionAccount = account(
+        linked: 'new',
+        number: _number,
+        ends: DateTime.now().subtract(const Duration(minutes: 1)),
+      );
+      await purchase();
+      // The server says the account has time, with a date already behind.
+      backend.expires = DateTime.now().subtract(const Duration(minutes: 1));
+      await state.refreshAccount(force: true);
+      final asked = backend.to('/v1/account/status').length;
+
+      // Inside the six hours, but the account's date has passed.
+      expect(await state.refreshAccount(), isNotNull);
+      expect(backend.to('/v1/account/status'), hasLength(asked + 1));
+    });
+
+    test('the status answer has the last word on the link', () async {
+      _provisionAccount = account(linked: 'new', number: _number);
+      await purchase();
+      expect(state.storeLinked, isTrue);
+
+      backend.storeLinked = false;
+      await state.refreshAccount(force: true);
+      expect(state.storeLinked, isFalse);
+
+      backend.storeLinked = true;
+      await state.refreshAccount(force: true);
+      expect(state.storeLinked, isTrue);
+    });
+
+    test('another number signed in drops the link', () async {
+      _provisionAccount = account(linked: 'new', number: _number);
+      await purchase();
+      expect(state.storeLinked, isTrue);
+
+      // The sign-in mock answers for any number with the same device.
+      await state.signInWithAccountNumber(_fresh);
+      await pumpEventQueue();
+      expect(state.accountNumber, _fresh);
+      expect(state.storeLinked, isFalse);
+      expect(state.freshAccountNumber, isNull);
+
+      // The next launch asks which number the subscription pays for now.
+      _provisionAccount = {'error': 'linked_elsewhere', 'device_limit': 5};
+      await state.refreshPremiumForTesting();
+      expect(_provisions, hasLength(2));
+      expect(state.storeLinkedElsewhere, isTrue);
+      expect(state.accountNumber, _fresh);
+    });
+
+    group('an install from before', () {
+      Future<void> storeOnRecord() async {
+        await PremiumSub.saveProof(_proof);
+        await state.storeEntitlementForTesting(
+          Premium(
+            status: PremiumStatus.active,
+            plan: PremiumPlan.yearly,
+            renews: DateTime.now().add(const Duration(days: 10)),
+          ),
+        );
+      }
+
+      test('puts its subscription on the signed-in number once', () async {
+        backend.expires = DateTime.now().add(const Duration(days: 300));
+        await state.signInWithAccountNumber(_number);
+        await pumpEventQueue();
+        await storeOnRecord();
+        expect(state.premium.source, PremiumSource.account);
+        expect(_provisions, isEmpty);
+
+        _provisionAccount = account();
+        await state.refreshPremiumForTesting();
+
+        expect(_provisions, hasLength(1));
+        expect(sent(_provisions.single)['device_token'], 'k9Q-token');
+        expect(sent(_provisions.single)['v'], 2);
+        expect(state.storeLinked, isTrue);
+        expect(state.accountNumber, _number);
+        expect(state.premium.renews, accountEnds);
+
+        // Once: not on the next launch, not after a restart.
+        await state.refreshPremiumForTesting();
+        final later = AppState(
+          accounts: AccountService(client: backend.client),
+          provisioning: _provisioning(),
+        );
+        await later.loadAccountForTesting();
+        await later.refreshPremiumForTesting();
+        expect(_provisions, hasLength(1));
+      });
+
+      test('gets a number for a subscription without one', () async {
+        await storeOnRecord();
+        _provisionAccount = account(linked: 'new', number: _number);
+        await state.refreshPremiumForTesting();
+
+        expect(state.accountNumber, _number);
+        expect(state.freshAccountNumber, _number);
+        expect(state.premium.source, PremiumSource.account);
+        expect(await PremiumSub.url(), _subUrl);
+      });
+
+      test('asks again while the backend has no accounts for it', () async {
+        await storeOnRecord();
+        await state.refreshPremiumForTesting();
+        expect(_provisions, hasLength(1));
+        expect(state.accountSignedIn, isFalse);
+        expect(state.premium.source, PremiumSource.store);
+
+        await state.refreshPremiumForTesting();
+        expect(_provisions, hasLength(2));
+      });
+
+      test('a refusal is an answer too', () async {
+        await storeOnRecord();
+        _provisionAccount = {'error': 'linked_elsewhere', 'device_limit': 5};
+        await state.refreshPremiumForTesting();
+        expect(state.storeLinkedElsewhere, isTrue);
+        await state.refreshPremiumForTesting();
+        expect(_provisions, hasLength(1));
+      });
+
+      test('without a purchase proof there is nothing to ask', () async {
+        await state.refreshPremiumForTesting();
+        expect(_provisions, isEmpty);
+      });
     });
   });
 

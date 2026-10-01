@@ -65,7 +65,10 @@ void main() {
       if (request.url == _retired) return http.Response('', 410);
       if (request.url == _provision) {
         provisions++;
+        // The heal answers for the store URL alone: it never asks for an
+        // account it would have nowhere to put.
         expect(jsonDecode(request.body), provisionBody(_proof));
+        expect((jsonDecode(request.body) as Map).containsKey('v'), isFalse);
         return http.Response(
           jsonEncode({'subscription_url': _renewed.toString()}),
           200,
@@ -220,6 +223,66 @@ void main() {
       ).provision(_proof);
       expect(result.status, ProvisionStatus.ok);
       expect(result.url, _renewed.toString());
+      expect(result.account, isNull);
+    });
+
+    final withAccount = jsonEncode({
+      'subscription_url': _renewed.toString(),
+      'expires_ms': 0,
+      'account': {
+        'linked': 'joined',
+        'number': null,
+        'active': true,
+        'expires_ms': 1767225600000,
+        'kind': 'monthly',
+        'device_token': 'k9Q-token',
+        'device': {'id': 'dev_abc', 'kind': 'phone', 'name': 'Android phone'},
+        'subscription_url': 'https://api.test/v1/sub/dev_abc',
+        'device_limit': 5,
+        'store': {'platform': 'android', 'expires_ms': 1764547200000},
+      },
+    });
+
+    test('v2 sends the account fields and reads the account back', () async {
+      http.Request? sent;
+      final result = await ProvisioningService(
+        client: MockClient((request) async {
+          sent = request;
+          return http.Response(withAccount, 200);
+        }),
+      ).provision(_proof, v2: true, deviceToken: 'k9Q-token');
+      expect(jsonDecode(sent!.body), {
+        ...provisionBody(_proof),
+        'v': 2,
+        'device_token': 'k9Q-token',
+        'device': {'kind': 'phone', 'name': 'Android phone'},
+      });
+      expect(result.status, ProvisionStatus.ok);
+      expect(result.url, _renewed.toString());
+      final account = result.account!;
+      expect(account.linked, 'joined');
+      expect(account.deviceId, 'dev_abc');
+      expect(
+        account.storeExpires,
+        DateTime.fromMillisecondsSinceEpoch(1764547200000),
+      );
+    });
+
+    test('an account block on a v1 call is not read', () async {
+      final result = await provisioner(
+        http.Response(withAccount, 200),
+      ).provision(_proof);
+      expect(result.account, isNull);
+    });
+
+    test('v2 without an account block runs as before', () async {
+      final body = jsonEncode({'subscription_url': _renewed.toString()});
+      final result = await provisioner(
+        http.Response(body, 200),
+      ).provision(_proof, v2: true);
+      expect(result.status, ProvisionStatus.ok);
+      expect(result.url, _renewed.toString());
+      expect(result.account, isNull);
     });
   });
 }
