@@ -314,13 +314,13 @@ void main() {
     testWidgets('slides out a little on its own, then back', (tester) async {
       await tester.pumpWidget(one(peek: true));
       expect(_shift(tester, 'Oslo'), closeTo(0, .5));
-      await tester.pump(const Duration(milliseconds: 700));
-      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump(const Duration(milliseconds: 450));
+      await tester.pump(const Duration(milliseconds: 300));
       final out = _shift(tester, 'Oslo');
-      expect(out, greaterThan(40), reason: 'the Edit edge shows');
+      expect(out, greaterThan(30), reason: 'the Edit edge shows');
       expect(out, lessThan(HipSwipeRow.actionsWidth), reason: 'not open');
       expect(HipSwipeRow.anyOpen, isFalse);
-      await tester.pump(const Duration(milliseconds: 1100));
+      await tester.pump(const Duration(milliseconds: 520));
       await tester.pumpAndSettle();
       expect(_shift(tester, 'Oslo'), closeTo(0, .5));
     });

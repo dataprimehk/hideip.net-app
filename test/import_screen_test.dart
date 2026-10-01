@@ -76,10 +76,12 @@ void main() {
   ) async {
     await _pump(tester);
 
-    expect(find.text(S.e1Formats), findsNothing);
+    expect(find.textContaining(S.e1Formats), findsNothing);
     await tester.tap(find.text(S.e1WhichFormats));
     await tester.pumpAndSettle();
-    expect(find.text(S.e1Formats), findsOneWidget);
+    expect(find.textContaining(S.e1Formats), findsOneWidget);
+    // The name clean-up note moved here from Locations.
+    expect(find.textContaining(S.dNamesCleaned), findsOneWidget);
   });
 
   testWidgets('unknown input keeps Import disabled and blames nobody', (

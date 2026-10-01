@@ -883,15 +883,22 @@ abstract final class S {
 
   /// Signing out on this device.
   static const accountSignOut = 'Sign out on this device';
+  /// What signing out does, in the order people ask it: this device, the
+  /// number elsewhere, the way back. The device's slot is given back on the
+  /// way out (AppState.signOutAccount).
   static const accountSignOutBody =
-      'Premium servers are removed from this device. You can sign in again '
-      'with your account number.';
+      'This device loses Premium and its Premium servers. The account number '
+      'keeps working on your other devices, and this device\'s place is freed '
+      'for another one. You can sign in again with the same number at any '
+      'time.';
 
   /// Signing out while a store subscription is still running: Premium
   /// stays, only the number leaves.
   static String accountSignOutBodyStore(String store) =>
-      'Premium stays on through the $store subscription. The account number '
-      'can be entered again at any time.';
+      'Premium stays on here through your $store subscription. Only the '
+      'account number leaves this device: it keeps working on your other '
+      'devices, and this device\'s place is freed. You can sign in with it '
+      'again at any time.';
 
   /// The Settings row.
   static const setAccountNumberSub = 'Sign in or manage your account number';

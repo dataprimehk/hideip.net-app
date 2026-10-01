@@ -876,7 +876,7 @@ class HipSwipeRow extends StatefulWidget {
 
   /// How far the peek slides, as a share of [actionsWidth]: enough to show
   /// the Edit button's edge, not to look open.
-  static const double peekShare = .45;
+  static const double peekShare = .26;
 
   /// Width of one button, and so half of what the row slides by.
   static const double buttonWidth = 72;
@@ -922,7 +922,7 @@ class _HipSwipeRowState extends State<HipSwipeRow>
       duration: Hip.dur(const Duration(milliseconds: 200)),
     );
     if (widget.peek && widget.enabled && !Hip.reducedMotion) {
-      _peekTimer = Timer(const Duration(milliseconds: 700), _peekOut);
+      _peekTimer = Timer(const Duration(milliseconds: 450), _peekOut);
     }
   }
 
@@ -930,18 +930,18 @@ class _HipSwipeRowState extends State<HipSwipeRow>
     if (!mounted || _isOpen) return;
     _ctrl.animateTo(
       HipSwipeRow.peekShare,
-      duration: const Duration(milliseconds: 420),
-      curve: Curves.easeOutCubic,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutQuart,
     );
-    _peekTimer = Timer(const Duration(milliseconds: 1100), _peekBack);
+    _peekTimer = Timer(const Duration(milliseconds: 520), _peekBack);
   }
 
   void _peekBack() {
     if (!mounted || _isOpen) return;
     _ctrl.animateTo(
       0,
-      duration: const Duration(milliseconds: 380),
-      curve: Curves.easeInOutCubic,
+      duration: const Duration(milliseconds: 460),
+      curve: Curves.easeOutCubic,
     );
   }
 

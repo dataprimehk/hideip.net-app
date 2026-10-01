@@ -582,7 +582,6 @@ class LocationsBody extends StatelessWidget {
                       onEdit != null &&
                       onDelete != null)
                     const _SwipeHint(),
-                  if (userLocations.isNotEmpty) const HipSubnote(S.dNamesCleaned),
                 ],
                 ?footer,
               ],

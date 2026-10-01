@@ -729,7 +729,9 @@ class _ImportScreenState extends State<ImportScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
             child: Text(
-              S.e1Formats,
+              // What happens to a name on the way in belongs with what can
+              // come in; on Locations it crowded the swipe hint.
+              '${S.e1Formats}\n\n${S.dNamesCleaned}',
               textAlign: TextAlign.center,
               style: Hip.sans(400, 12.5, color: Hip.muted, height: 1.6),
             ),
