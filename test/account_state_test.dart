@@ -38,6 +38,7 @@ class _Backend {
   DateTime expires = DateTime.now().add(const Duration(days: 30));
   List<String> devices = ['dev_abc'];
   bool? storeLinked;
+  DateTime? storeExpires;
 
   Map<String, dynamic> body(http.Request r) =>
       jsonDecode(r.body) as Map<String, dynamic>;
@@ -96,6 +97,7 @@ class _Backend {
             ],
             'device_limit': 5,
             'store_linked': ?storeLinked,
+            'store_expires_ms': ?storeExpires?.millisecondsSinceEpoch,
           }),
           200,
         );
@@ -1233,6 +1235,44 @@ void main() {
       // And a renewal goes onto it again.
       await purchase(renews: madeUp.add(const Duration(days: 30)));
       expect(_provisions, hasLength(3));
+    });
+
+    test('a renewal the server heard of keeps the link showing', () async {
+      _provisionAccount = account(linked: 'new', number: _number);
+      await purchase();
+      expect(state.storeRenews, storeEnds);
+
+      // The store renewed and told the server; this device made no call.
+      final next = DateTime.fromMillisecondsSinceEpoch(
+        storeEnds.add(const Duration(days: 30)).millisecondsSinceEpoch,
+      );
+      backend.storeLinked = true;
+      backend.storeExpires = next;
+      await state.refreshAccount(force: true);
+      expect(state.storeRenews, next);
+      expect(state.storeLinked, isTrue);
+      expect(_provisions, hasLength(1));
+    });
+
+    test('a past server date with the store still live is paying', () async {
+      _provisionAccount = account(linked: 'new', number: _number);
+      await purchase();
+      backend.storeExpires = DateTime.now().subtract(const Duration(days: 1));
+      await state.refreshAccount(force: true);
+
+      // The store itself still says live (the device's own date is ahead).
+      expect(state.storeEntitlementLive, isTrue);
+      expect(state.storeLinked, isTrue);
+
+      // Once the store has lapsed as well, it is not.
+      await state.storeEntitlementForTesting(
+        Premium(
+          status: PremiumStatus.expired,
+          plan: PremiumPlan.yearly,
+          renews: madeUp.add(const Duration(days: 1)),
+        ),
+      );
+      expect(state.storeLinked, isFalse);
     });
 
     test('another number signed in drops the link', () async {

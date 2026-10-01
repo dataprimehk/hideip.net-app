@@ -951,12 +951,13 @@ class AppState extends ChangeNotifier {
   /// account number, so it did not go onto the one this device is on.
   bool get storeLinkedElsewhere => _storeLink.elsewhere;
 
-  /// Whether the store subscription is still being paid, by the server's
-  /// date for it where there is one.
+  /// Whether the store subscription is still being paid: by the server's
+  /// date for it, or by the store's own word when that date has passed
+  /// before the server heard of the renewal.
   bool get _storePaying {
     if (!hasStoreEntitlement) return false;
     final renews = _storeLink.renews;
-    if (renews != null) return renews.isAfter(DateTime.now());
+    if (renews != null && renews.isAfter(DateTime.now())) return true;
     return storeEntitlementLive;
   }
 
@@ -1409,6 +1410,15 @@ class AppState extends ChangeNotifier {
       case AccountResult.ok:
         _accountIssue = null;
         _statusStoreLinked = status.storeLinked;
+        // A renewal the server took from the store on its own moves the
+        // date here too, without a provision from this device. Only for the
+        // subscription on this device: another one's date is not its own.
+        final storeEnds = status.storeExpires;
+        if (_storeLink.linked &&
+            storeEnds != null &&
+            storeEnds != _storeLink.renews) {
+          await _setStoreLink(_storeLink.copyWith(renews: storeEnds));
+        }
         await _premiumRefreshGate.run(() => _applyAccountStanding(status));
       case AccountResult.revoked:
         _accountIssue = AccountIssue.revoked;

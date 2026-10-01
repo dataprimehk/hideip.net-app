@@ -107,6 +107,10 @@ class AccountStatus {
   /// Which store that subscription is in: `ios` or `android`.
   final String? storePlatform;
 
+  /// When that subscription's current period ends, by the server's reading
+  /// of the store. Moves on with every renewal the server hears about.
+  final DateTime? storeExpires;
+
   const AccountStatus(
     this.result, {
     this.active = false,
@@ -116,6 +120,7 @@ class AccountStatus {
     this.deviceLimit = AccountService.defaultDeviceLimit,
     this.storeLinked,
     this.storePlatform,
+    this.storeExpires,
   });
 }
 
@@ -311,6 +316,7 @@ class AccountService {
             ? body['store_linked'] as bool
             : null,
         storePlatform: _text(body['store_platform']),
+        storeExpires: _ms(body['store_expires_ms']),
       );
     } catch (_) {
       return null;

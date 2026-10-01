@@ -244,17 +244,23 @@ void main() {
             'devices': [],
             'store_linked': true,
             'store_platform': 'ios',
+            'store_expires_ms': 1764547200000,
           }),
         ),
       ).status(_number);
       expect(linked!.storeLinked, isTrue);
       expect(linked.storePlatform, 'ios');
+      expect(
+        linked.storeExpires,
+        DateTime.fromMillisecondsSinceEpoch(1764547200000),
+      );
 
       final older = await AccountService(
         client: _Recorder().client(200, jsonEncode({'active': true})),
       ).status(_number);
       expect(older!.storeLinked, isNull);
       expect(older.storePlatform, isNull);
+      expect(older.storeExpires, isNull);
     });
 
     test('without a number, the device token asks instead', () async {
