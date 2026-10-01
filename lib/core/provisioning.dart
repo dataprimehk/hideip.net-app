@@ -227,13 +227,15 @@ class ProvisioningService {
   /// lapsed subscription.
   ///
   /// With [v2] the purchase also goes onto an account number: the one
-  /// [deviceToken] belongs to when this device is on one, otherwise the one
-  /// the purchase already adds time to, or a new one. The answer says which
-  /// in [ProvisionResult.account].
+  /// [deviceToken] belongs to when this device is on one, or [accountNumber]
+  /// when it holds a number but has no place on it (one that ran out of time),
+  /// otherwise the one the purchase already adds time to, or a new one. The
+  /// answer says which in [ProvisionResult.account].
   Future<ProvisionResult> provision(
     PurchasePayload payload, {
     bool v2 = false,
     String? deviceToken,
+    String? accountNumber,
   }) async {
     try {
       final resp = await _client
@@ -241,7 +243,12 @@ class ProvisioningService {
             Uri.parse('$endpoint/v1/provision'),
             headers: {'content-type': 'application/json'},
             body: jsonEncode(
-              provisionBody(payload, v2: v2, deviceToken: deviceToken),
+              provisionBody(
+                payload,
+                v2: v2,
+                deviceToken: deviceToken,
+                accountNumber: accountNumber,
+              ),
             ),
           )
           .timeout(const Duration(seconds: 20));
@@ -394,11 +401,15 @@ class ProvisioningService {
 ///
 /// [v2] asks for the account the purchase adds time to, and names this
 /// device the way an account sign-in does; [deviceToken] says which account
-/// this device is already on.
+/// this device is already on. Without a token, [accountNumber] names the
+/// account instead, so a renewal after the time ran out lands on the same
+/// number rather than a new one. The token wins when there are both, and only
+/// it is sent.
 Map<String, dynamic> provisionBody(
   PurchasePayload payload, {
   bool v2 = false,
   String? deviceToken,
+  String? accountNumber,
 }) => {
   ...payload.platform == 'android'
       ? {
@@ -410,6 +421,7 @@ Map<String, dynamic> provisionBody(
   if (v2) ...{
     'v': 2,
     'device_token': ?deviceToken,
+    if (deviceToken == null) 'account_number': ?accountNumber,
     'device': {'kind': 'phone', 'name': accountDeviceName},
   },
 };

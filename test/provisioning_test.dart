@@ -121,10 +121,37 @@ void main() {
       });
     });
 
+    test('a number without a token names the account instead', () {
+      const p =
+          PurchasePayload.ios(jws: 'a.b.c', productId: PremiumProducts.monthly);
+      expect(provisionBody(p, v2: true, accountNumber: '8236387788950319'), {
+        'platform': 'ios',
+        'jws': 'a.b.c',
+        'v': 2,
+        'account_number': '8236387788950319',
+        'device': {'kind': 'phone', 'name': 'Android phone'},
+      });
+    });
+
+    test('the token wins over the number', () {
+      const p =
+          PurchasePayload.ios(jws: 'a.b.c', productId: PremiumProducts.monthly);
+      final body = provisionBody(
+        p,
+        v2: true,
+        deviceToken: 'k9Q-token',
+        accountNumber: '8236387788950319',
+      );
+      expect(body['device_token'], 'k9Q-token');
+      expect(body.containsKey('account_number'), isFalse);
+    });
+
     test('a device token without v2 is not sent', () {
       const p =
           PurchasePayload.ios(jws: 'a.b.c', productId: PremiumProducts.monthly);
-      expect(provisionBody(p, deviceToken: 'k9Q-token'),
+      expect(
+          provisionBody(p,
+              deviceToken: 'k9Q-token', accountNumber: '8236387788950319'),
           {'platform': 'ios', 'jws': 'a.b.c'});
     });
   });
