@@ -975,6 +975,16 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Signing in is the user asking for this device on an account again. A
+  /// store subscription left behind by an earlier sign-out counts once more,
+  /// and the next launch asks which number it pays for: back on the one it
+  /// was linked to, the link comes back.
+  Future<void> _rejoinStoreLink() async {
+    if (_storeLink.linked) return;
+    if (!_storeLink.paused && !_storeLink.checked) return;
+    await _setStoreLink(_storeLink.copyWith(paused: false, checked: false));
+  }
+
   /// Sends [proof] as a `v: 2` provision, with this device's token on the
   /// account it is on, and puts the account that comes back into force.
   /// Null when it did; otherwise the answer, for the rule from before store
@@ -1253,6 +1263,7 @@ class AppState extends ChangeNotifier {
       case AccountResult.ok:
         await _premiumRefreshGate.run(() async {
           if (!same) await _switchAccount();
+          await _rejoinStoreLink();
           await _adoptAccount(
             AccountCredentials(
               number: digits,
@@ -1270,6 +1281,7 @@ class AppState extends ChangeNotifier {
       case AccountResult.inactive:
         await _premiumRefreshGate.run(() async {
           if (!same) await _switchAccount();
+          await _rejoinStoreLink();
           await _accountOutOfTime(
             AccountCredentials(
               number: digits,

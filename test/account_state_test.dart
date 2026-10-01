@@ -1161,6 +1161,37 @@ void main() {
       expect(state.storeLinked, isTrue);
     });
 
+    test('signing back in after a remote sign-out links again', () async {
+      _provisionAccount = account(linked: 'new', number: _number);
+      await purchase();
+      state.ackFreshAccountNumber();
+      backend.devices = ['dev_other'];
+      await state.refreshAccount(force: true);
+      expect(state.accountDeviceSignedOut, isTrue);
+      expect(state.storeLinked, isFalse);
+
+      // Left alone, a launch does not sign it back in.
+      await state.refreshPremiumForTesting();
+      expect(_provisions, hasLength(1));
+
+      backend.devices = ['dev_abc'];
+      await state.signInWithAccountNumber(_number);
+      await pumpEventQueue();
+      expect(state.accountDeviceSignedOut, isFalse);
+
+      // The next launch asks which number the subscription pays for.
+      _provisionAccount = account(linked: 'existing');
+      await state.refreshPremiumForTesting();
+      expect(_provisions, hasLength(2));
+      expect(sent(_provisions.last)['device_token'], 'k9Q-token');
+      expect(state.storeLinked, isTrue);
+      expect(state.accountNumber, _number);
+
+      // And a renewal goes onto it again.
+      await purchase(renews: madeUp.add(const Duration(days: 30)));
+      expect(_provisions, hasLength(3));
+    });
+
     test('another number signed in drops the link', () async {
       _provisionAccount = account(linked: 'new', number: _number);
       await purchase();
