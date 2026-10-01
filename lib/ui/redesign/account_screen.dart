@@ -121,7 +121,7 @@ class _AccountScreenState extends State<AccountScreen> {
   Future<void> _paste() async {
     final data = await Clipboard.getData(Clipboard.kTextPlain);
     if (!mounted) return;
-    var digits = normalizeAccountNumber(data?.text ?? '');
+    var digits = extractAccountNumber(data?.text ?? '');
     if (digits.isEmpty) return;
     if (digits.length > accountNumberLength) {
       digits = digits.substring(0, accountNumberLength);

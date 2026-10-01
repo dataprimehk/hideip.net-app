@@ -29,6 +29,31 @@ String normalizeAccountNumber(String raw) {
   return out.toString();
 }
 
+/// The account number inside [raw], for pasted text that may be more than
+/// the number: a whole bot message reads "Your 24-hour trial is ready" and a
+/// date before and after it, and taking every digit in it would glue the 24
+/// onto the front. Looks for sixteen digits standing on their own (in groups
+/// of four or in one run) with a valid check digit; without one, it is the
+/// plain [normalizeAccountNumber], which is also what typing produces.
+String extractAccountNumber(String raw) {
+  final ascii = StringBuffer();
+  for (final rune in raw.runes) {
+    if (rune >= 0x0660 && rune <= 0x0669) {
+      ascii.writeCharCode(0x30 + rune - 0x0660);
+    } else if (rune >= 0x06F0 && rune <= 0x06F9) {
+      ascii.writeCharCode(0x30 + rune - 0x06F0);
+    } else {
+      ascii.writeCharCode(rune);
+    }
+  }
+  final grouped = RegExp(r'(?<!\d)\d{4}(?:[ \u00A0-]?\d{4}){3}(?!\d)');
+  for (final m in grouped.allMatches(ascii.toString())) {
+    final digits = normalizeAccountNumber(m.group(0)!);
+    if (luhnValid(digits)) return digits;
+  }
+  return normalizeAccountNumber(raw);
+}
+
 /// The Luhn check (ISO/IEC 7812-1) over [digits16]. False for an empty
 /// string or anything that is not made of ASCII digits only.
 bool luhnValid(String digits16) {
@@ -87,7 +112,7 @@ class AccountNumberFormatter extends TextInputFormatter {
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) {
-    var digits = normalizeAccountNumber(newValue.text);
+    var digits = extractAccountNumber(newValue.text);
     if (digits.length > accountNumberLength) {
       digits = digits.substring(0, accountNumberLength);
     }

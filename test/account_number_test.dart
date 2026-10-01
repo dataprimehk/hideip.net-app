@@ -99,6 +99,40 @@ void main() {
     });
   });
 
+  group('pulling the number out of a pasted message', () {
+    // The trial message from the Telegram bot, copied whole.
+    const message = 'Your 24-hour trial is ready. Your hideip.net account '
+        'number:\n\n8236 3877 8895 0319\n\nActive until 2 Oct 2026, 14:05 '
+        'UTC.\n\nIt works on up to 5 devices.';
+
+    test('a whole bot message gives the number, not the 24 in front', () {
+      expect(extractAccountNumber(message), '8236387788950319');
+    });
+
+    test('the number in one run or with hyphens is found too', () {
+      expect(extractAccountNumber('code 8236387788950319, 5 devices'),
+          '8236387788950319');
+      expect(extractAccountNumber('24h: 8236-3877-8895-0319'),
+          '8236387788950319');
+    });
+
+    test('a group with a bad check digit falls back to all the digits', () {
+      expect(extractAccountNumber('8236 3877 8895 0318'), '8236387788950318');
+    });
+
+    test('plain typing is unchanged', () {
+      expect(extractAccountNumber('8236 38'), '823638');
+      expect(extractAccountNumber(''), '');
+    });
+
+    test('the field formatter keeps only the number from a pasted message',
+        () {
+      final v = _edit('', message);
+      expect(v.text, '8236 3877 8895 0319');
+      expect(v.selection.baseOffset, v.text.length);
+    });
+  });
+
   group('the field formatter', () {
     test('groups by four while typing', () {
       expect(_edit('', '8').text, '8');
