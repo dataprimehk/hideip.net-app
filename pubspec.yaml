@@ -68,6 +68,10 @@ dependencies:
   # The system file sheet behind "Open file" on the import screen, so a
   # WireGuard .conf or a sing-box .json can be handed over without pasting it.
   file_picker: ^12.1.2
+  # The store's own rating sheet (StoreKit on iOS, Play In-App Review on
+  # Android). MIT. On Android it is only called for Play installs, see
+  # lib/core/review_launcher.dart.
+  in_app_review: ^2.0.12
 
 dev_dependencies:
   flutter_test:
