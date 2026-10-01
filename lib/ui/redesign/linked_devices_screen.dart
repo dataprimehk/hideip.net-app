@@ -57,23 +57,9 @@ class _LinkedDevicesScreenState extends State<LinkedDevicesScreen> {
     });
   }
 
-  /// Opens the scanner, and hands anything that reads as a pairing link to the
-  /// approval sheet. A server QR scanned here is a mistake worth naming, so it
-  /// gets its own message rather than silently doing nothing.
   Future<void> _scanToLink() async {
-    Haptics.tap();
-    final scanned = await Navigator.of(context).push<String>(
-      MaterialPageRoute(builder: (_) => const QrScanScreen()),
-    );
-    if (!mounted || scanned == null || scanned.isEmpty) return;
-    final pairing = parsePairingLink(scanned);
-    if (pairing == null) {
-      widget.state.showToast('That is not a hideip.net pairing code');
-      return;
-    }
-    final approved =
-        await showLinkApprovalSheet(context, state: widget.state, pairing: pairing);
-    if (approved == true && mounted) await _load();
+    final approved = await scanToLinkDevice(context, state: widget.state);
+    if (approved && mounted) await _load();
   }
 
   Future<void> _showCode() async {
@@ -349,6 +335,29 @@ const _months = [
 ];
 
 String _shortDate(DateTime d) => '${_months[d.month - 1]} ${d.day}, ${d.year}';
+
+/// Opens the scanner, and hands anything that reads as a pairing link to the
+/// approval sheet. A server QR scanned here is a mistake worth naming, so it
+/// gets its own message rather than silently doing nothing. Returns true when
+/// a device was linked.
+Future<bool> scanToLinkDevice(
+  BuildContext context, {
+  required AppState state,
+}) async {
+  Haptics.tap();
+  final scanned = await Navigator.of(context).push<String>(
+    MaterialPageRoute(builder: (_) => const QrScanScreen()),
+  );
+  if (!context.mounted || scanned == null || scanned.isEmpty) return false;
+  final pairing = parsePairingLink(scanned);
+  if (pairing == null) {
+    state.showToast('That is not a hideip.net pairing code');
+    return false;
+  }
+  final approved =
+      await showLinkApprovalSheet(context, state: state, pairing: pairing);
+  return approved == true;
+}
 
 /// The approval sheet: what is being linked, and the two ways out. Returns
 /// true when the device was linked.
