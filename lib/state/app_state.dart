@@ -833,6 +833,22 @@ class AppState extends ChangeNotifier {
   /// asked, when that was not an answer about its time.
   AccountIssue? get accountIssue => _accountIssue;
 
+  // Account v2 surface: filled in by the state layer.
+  bool get accountNumberKnown => accountNumber != null;
+  bool get accountCanManage =>
+      accountSignedIn && !accountDeviceSignedOut && accountIssue == null;
+  bool get storeLinked => false;
+  String? get storeName => hasStoreEntitlement
+      ? (defaultTargetPlatform == TargetPlatform.iOS
+          ? 'App Store'
+          : 'Google Play')
+      : null;
+  DateTime? get storeRenews => null;
+  String? get freshAccountNumber => null;
+  void ackFreshAccountNumber() {}
+  bool get storeLinkedElsewhere => false;
+  Future<AccountResult> deleteAccountNumber() async => AccountResult.network;
+
   /// The entitlement an account of [kind] adds up to, by the server's word
   /// ([active]) and never by the date. A trial reads as active: it is a
   /// day of access, not a store trial that turns into a charge, and the
