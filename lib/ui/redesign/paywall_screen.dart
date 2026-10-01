@@ -36,6 +36,10 @@ const _privacyUrl = 'https://hideip.net/privacy';
 void _openUrl(String url) =>
     launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
 
+/// Opens the store's own subscription page. Premium manage and the Account
+/// screen's billing row both go there this one way.
+void openStoreSubscriptions() => _openUrl(_manageUrl);
+
 // The paywall keeps the dark surface whatever the app theme is (app.css
 // `.scr.dark`), so its accents are the dark-mode values of the tokens rather
 // than the ones that follow the theme.
@@ -1380,7 +1384,11 @@ class _PremiumManageScreenState extends State<PremiumManageScreen> {
                       ),
                     ],
                   ),
-                  const HipSubnote(S.pmAccountSubnote),
+                  HipSubnote(
+                    state.storeLinked && state.storeName != null
+                        ? S.accountExplainStore(state.storeName!)
+                        : S.accountExplain,
+                  ),
                 ],
                 if (!expired && !account) ...[
                   const HipSectionLabel(S.pmSubscription),
@@ -1429,7 +1437,7 @@ class _PremiumManageScreenState extends State<PremiumManageScreen> {
                           size: 17,
                           color: Hip.muted2,
                         ),
-                        onTap: () => _openUrl(_manageUrl),
+                        onTap: openStoreSubscriptions,
                       ),
                     ],
                   ),
@@ -1446,7 +1454,7 @@ class _PremiumManageScreenState extends State<PremiumManageScreen> {
                           size: 17,
                           color: Hip.muted2,
                         ),
-                        onTap: () => _openUrl(_manageUrl),
+                        onTap: openStoreSubscriptions,
                       ),
                       HipListRow(
                         title: _restoring ? S.pmChecking : S.pwRestore,

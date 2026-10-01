@@ -552,6 +552,15 @@ class _HipShellState extends State<HipShell>
           WidgetsBinding.instance
               .addPostFrameCallback((_) => _askApproval(pairing));
         }
+        // A number a purchase just made is shown once, over whatever screen
+        // the purchase lands on; the paywall finishes its own moment first.
+        if (state.freshAccountNumber != null &&
+            _screen != HipScreen.onboarding &&
+            _screen != HipScreen.paywall) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) showFreshAccountNumber(state, _nav);
+          });
+        }
 
         final iosSwipe = Theme.of(context).platform == TargetPlatform.iOS;
         final onDark = _screen == HipScreen.onboarding ||

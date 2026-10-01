@@ -13,6 +13,8 @@ import '../brand.dart';
 import '../strings.dart';
 import 'hip.dart';
 import 'hip_sheet.dart';
+import 'linked_devices_screen.dart';
+import 'paywall_screen.dart' show openStoreSubscriptions;
 import 'shell.dart';
 
 /// A sentence with [mono] set in the mono face and the rest in [words]. The
@@ -29,6 +31,64 @@ InlineSpan _monoIn(String line, String mono, TextStyle words, TextStyle nums) {
         TextSpan(text: line.substring(at + mono.length), style: words),
     ],
   );
+}
+
+/// Copies [number] grouped, off the clipboard again after a minute.
+Future<void> _copyNumber(AppState state, String number) async {
+  Haptics.tap();
+  await SensitiveClipboard.setText(
+    displayAccountNumber(number),
+    ttl: const Duration(seconds: 60),
+  );
+  state.showToast(S.accountCopied);
+}
+
+bool _freshOpen = false;
+
+/// The number a store purchase just made, once: whichever screen is up when
+/// it arrives shows it, and closing the sheet is the acknowledgement. A
+/// sheet that never got on screen acknowledges nothing, so the number waits
+/// for the next chance.
+Future<void> showFreshAccountNumber(AppState state, HipNav nav) async {
+  final fresh = state.freshAccountNumber;
+  if (fresh == null || _freshOpen) return;
+  _freshOpen = true;
+  var shown = false;
+  try {
+    await nav.showSheet<void>([
+      Builder(
+        builder: (_) {
+          shown = true;
+          return const HipSheetTitle(S.accountFreshTitle);
+        },
+      ),
+      Padding(
+        padding: const EdgeInsets.only(top: 14),
+        child: _OneLine(
+          Text(
+            displayAccountNumber(fresh),
+            style: Hip.mono(600, 22, color: Hip.ink, letterSpacing: 1.5),
+          ),
+        ),
+      ),
+      const HipSheetBody(S.accountFreshBody),
+      HipSheetActions(
+        children: [
+          HipCta(S.accountCopy, onTap: () => _copyNumber(state, fresh)),
+          Builder(
+            builder: (c) => HipCta(
+              S.aClose,
+              quiet: true,
+              onTap: () => Navigator.of(c).pop(),
+            ),
+          ),
+        ],
+      ),
+    ]);
+  } finally {
+    _freshOpen = false;
+    if (shown) state.ackFreshAccountNumber();
+  }
 }
 
 /// Settings → Account number: one screen, two states. Signed out it is a
@@ -61,11 +121,21 @@ class _AccountScreenState extends State<AccountScreen> {
 
   AppState get _state => widget.state;
 
+  /// The store this device bills through, for copy that names it.
+  String get _store =>
+      _state.storeName ??
+      (defaultTargetPlatform == TargetPlatform.iOS
+          ? 'App Store'
+          : 'Google Play');
+
   @override
   void initState() {
     super.initState();
     _field.addListener(_onEdit);
     if (_state.accountSignedIn) _loadStatus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) showFreshAccountNumber(_state, widget.nav);
+    });
   }
 
   @override
@@ -195,11 +265,16 @@ class _AccountScreenState extends State<AccountScreen> {
   /// Asks in the same bottom sheet as the rotation: full-width buttons, the
   /// action on top and Cancel under it, so nothing wraps into a ragged column
   /// on a zoomed screen or with large text.
+  ///
+  /// [also] is a second way out that leaves the sheet up, such as the
+  /// store's own page next to a delete.
   Future<bool> _confirm({
     required String title,
     String? body,
     required String action,
     bool danger = false,
+    String? also,
+    VoidCallback? onAlso,
   }) async {
     final yes = await widget.nav.showSheet<bool>([
       HipSheetTitle(title),
@@ -214,6 +289,7 @@ class _AccountScreenState extends State<AccountScreen> {
               onTap: () => Navigator.of(c).pop(true),
             ),
           ),
+          if (also != null) HipCta(also, ghost: true, onTap: onAlso),
           Builder(
             builder: (c) => HipCta(
               S.aCancel,
@@ -240,14 +316,7 @@ class _AccountScreenState extends State<AccountScreen> {
     if (ok && mounted) setState(() => _revealed = true);
   }
 
-  Future<void> _copy(String number) async {
-    Haptics.tap();
-    await SensitiveClipboard.setText(
-      displayAccountNumber(number),
-      ttl: const Duration(seconds: 60),
-    );
-    _state.showToast(S.accountCopied);
-  }
+  Future<void> _copy(String number) => _copyNumber(_state, number);
 
   Future<void> _removeDevice(LinkedDevice device) async {
     final ok = await _confirm(
@@ -402,12 +471,10 @@ class _AccountScreenState extends State<AccountScreen> {
   Future<void> _signOut() async {
     final ok = await _confirm(
       title: S.accountSignOut,
-      body: _state.storeEntitlementLive
-          ? S.accountSignOutBodyStore(
-              defaultTargetPlatform == TargetPlatform.iOS
-                  ? 'App Store'
-                  : 'Google Play',
-            )
+      body: _state.storeLinked
+          ? S.accountSignOutBodyLinked(_store)
+          : _state.storeEntitlementLive
+          ? S.accountSignOutBodyStore(_store)
           : S.accountSignOutBody,
       action: S.accountSignOut,
       danger: true,
@@ -424,6 +491,57 @@ class _AccountScreenState extends State<AccountScreen> {
       _status = null;
       _statusFailed = false;
     });
+  }
+
+  /// Deletes the number for good. A store subscription goes on billing
+  /// until it is cancelled in the store, so the sheet says so and offers
+  /// the store's page right there.
+  Future<void> _delete() async {
+    final store = _state.storeLinked || _state.hasStoreEntitlement;
+    final ok = await _confirm(
+      title: S.accountDelete,
+      body: store ? S.accountDeleteBodyStore(_store) : S.accountDeleteBody,
+      action: S.accountDelete,
+      danger: true,
+      also: store ? S.accountManageStore(_store) : null,
+      onAlso: store ? openStoreSubscriptions : null,
+    );
+    if (!ok || !mounted) return;
+    setState(() => _busy = true);
+    AccountResult result;
+    try {
+      result = await _state.deleteAccountNumber();
+    } catch (_) {
+      result = AccountResult.network;
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+    if (!mounted) return;
+    if (result != AccountResult.ok) {
+      Haptics.error();
+      _state.showToast(_errorFor(result, AccountService.defaultDeviceLimit));
+      return;
+    }
+    Haptics.success();
+    _state.showToast(S.accountDeleted);
+    setState(() {
+      _revealed = false;
+      _status = null;
+      _statusFailed = false;
+    });
+  }
+
+  Future<void> _linkDevice() async {
+    final linked = await scanToLinkDevice(context, state: _state);
+    if (linked && mounted) await _loadStatus();
+  }
+
+  Future<void> _showLinkCode() async {
+    final token = _state.subToken;
+    if (token == null) return;
+    Haptics.tap();
+    await showLinkCodeSheet(context, state: _state, subToken: token);
+    if (mounted) await _loadStatus();
   }
 
   @override
@@ -611,23 +729,44 @@ class _AccountScreenState extends State<AccountScreen> {
       _state.accountIssue == null &&
       !_state.accountDeviceSignedOut;
 
+  /// Signed in, the screen is where Premium lives: the number, how long it
+  /// runs, what pays for it, and the devices on it. The devices and every
+  /// way to change the account show only while this device may manage it;
+  /// a device taken off, or a number that stopped working, gets the number,
+  /// the reason and the way back in, nothing more.
   List<Widget> _signedIn() {
+    final known = _state.accountNumberKnown;
     final number = _state.accountNumber ?? '';
+    final manage = _state.accountCanManage;
     final ownId = _state.accountDeviceId;
     final devices = _status?.devices;
+    final linked = _state.storeLinked && _state.storeName != null;
     return [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(4, 4, 4, 16),
+        child: Text(
+          linked ? S.accountExplainStore(_store) : S.accountExplain,
+          style: Hip.sans(400, 14, color: Hip.muted, height: 1.5),
+        ),
+      ),
       HipCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _OneLine(
+            if (known)
+              _OneLine(
+                Text(
+                  _revealed
+                      ? displayAccountNumber(number)
+                      : maskAccountNumber(number),
+                  style: Hip.mono(600, 20, color: Hip.ink, letterSpacing: 1.2),
+                ),
+              )
+            else
               Text(
-                _revealed
-                    ? displayAccountNumber(number)
-                    : maskAccountNumber(number),
-                style: Hip.mono(600, 20, color: Hip.ink, letterSpacing: 1.2),
+                S.accountNoNumberHere(_store),
+                style: Hip.sans(550, 14, color: Hip.ink, height: 1.45),
               ),
-            ),
             const SizedBox(height: 8),
             _standing(),
             if (_outOfTime) ...[
@@ -651,35 +790,35 @@ class _AccountScreenState extends State<AccountScreen> {
                 ),
               ],
             ],
-            if (_state.accountDeviceSignedOut) ...[
+            if (_state.accountDeviceSignedOut && known) ...[
               const SizedBox(height: 12),
               HipCta(
                 S.accountCtaSignIn,
                 connect: true,
-                onTap: _busy
-                    ? null
-                    : () => _signInWith(_state.accountNumber ?? ''),
+                onTap: _busy ? null : () => _signInWith(number),
               ),
             ],
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _MiniAction(
-                  icon: _revealed
-                      ? Icons.visibility_off_outlined
-                      : Icons.visibility_outlined,
-                  label: _revealed ? S.accountHide : S.accountReveal,
-                  onTap: _toggleReveal,
-                ),
-                _MiniAction(
-                  icon: Icons.copy_outlined,
-                  label: S.accountCopy,
-                  onTap: () => _copy(number),
-                ),
-              ],
-            ),
+            if (known) ...[
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _MiniAction(
+                    icon: _revealed
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                    label: _revealed ? S.accountHide : S.accountReveal,
+                    onTap: _toggleReveal,
+                  ),
+                  _MiniAction(
+                    icon: Icons.copy_outlined,
+                    label: S.accountCopy,
+                    onTap: () => _copy(number),
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -691,41 +830,90 @@ class _AccountScreenState extends State<AccountScreen> {
             style: Hip.sans(500, 13.5, color: Hip.danger, height: 1.45),
           ),
         ),
-      const HipSubnote(S.accountKeepSafe),
-      HipSectionLabel(S.accountDevices),
-      if (_statusFailed)
+      if (known) const HipSubnote(S.accountKeepSafe),
+      if (_state.storeLinkedElsewhere)
+        HipSubnote(S.accountLinkedElsewhere(_store)),
+      if (linked) ...[
+        const HipSectionLabel(S.pmBilling),
         HipListGroup(
           children: [
-            HipListRow(
-              title: _statusError ?? S.accountErrNetwork,
-              trailing: Icon(Icons.refresh, size: 17, color: Hip.muted2),
-              onTap: _loadStatus,
+            _BillingRow(
+              store: _store,
+              renews: _state.storeRenews,
+              onManage: openStoreSubscriptions,
             ),
           ],
-        )
-      else if (devices != null && devices.isNotEmpty)
-        HipListGroup(
-          children: [
-            for (final d in devices)
-              _AccountDeviceRow(
-                device: d,
-                own: d.id == ownId,
-                onRemove: d.id == ownId ? null : () => _removeDevice(d),
+        ),
+      ],
+      if (manage) ...[
+        HipSectionLabel(S.accountDevices),
+        if (_statusFailed)
+          HipListGroup(
+            children: [
+              HipListRow(
+                title: _statusError ?? S.accountErrNetwork,
+                trailing: Icon(Icons.refresh, size: 17, color: Hip.muted2),
+                onTap: _loadStatus,
               ),
-          ],
-        )
-      else if (_loading)
-        const SizedBox(height: 8),
+            ],
+          )
+        else if (devices != null && devices.isNotEmpty)
+          HipListGroup(
+            children: [
+              for (final d in devices)
+                _AccountDeviceRow(
+                  device: d,
+                  own: d.id == ownId,
+                  onRemove: d.id == ownId ? null : () => _removeDevice(d),
+                ),
+            ],
+          )
+        else if (_loading)
+          const SizedBox(height: 8),
+        // Linking hands out this account's access, so it needs time on it
+        // and this device's own token.
+        if (_state.canLinkDevices) ...[
+          const SizedBox(height: 10),
+          HipListGroup(
+            children: [
+              HipListRow(
+                leading: const _Tile(Icons.qr_code_scanner_outlined),
+                title: S.accountLinkDevice,
+                subtitle: S.setLinkedDevicesSub,
+                titleMaxLines: 2,
+                trailing: Icon(
+                  Icons.chevron_right,
+                  size: 17,
+                  color: Hip.muted2,
+                ),
+                onTap: _busy ? null : _linkDevice,
+              ),
+              HipListRow(
+                leading: const _Tile(Icons.pin_outlined),
+                title: S.accountLinkCode,
+                titleMaxLines: 2,
+                trailing: Icon(
+                  Icons.chevron_right,
+                  size: 17,
+                  color: Hip.muted2,
+                ),
+                onTap: _busy ? null : _showLinkCode,
+              ),
+            ],
+          ),
+        ],
+      ],
       const SizedBox(height: 18),
       HipListGroup(
         children: [
-          HipListRow(
-            leading: const _Tile(Icons.autorenew),
-            title: S.accountRotate,
-            titleMaxLines: 2,
-            trailing: Icon(Icons.chevron_right, size: 17, color: Hip.muted2),
-            onTap: _busy ? null : _rotate,
-          ),
+          if (manage)
+            HipListRow(
+              leading: const _Tile(Icons.autorenew),
+              title: S.accountRotate,
+              titleMaxLines: 2,
+              trailing: Icon(Icons.chevron_right, size: 17, color: Hip.muted2),
+              onTap: _busy ? null : _rotate,
+            ),
           HipListRow(
             leading: const _Tile(Icons.logout),
             title: S.accountSignOut,
@@ -735,6 +923,20 @@ class _AccountScreenState extends State<AccountScreen> {
           ),
         ],
       ),
+      if (manage) ...[
+        const SizedBox(height: 10),
+        HipListGroup(
+          children: [
+            HipListRow(
+              leading: _Tile(Icons.delete_outline, color: Hip.danger),
+              title: S.accountDelete,
+              titleMaxLines: 2,
+              trailing: Icon(Icons.chevron_right, size: 17, color: Hip.muted2),
+              onTap: _busy ? null : _delete,
+            ),
+          ],
+        ),
+      ],
       const SizedBox(height: 24),
     ];
   }
@@ -842,7 +1044,8 @@ class _OneLine extends StatelessWidget {
 
 class _Tile extends StatelessWidget {
   final IconData icon;
-  const _Tile(this.icon);
+  final Color? color;
+  const _Tile(this.icon, {this.color});
 
   @override
   Widget build(BuildContext context) => Container(
@@ -852,8 +1055,49 @@ class _Tile extends StatelessWidget {
       color: Hip.line2,
       borderRadius: BorderRadius.circular(12),
     ),
-    child: Icon(icon, size: 19, color: Hip.inkSoft),
+    child: Icon(icon, size: 19, color: color ?? Hip.inkSoft),
   );
+}
+
+/// What pays for the account from this device: the store, its next charge
+/// (mono), and the store's own page. The line wraps rather than cut the
+/// date off on a zoomed screen.
+class _BillingRow extends StatelessWidget {
+  final String store;
+  final DateTime? renews;
+  final VoidCallback onManage;
+  const _BillingRow({
+    required this.store,
+    required this.renews,
+    required this.onManage,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final words = Hip.sans(550, 14, color: Hip.ink, height: 1.4);
+    final nums = Hip.mono(600, 13, color: Hip.ink, height: 1.4);
+    final r = renews;
+    final date = r == null ? '' : formatPremiumDate(r);
+    final line = r == null
+        ? S.accountBillingUndated(store)
+        : S.accountBilling(store, date);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 8, 6, 8),
+      child: Row(
+        children: [
+          Expanded(child: Text.rich(_monoIn(line, date, words, nums))),
+          const SizedBox(width: 8),
+          TextButton(
+            onPressed: onManage,
+            child: Text(
+              S.accountManage,
+              style: Hip.sans(650, 14, color: Hip.blue),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// A small bordered action under the number.
