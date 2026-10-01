@@ -663,32 +663,38 @@ class _ImportScreenState extends State<ImportScreen> {
         const SizedBox(height: 12),
         // Three actions, not three formats. What a link is called is answered
         // below, behind a quiet disclosure, so the buttons stay about doing.
-        Row(
-          children: [
-            Expanded(
-              child: _QuickAction(
-                icon: Icons.qr_code_scanner,
-                label: S.e1ScanQr,
-                onTap: _openQr,
+        // Equal widths from Expanded, equal heights from IntrinsicHeight: when
+        // one label wraps (a zoomed screen, large text, a longer language),
+        // all three grow together instead of one standing taller.
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: _QuickAction(
+                  icon: Icons.qr_code_scanner,
+                  label: S.e1ScanQr,
+                  onTap: _openQr,
+                ),
               ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _QuickAction(
-                icon: Icons.content_paste_outlined,
-                label: S.e1Paste,
-                onTap: _pasteClipboard,
+              const SizedBox(width: 10),
+              Expanded(
+                child: _QuickAction(
+                  icon: Icons.content_paste_outlined,
+                  label: S.e1Paste,
+                  onTap: _pasteClipboard,
+                ),
               ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _QuickAction(
-                icon: Icons.description_outlined,
-                label: S.e1OpenFile,
-                onTap: _openFile,
+              const SizedBox(width: 10),
+              Expanded(
+                child: _QuickAction(
+                  icon: Icons.description_outlined,
+                  label: S.e1OpenFile,
+                  onTap: _openFile,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         const HipSubnote(S.e1Subnote),
         Center(
@@ -1045,6 +1051,7 @@ class _QuickAction extends StatelessWidget {
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(icon, size: 20, color: Hip.blue),
             const SizedBox(height: 8),
