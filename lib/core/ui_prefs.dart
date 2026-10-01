@@ -29,6 +29,10 @@ class UiPrefs {
   static const _kWonClaimed = 'ui_won_claimed_v1';
   static const _kVotePrimer = 'ui_vote_primer_v1';
   static const _kComingNext = 'ui_comingnext_v1';
+  static const _kSwipePeeks = 'ui_swipepeeks_v1';
+
+  /// How many visits to Locations nudge the first own server open a little.
+  static const maxSwipePeeks = 3;
 
   /// How many recently used locations are remembered. Home shows at most a
   /// handful of them; the rest is the tail that lets one dropped server fall
@@ -96,6 +100,11 @@ class UiPrefs {
   /// default; it stays the way the user last left it.
   final bool comingNextOpen;
 
+  /// How many times the first own server on Locations has slid open a
+  /// little to show that rows swipe. [maxSwipePeeks] once the user has
+  /// swiped a row on their own, so it stops.
+  final int swipePeeks;
+
   const UiPrefs({
     this.advanced = false,
     this.onboarded = false,
@@ -116,6 +125,7 @@ class UiPrefs {
     this.wonClaimed = const {},
     this.votePrimerSeen = false,
     this.comingNextOpen = false,
+    this.swipePeeks = 0,
   });
 
   /// [recents] with [id] moved to the front, deduplicated and capped. The
@@ -149,6 +159,7 @@ class UiPrefs {
     Set<String>? wonClaimed,
     bool? votePrimerSeen,
     bool? comingNextOpen,
+    int? swipePeeks,
   }) =>
       UiPrefs(
         advanced: advanced ?? this.advanced,
@@ -170,6 +181,7 @@ class UiPrefs {
         wonClaimed: wonClaimed ?? this.wonClaimed,
         votePrimerSeen: votePrimerSeen ?? this.votePrimerSeen,
         comingNextOpen: comingNextOpen ?? this.comingNextOpen,
+        swipePeeks: swipePeeks ?? this.swipePeeks,
       );
 
   static Future<UiPrefs> load() async {
@@ -194,6 +206,7 @@ class UiPrefs {
       wonClaimed: (p.getStringList(_kWonClaimed) ?? const []).toSet(),
       votePrimerSeen: p.getBool(_kVotePrimer) ?? false,
       comingNextOpen: p.getBool(_kComingNext) ?? false,
+      swipePeeks: p.getInt(_kSwipePeeks) ?? 0,
     );
   }
 
@@ -231,5 +244,6 @@ class UiPrefs {
     await p.setStringList(_kWonClaimed, wonClaimed.toList());
     await p.setBool(_kVotePrimer, votePrimerSeen);
     await p.setBool(_kComingNext, comingNextOpen);
+    await p.setInt(_kSwipePeeks, swipePeeks);
   }
 }

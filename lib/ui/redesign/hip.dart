@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/gestures.dart' show DragStartBehavior;
 import 'package:flutter/material.dart';
 
@@ -853,13 +855,28 @@ class HipSwipeRow extends StatefulWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final bool enabled;
+
+  /// Slides open a little on its own shortly after it appears, then back:
+  /// the hint that rows swipe. Meant for one row on the screen, never all of
+  /// them; skipped under reduced motion and dropped as soon as a finger
+  /// touches the row.
+  final bool peek;
+
+  /// Called when the user opens the row by swiping it.
+  final VoidCallback? onOpened;
   const HipSwipeRow({
     super.key,
     required this.child,
     required this.onEdit,
     required this.onDelete,
     this.enabled = true,
+    this.peek = false,
+    this.onOpened,
   });
+
+  /// How far the peek slides, as a share of [actionsWidth]: enough to show
+  /// the Edit button's edge, not to look open.
+  static const double peekShare = .45;
 
   /// Width of one button, and so half of what the row slides by.
   static const double buttonWidth = 72;
@@ -895,6 +912,7 @@ class _HipSwipeRowState extends State<HipSwipeRow>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
   double _dragFrom = 0;
+  Timer? _peekTimer;
 
   @override
   void initState() {
@@ -902,6 +920,28 @@ class _HipSwipeRowState extends State<HipSwipeRow>
     _ctrl = AnimationController(
       vsync: this,
       duration: Hip.dur(const Duration(milliseconds: 200)),
+    );
+    if (widget.peek && widget.enabled && !Hip.reducedMotion) {
+      _peekTimer = Timer(const Duration(milliseconds: 700), _peekOut);
+    }
+  }
+
+  void _peekOut() {
+    if (!mounted || _isOpen) return;
+    _ctrl.animateTo(
+      HipSwipeRow.peekShare,
+      duration: const Duration(milliseconds: 420),
+      curve: Curves.easeOutCubic,
+    );
+    _peekTimer = Timer(const Duration(milliseconds: 1100), _peekBack);
+  }
+
+  void _peekBack() {
+    if (!mounted || _isOpen) return;
+    _ctrl.animateTo(
+      0,
+      duration: const Duration(milliseconds: 380),
+      curve: Curves.easeInOutCubic,
     );
   }
 
@@ -912,6 +952,7 @@ class _HipSwipeRowState extends State<HipSwipeRow>
   @override
   void dispose() {
     if (HipSwipeRow._openRow == this) HipSwipeRow._openRow = null;
+    _peekTimer?.cancel();
     _ctrl.dispose();
     super.dispose();
   }
@@ -935,6 +976,7 @@ class _HipSwipeRowState extends State<HipSwipeRow>
   }
 
   void _dragStart(DragStartDetails d) {
+    _peekTimer?.cancel();
     _ctrl.stop();
     _dragFrom = _offset;
   }
@@ -948,12 +990,9 @@ class _HipSwipeRowState extends State<HipSwipeRow>
 
   void _dragEnd(DragEndDetails d) {
     final v = d.primaryVelocity ?? 0;
-    if (v < -300) {
+    if (v < -300 || (v <= 300 && _offset > HipSwipeRow.actionsWidth / 2)) {
       open();
-    } else if (v > 300) {
-      close();
-    } else if (_offset > HipSwipeRow.actionsWidth / 2) {
-      open();
+      widget.onOpened?.call();
     } else {
       close();
     }

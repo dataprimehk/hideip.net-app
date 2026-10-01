@@ -293,6 +293,63 @@ void main() {
     });
   });
 
+  group('the swipe nudge', () {
+    Widget one({required bool peek, VoidCallback? onOpened}) => MaterialApp(
+      home: Scaffold(
+        body: HipListGroup(
+          children: [
+            HipSwipeRow(
+              key: const ValueKey('Oslo'),
+              peek: peek,
+              onOpened: onOpened,
+              onEdit: () {},
+              onDelete: () {},
+              child: const HipListRow(title: 'Oslo'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    testWidgets('slides out a little on its own, then back', (tester) async {
+      await tester.pumpWidget(one(peek: true));
+      expect(_shift(tester, 'Oslo'), closeTo(0, .5));
+      await tester.pump(const Duration(milliseconds: 700));
+      await tester.pump(const Duration(milliseconds: 500));
+      final out = _shift(tester, 'Oslo');
+      expect(out, greaterThan(40), reason: 'the Edit edge shows');
+      expect(out, lessThan(HipSwipeRow.actionsWidth), reason: 'not open');
+      expect(HipSwipeRow.anyOpen, isFalse);
+      await tester.pump(const Duration(milliseconds: 1100));
+      await tester.pumpAndSettle();
+      expect(_shift(tester, 'Oslo'), closeTo(0, .5));
+    });
+
+    testWidgets('stays still without peek, and under reduced motion', (
+      tester,
+    ) async {
+      await tester.pumpWidget(one(peek: false));
+      await tester.pump(const Duration(milliseconds: 1200));
+      expect(_shift(tester, 'Oslo'), closeTo(0, .5));
+
+      Hip.reducedMotion = true;
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(one(peek: true));
+      await tester.pump(const Duration(milliseconds: 1200));
+      expect(_shift(tester, 'Oslo'), closeTo(0, .5));
+    });
+
+    testWidgets('a swipe that opens the row is reported', (tester) async {
+      var opened = 0;
+      await tester.pumpWidget(one(peek: false, onOpened: () => opened++));
+      await tester.drag(find.text('Oslo'), const Offset(-40, 0));
+      await tester.pumpAndSettle();
+      expect(opened, 0, reason: 'a short swipe springs back');
+      await _open(tester, 'Oslo');
+      expect(opened, 1);
+    });
+  });
+
   group('on the Locations screen', () {
     setUp(() {
       final view = TestWidgetsFlutterBinding.ensureInitialized()
@@ -305,7 +362,7 @@ void main() {
       addTearDown(view.resetDevicePixelRatio);
     });
 
-    Widget list({bool withActions = true}) => MaterialApp(
+    Widget list({bool withActions = true, bool peek = false}) => MaterialApp(
       home: Scaffold(
         body: LocationsBody(
           mix: Mix.mixed,
@@ -333,6 +390,7 @@ void main() {
           onManage: (_) {},
           onEdit: withActions ? (_) {} : null,
           onDelete: withActions ? (_) {} : null,
+          peekFirstSwipe: peek,
           onLockedTap: (_, _) {},
           onShowAll: () {},
           onSeePlans: () {},
@@ -359,6 +417,21 @@ void main() {
     testWidgets('without the actions nothing swipes', (tester) async {
       await tester.pumpWidget(list(withActions: false));
       expect(find.byType(HipSwipeRow), findsNothing);
+      expect(find.textContaining(S.dSwipeHint, findRichText: true), findsNothing);
+    });
+
+    testWidgets('the swipe hint stands under the user\'s own servers', (
+      tester,
+    ) async {
+      await tester.pumpWidget(list());
+      expect(find.textContaining(S.dSwipeHint, findRichText: true), findsOneWidget);
+    });
+
+    testWidgets('only the first own row is nudged', (tester) async {
+      await tester.pumpWidget(list(peek: true));
+      final rows = tester.widgetList<HipSwipeRow>(find.byType(HipSwipeRow));
+      expect([for (final r in rows) r.peek], [true]);
+      await tester.pumpAndSettle(const Duration(milliseconds: 100));
     });
   });
 }

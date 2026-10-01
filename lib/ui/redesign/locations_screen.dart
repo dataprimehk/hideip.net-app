@@ -5,6 +5,7 @@ import '../../core/country_names.dart';
 import '../../core/location.dart';
 import '../../core/ping.dart';
 import '../../core/sub_info.dart';
+import '../../core/ui_prefs.dart';
 import '../../core/votes.dart';
 import '../../state/app_state.dart';
 import '../brand.dart';
@@ -59,11 +60,31 @@ class _LocationsScreenState extends State<LocationsScreen> {
   bool _allLocked = false;
   bool _winnerDismissed = false;
 
+  /// Whether this visit nudges the first own server open (see
+  /// [HipSwipeRow.peek]). Decided once per visit, counted when it is.
+  bool _peek = false;
+
   @override
   void initState() {
     super.initState();
     final ctx = widget.nav.ctx();
     if (ctx is LocationsCtx) _allLocked = ctx.allLocked;
+    final state = widget.state;
+    final prefs = state.prefs;
+    _peek = prefs.swipePeeks < UiPrefs.maxSwipePeeks &&
+        state.mix != Mix.hip &&
+        state.locations.any((l) => !l.premium);
+    if (_peek) {
+      state.updatePrefs(prefs.copyWith(swipePeeks: prefs.swipePeeks + 1));
+    }
+  }
+
+  /// The user swiped a row on their own: the nudge has done its job.
+  void _swipeLearned() {
+    final state = widget.state;
+    if (state.prefs.swipePeeks >= UiPrefs.maxSwipePeeks) return;
+    state.updatePrefs(
+        state.prefs.copyWith(swipePeeks: UiPrefs.maxSwipePeeks));
   }
 
   void _showAll() {
@@ -218,6 +239,8 @@ class _LocationsScreenState extends State<LocationsScreen> {
       onManage: nav.openDetail,
       onEdit: _edit,
       onDelete: _confirmDelete,
+      peekFirstSwipe: _peek,
+      onSwipeOpened: _swipeLearned,
       onLockedTap: (from, locId) =>
           nav.openPaywall(from: HipScreen.locations, locId: locId),
       onShowAll: _showAll,
@@ -289,6 +312,10 @@ class LocationsBody extends StatelessWidget {
   /// (a test fixture, a read-only mix) wants.
   final void Function(Location)? onEdit;
   final void Function(Location)? onDelete;
+
+  /// Whether the first of the user's own rows slides open a little by itself.
+  final bool peekFirstSwipe;
+  final VoidCallback? onSwipeOpened;
   final void Function(LockedFrom from, String locId) onLockedTap;
   final VoidCallback onShowAll;
   final VoidCallback onSeePlans;
@@ -324,6 +351,8 @@ class LocationsBody extends StatelessWidget {
     required this.onManage,
     this.onEdit,
     this.onDelete,
+    this.peekFirstSwipe = false,
+    this.onSwipeOpened,
     required this.onLockedTap,
     required this.onShowAll,
     required this.onSeePlans,
@@ -341,7 +370,7 @@ class LocationsBody extends StatelessWidget {
   int get _hiddenLocked => locked.length - _shownLocked.length;
 
   /// One of the user's own servers, or a managed one on a live subscription.
-  Widget _serverRow(Location l) {
+  Widget _serverRow(Location l, {bool peek = false}) {
     final ms = pingOf(l);
     // The chevron into manage: always for the user's own servers, only in
     // Advanced view for the ones hideip.net runs (there is nothing on those
@@ -394,6 +423,8 @@ class LocationsBody extends StatelessWidget {
     return HipSwipeRow(
       onEdit: () => edit(l),
       onDelete: () => delete(l),
+      peek: peek,
+      onOpened: onSwipeOpened,
       child: row,
     );
   }
@@ -430,15 +461,22 @@ class LocationsBody extends StatelessWidget {
       }
     }
 
+    // The nudge goes to the first row on screen, and only to that one.
+    final first = loose.isNotEmpty
+        ? loose.first.id
+        : (order.isEmpty ? null : grouped[order.first]!.first.id);
+    Widget row(Location l) =>
+        _serverRow(l, peek: peekFirstSwipe && l.id == first);
+
     return [
       if (loose.isNotEmpty)
-        HipListGroup(children: [for (final l in loose) _serverRow(l)]),
+        HipListGroup(children: [for (final l in loose) row(l)]),
       for (final u in order) ...[
         _SubHeader(
           info: subInfoOf(u),
           fallbackHost: Uri.tryParse(u)?.host ?? u,
         ),
-        HipListGroup(children: [for (final l in grouped[u]!) _serverRow(l)]),
+        HipListGroup(children: [for (final l in grouped[u]!) row(l)]),
       ],
     ];
   }
@@ -540,6 +578,10 @@ class LocationsBody extends StatelessWidget {
                     )
                   else
                     ..._userServers(),
+                  if (userLocations.isNotEmpty &&
+                      onEdit != null &&
+                      onDelete != null)
+                    const _SwipeHint(),
                   if (userLocations.isNotEmpty) const HipSubnote(S.dNamesCleaned),
                 ],
                 ?footer,
@@ -586,6 +628,34 @@ List<Widget> removeSwipedSheet({
 /// [HipListGroup] paints an opaque card, so the tinted variant cannot be a
 /// wrapper around it; it repeats the group's own geometry instead, including
 /// the slot each row needs to round the right corners.
+/// The standing line under the user's own servers that says rows swipe. It
+/// stays put on every visit, for whoever missed or skipped the nudge.
+class _SwipeHint extends StatelessWidget {
+  const _SwipeHint();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+      child: Text.rich(
+        TextSpan(children: [
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: Icon(Icons.swipe_left_outlined,
+                  size: 16, color: Hip.muted2),
+            ),
+          ),
+          const TextSpan(text: S.dSwipeHint),
+        ]),
+        textAlign: TextAlign.center,
+        style: Hip.sans(500, Hip.captionSize, color: Hip.muted, height: 1.5),
+      ),
+    );
+  }
+}
+
 class _Group extends StatelessWidget {
   final bool tinted;
   final List<Widget> children;

@@ -250,6 +250,7 @@ abstract final class S {
       'Names and flags are cleaned up automatically from whatever your '
       'provider sends.';
   static const dManage = 'Manage';
+  static const dSwipeHint = 'Swipe a server left to edit or delete it.';
 
   // The managed group before its servers land, and after the plan ends.
   static const dSettingUp = 'Setting up your servers';
