@@ -10,6 +10,7 @@ import 'package:hideip_vpn/core/secret_prefs.dart';
 import 'package:hideip_vpn/state/app_state.dart';
 import 'package:hideip_vpn/ui/redesign/account_screen.dart';
 import 'package:hideip_vpn/ui/redesign/hip.dart';
+import 'package:hideip_vpn/ui/redesign/hip_sheet.dart';
 import 'package:hideip_vpn/ui/redesign/shell.dart';
 import 'package:hideip_vpn/ui/strings.dart';
 import 'package:http/http.dart' as http;
@@ -40,11 +41,15 @@ const _forbidden = [
   'voucher',
 ];
 
-HipNav _nav({List<HipScreen>? went}) => HipNav(
+/// With [sheets], sheets really open (on that navigator); without, they
+/// close at once with nothing chosen.
+HipNav _nav({List<HipScreen>? went, GlobalKey<NavigatorState>? sheets}) => HipNav(
   go: (s, [_]) => went?.add(s),
   back: () {},
   ctx: () => null,
-  showSheet: <T>(List<Widget> children) async => null,
+  showSheet: <T>(List<Widget> children) async => sheets == null
+      ? null
+      : showHipSheet<T>(sheets.currentContext!, children: children),
   openDetail: (_) {},
   openImport: () {},
   openImportWith: (_) {},
@@ -112,11 +117,16 @@ AppState _state(_Backend backend) => AppState(
   ),
 );
 
-Widget _host(AppState state, {List<HipScreen>? went}) => MaterialApp(
+Widget _host(
+  AppState state, {
+  List<HipScreen>? went,
+  GlobalKey<NavigatorState>? sheets,
+}) => MaterialApp(
+  navigatorKey: sheets,
   home: Scaffold(
     body: AccountScreen(
       state: state,
-      nav: _nav(went: went),
+      nav: _nav(went: went, sheets: sheets),
     ),
   ),
 );
@@ -259,7 +269,7 @@ void main() {
     unawaited(state.signInWithAccountNumber(_number));
     await _settle(tester);
     expect(state.accountSignedIn, isTrue);
-    await tester.pumpWidget(_host(state));
+    await tester.pumpWidget(_host(state, sheets: GlobalKey<NavigatorState>()));
     await _settle(tester);
 
     expect(find.text('•••• •••• •••• 0319'), findsOneWidget);
@@ -273,20 +283,20 @@ void main() {
 
     await tester.tap(find.text(S.accountReveal));
     await _dialog(tester);
-    expect(find.byType(Dialog), findsOneWidget);
+    expect(find.byType(HipSheet), findsOneWidget);
     expect(
       find.text('8236 3877 8895 0319'),
       findsNothing,
       reason: 'nothing shows before the warning is confirmed',
     );
 
-    await tester.tap(find.widgetWithText(TextButton, S.aCancel));
+    await tester.tap(find.widgetWithText(HipCta, S.aCancel));
     await _dialog(tester);
     expect(find.text('8236 3877 8895 0319'), findsNothing);
 
     await tester.tap(find.text(S.accountReveal));
     await _dialog(tester);
-    await tester.tap(find.widgetWithText(TextButton, S.accountReveal));
+    await tester.tap(find.widgetWithText(HipCta, S.accountReveal));
     await _dialog(tester);
     expect(find.text('8236 3877 8895 0319'), findsOneWidget);
     expect(find.text(S.accountHide), findsOneWidget);

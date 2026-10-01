@@ -657,6 +657,11 @@ class HipListRow extends StatelessWidget {
   final VoidCallback? onTap;
   final bool selected; // the currently chosen server: soft blue field
   final bool live; // selected AND the tunnel is up: green live dot
+
+  /// How many lines the title may take before it ends in an ellipsis. One
+  /// for names that should stay on a line; more for action labels that must
+  /// read whole on a zoomed screen or with large text.
+  final int titleMaxLines;
   const HipListRow({
     super.key,
     this.leading,
@@ -669,6 +674,7 @@ class HipListRow extends StatelessWidget {
     this.onTap,
     this.selected = false,
     this.live = false,
+    this.titleMaxLines = 1,
   });
 
   @override
@@ -692,6 +698,7 @@ class HipListRow extends StatelessWidget {
             Row(mainAxisSize: MainAxisSize.min, children: [
               Flexible(
                 child: Text(title,
+                    maxLines: titleMaxLines,
                     overflow: TextOverflow.ellipsis,
                     style: Hip.sans(650, Hip.titleSize,
                         color: Hip.ink, letterSpacing: -.17)),

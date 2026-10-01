@@ -192,63 +192,38 @@ class _AccountScreenState extends State<AccountScreen> {
 
   // --- Signed in -----------------------------------------------------------
 
+  /// Asks in the same bottom sheet as the rotation: full-width buttons, the
+  /// action on top and Cancel under it, so nothing wraps into a ragged column
+  /// on a zoomed screen or with large text.
   Future<bool> _confirm({
     required String title,
     String? body,
     required String action,
     bool danger = false,
   }) async {
-    final yes = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => Dialog(
-        backgroundColor: Hip.card,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(Hip.radius),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: Hip.sans(650, 17, color: Hip.ink)),
-              if (body != null) ...[
-                const SizedBox(height: 10),
-                Text(
-                  body,
-                  style: Hip.sans(550, 14, color: Hip.inkSoft, height: 1.45),
-                ),
-              ],
-              const SizedBox(height: 18),
-              Wrap(
-                alignment: WrapAlignment.end,
-                spacing: 8,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.of(ctx).pop(false),
-                    child: Text(
-                      S.aCancel,
-                      style: Hip.sans(650, 14, color: Hip.muted),
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () => Navigator.of(ctx).pop(true),
-                    child: Text(
-                      action,
-                      style: Hip.sans(
-                        650,
-                        14,
-                        color: danger ? Hip.danger : Hip.blue,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+    final yes = await widget.nav.showSheet<bool>([
+      HipSheetTitle(title),
+      if (body != null) HipSheetBody(body),
+      HipSheetActions(
+        children: [
+          Builder(
+            builder: (c) => HipCta(
+              action,
+              ghost: danger,
+              danger: danger,
+              onTap: () => Navigator.of(c).pop(true),
+            ),
           ),
-        ),
+          Builder(
+            builder: (c) => HipCta(
+              S.aCancel,
+              quiet: true,
+              onTap: () => Navigator.of(c).pop(false),
+            ),
+          ),
+        ],
       ),
-    );
+    ]);
     return yes == true;
   }
 
@@ -747,12 +722,14 @@ class _AccountScreenState extends State<AccountScreen> {
           HipListRow(
             leading: const _Tile(Icons.autorenew),
             title: S.accountRotate,
+            titleMaxLines: 2,
             trailing: Icon(Icons.chevron_right, size: 17, color: Hip.muted2),
             onTap: _busy ? null : _rotate,
           ),
           HipListRow(
             leading: const _Tile(Icons.logout),
             title: S.accountSignOut,
+            titleMaxLines: 2,
             trailing: Icon(Icons.chevron_right, size: 17, color: Hip.muted2),
             onTap: _busy ? null : _signOut,
           ),
