@@ -96,7 +96,8 @@ class ProvisionAccount {
   final String? linked;
 
   /// The number, canonical. Only in the answer that made it; every later
-  /// answer about the same purchase leaves it out.
+  /// answer about the same purchase leaves it out. Kept alongside an
+  /// [error] too, since it would not be heard of again.
   final String? number;
   final bool active;
   final DateTime? expires;
@@ -145,16 +146,21 @@ class ProvisionAccount {
     final limit = limitRaw is num && limitRaw > 0
         ? limitRaw.toInt()
         : AccountService.defaultDeviceLimit;
+    final digits = normalizeAccountNumber(_text(raw['number']) ?? '');
+    // A number made in this call is never told again, so it is kept even
+    // when the rest of the answer is an error.
+    final number = isValidAccountNumber(digits) ? digits : null;
     final error = _text(raw['error']);
-    if (error != null) return ProvisionAccount(error: error, deviceLimit: limit);
+    if (error != null) {
+      return ProvisionAccount(error: error, number: number, deviceLimit: limit);
+    }
     final device = raw['device'];
     final deviceMap = device is Map<String, dynamic> ? device : null;
     final store = raw['store'];
     final storeMap = store is Map<String, dynamic> ? store : null;
-    final digits = normalizeAccountNumber(_text(raw['number']) ?? '');
     final account = ProvisionAccount(
       linked: _text(raw['linked']),
-      number: isValidAccountNumber(digits) ? digits : null,
+      number: number,
       active: raw['active'] == true,
       expires: _ms(raw['expires_ms']),
       kind: _text(raw['kind']),
@@ -172,7 +178,11 @@ class ProvisionAccount {
     if (!account.active ||
         account.deviceToken == null ||
         account.subscriptionUrl == null) {
-      return ProvisionAccount(error: unavailable, deviceLimit: limit);
+      return ProvisionAccount(
+        error: unavailable,
+        number: number,
+        deviceLimit: limit,
+      );
     }
     return account;
   }

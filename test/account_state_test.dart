@@ -950,6 +950,36 @@ void main() {
       );
     });
 
+    test('a number made with an error is still kept and shown', () async {
+      _provisionAccount = {
+        'error': 'device_limit_reached',
+        'number': _number,
+        'device_limit': 5,
+      };
+      await purchase();
+
+      // The purchase runs the way it did before accounts...
+      expect(state.premium.source, PremiumSource.store);
+      expect(await PremiumSub.url(), _storeUrl);
+      // ...and the number it made is not lost.
+      expect(state.freshAccountNumber, _number);
+      expect(state.accountNumber, _number);
+      expect(state.accountDeviceSignedOut, isTrue);
+      expect((await const AccountStore().load())!.number, _number);
+      expect(await const AccountStore().freshNumber(), _number);
+    });
+
+    test('a number made with an error leaves a working account be', () async {
+      await state.signInWithAccountNumber(_number);
+      await pumpEventQueue();
+      _provisionAccount = {'error': 'unavailable', 'number': _fresh};
+      await purchase();
+
+      expect(state.accountNumber, _number);
+      expect((await const AccountStore().load())!.deviceToken, 'k9Q-token');
+      expect(state.freshAccountNumber, _fresh);
+    });
+
     test('without an account block nothing changes from before', () async {
       await purchase();
 

@@ -209,6 +209,25 @@ void main() {
       expect(a.number, isNull);
     });
 
+    test('a number made alongside an error is kept', () {
+      final a = ProvisionAccount.fromJson({
+        'error': 'device_limit_reached',
+        'number': '8236387788950319',
+        'device_limit': 5,
+      })!;
+      expect(a.usable, isFalse);
+      expect(a.error, 'device_limit_reached');
+      expect(a.number, '8236387788950319');
+
+      final unusable = ProvisionAccount.fromJson({
+        'linked': 'new',
+        'number': '8236387788950319',
+        'active': true,
+      })!;
+      expect(unusable.error, ProvisionAccount.unavailable);
+      expect(unusable.number, '8236387788950319');
+    });
+
     test('an error is kept as it was said', () {
       final a = ProvisionAccount.fromJson(
           {'error': 'linked_elsewhere', 'device_limit': 5})!;

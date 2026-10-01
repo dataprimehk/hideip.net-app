@@ -1008,6 +1008,8 @@ class AppState extends ChangeNotifier {
     final acc = result.account;
     final url = acc?.subscriptionUrl;
     if (acc == null || !acc.usable || url == null) {
+      final made = acc?.number;
+      if (made != null) await _keepMadeNumber(made);
       await _setStoreLink(
         _storeLink.copyWith(
           linked: false,
@@ -1063,6 +1065,25 @@ class AppState extends ChangeNotifier {
     if (wasOn && await PremiumSub.url() == url) return true;
     await _adoptSubscriptionUrl(url);
     return true;
+  }
+
+  /// A number the purchase made although this device could not go onto it
+  /// (the account was full, say). It is told only this once, so it is shown
+  /// like any new number and kept: signing in with it is one tap. An
+  /// account this device is already on stays in place; the number is still
+  /// shown so it is not lost.
+  Future<void> _keepMadeNumber(String made) async {
+    final held = _account;
+    if (held?.number == made) return;
+    if (held == null || !held.hasDevice) {
+      final creds = AccountCredentials(number: made);
+      await _accountStore.save(creds);
+      _account = creds;
+      _accountIssue = null;
+      _statusStoreLinked = null;
+    }
+    _freshNumber = made;
+    await _accountStore.saveFreshNumber(made);
   }
 
   /// An install from before store purchases went onto account numbers asks
