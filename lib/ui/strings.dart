@@ -931,10 +931,15 @@ abstract final class S {
   // subscription is how time gets added to it.
   // ---------------------------------------------------------------------
 
+  // Written for someone with a phone, a tablet and a TV who only wants to
+  // know how the others get Premium and whether that costs again.
   static String accountExplainStore(String store) =>
-      'Your account number is your Premium. Your $store subscription adds '
-      'time to it.';
-  static const accountExplain = 'Your account number is your Premium.';
+      'One subscription, up to 5 devices. To add a tablet or another phone, '
+      'install hideip.net there and sign in with this number. Your $store '
+      'subscription keeps them all paid.';
+  static const accountExplain =
+      'One number, up to 5 devices. To add a tablet or another phone, '
+      'install hideip.net there and sign in with this number.';
 
   /// The number a store purchase just made, shown once.
   static const accountFreshTitle = 'Your account number';
