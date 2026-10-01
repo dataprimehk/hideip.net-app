@@ -1161,7 +1161,13 @@ class _HomeList extends StatelessWidget {
     }
 
     // --- B0, nothing imported and nothing subscribed ----------------------
-    if (open.isEmpty) return const HomeEmptyBlock();
+    if (open.isEmpty) {
+      return HomeEmptyBlock(
+        onSignIn: kAccountSignIn && !state.accountSignedIn
+            ? () => nav.go(HipScreen.account)
+            : null,
+      );
+    }
 
     // Fastest first; unprobed servers keep their list order at the back.
     final sorted = [...open]..sort((a, b) {

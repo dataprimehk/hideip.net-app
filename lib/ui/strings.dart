@@ -642,7 +642,7 @@ abstract final class S {
       '$left of $max votes left this round';
   static String c2Resets(String date) => 'Votes reset on $date';
   static const c2Anon =
-      'Votes are anonymous and stay on this device. No account, no tracking.';
+      'Votes are anonymous and stay on this device. No sign up, no tracking.';
 
   // C3, the same panel once the country is voted for. The thanks line says
   // what the app can actually do, which depends on the notification
@@ -691,7 +691,7 @@ abstract final class S {
       'read them, along with your internet provider.';
   static const obB1TechKey = 'PUBLIC';
   static const obB1Cta = 'Get started';
-  static const obB1Note = 'No account · No logs';
+  static const obB1Note = 'No email · No logs';
 
   static const obB2Title = 'One tap\nhides it.';
   static const obB2Accent = 'hides';
@@ -731,7 +731,7 @@ abstract final class S {
       'From hideip.net, a provider or your own server. The app reads it and '
       'sets everything up.';
   static const obChoiceNote =
-      'No account, no sign up. Access can also be added later, in Settings.';
+      'No email, no sign up. Access can also be added later, in Settings.';
   static const obExplore = 'Explore the app first';
 
   // ---------------------------------------------------------------------
@@ -850,6 +850,12 @@ abstract final class S {
   /// Where the account stands. It does not renew, so its date is the day
   /// its time runs out, never a renewal.
   static const accountOutOfTime = 'This account has run out of time.';
+
+  /// Time added to the number anywhere reaches this device by itself; the
+  /// line says so without saying where time is added.
+  static const accountOutOfTimeNote =
+      'Time added to this number shows up here on its own.';
+  static const accountCheckAgain = 'Check again';
   static String accountActiveUntil(String date) => 'Active until $date';
   static String accountEndedOn(String date) => 'Ended on $date';
 

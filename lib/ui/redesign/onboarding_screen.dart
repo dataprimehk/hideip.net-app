@@ -10,6 +10,7 @@ import '../brand.dart';
 import '../strings.dart';
 import 'ascii/ob3_ascii.dart';
 import 'hip.dart';
+import 'paywall_screen.dart' show AccountSignInLink;
 import 'shell.dart';
 
 /// Onboarding v3: three beats over the ASCII rain, then the access choice.
@@ -192,6 +193,14 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     Haptics.selection();
     widget.nav.openImport();
     // Leaving onboarding through import counts as having seen it.
+    widget.state.updatePrefs(widget.state.prefs.copyWith(onboarded: true));
+  }
+
+  void _openAccount() {
+    Haptics.selection();
+    widget.nav.go(HipScreen.account);
+    // Signing in finishes on Home, so leaving through it counts as having
+    // seen the intro, the same as import.
     widget.state.updatePrefs(widget.state.prefs.copyWith(onboarded: true));
   }
 
@@ -452,6 +461,13 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                 onTap: _openImport,
               ),
               const HipSubnote(S.obChoiceNote, onDark: true),
+              // Someone who already holds an account number skips both
+              // offers; the way in stays one quiet line.
+              if (kAccountSignIn)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: AccountSignInLink(onDark: true, onTap: _openAccount),
+                ),
             ],
           ),
         ),

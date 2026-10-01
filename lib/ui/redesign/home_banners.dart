@@ -4,6 +4,7 @@ import '../brand.dart';
 import '../strings.dart';
 import 'hip.dart';
 import 'hip_sheet.dart';
+import 'paywall_screen.dart' show AccountSignInLink;
 
 /// Everything Home says next to the status card: the three banners on the
 /// dark panel, the upsell row in the list, the empty block, and the two
@@ -339,7 +340,11 @@ class HomeUpsellRow extends StatelessWidget {
 /// explains what sets a connection up; the actions live in the CTA bar, where
 /// Connect would otherwise be.
 class HomeEmptyBlock extends StatelessWidget {
-  const HomeEmptyBlock({super.key});
+  /// Opens sign-in with an account number. Without a store catalog this is
+  /// the only way to Premium, so the empty screen offers it quietly; null
+  /// hides the line.
+  final VoidCallback? onSignIn;
+  const HomeEmptyBlock({super.key, this.onSignIn});
 
   @override
   Widget build(BuildContext context) => Container(
@@ -365,6 +370,10 @@ class HomeEmptyBlock extends StatelessWidget {
                 style: Hip.sans(400, Hip.bodySize,
                     color: Hip.muted, height: 1.55)),
           ),
+          if (onSignIn != null) ...[
+            const SizedBox(height: 8),
+            AccountSignInLink(onTap: onSignIn!),
+          ],
         ]),
       );
 }

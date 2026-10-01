@@ -72,6 +72,20 @@ void main() {
     expect(find.text(S.tConnect), findsNothing);
   });
 
+  testWidgets('B0 offers account sign-in as one quiet line when asked',
+      (tester) async {
+    var taps = 0;
+    await tester.pumpWidget(host(HomeEmptyBlock(onSignIn: () => taps++)));
+    expect(find.text(S.accountSignInLink), findsOneWidget);
+    await tester.tap(find.text(S.accountSignInLink));
+    expect(taps, 1);
+
+    // Without a callback (already signed in, or sign-in switched off) the
+    // block is the plain explanation.
+    await tester.pumpWidget(host(const HomeEmptyBlock()));
+    expect(find.text(S.accountSignInLink), findsNothing);
+  });
+
   // --- B1 -----------------------------------------------------------------
   testWidgets('B1 shows the real address as exposed', (tester) async {
     await tester.pumpWidget(host(const HomeStatusCard(

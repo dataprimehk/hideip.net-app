@@ -293,6 +293,49 @@ void main() {
     expect(find.text(S.accountOutOfTime), findsOneWidget);
   });
 
+  testWidgets('out of time, the screen offers a way forward', (tester) async {
+    backend.active = false;
+    final state = _state(backend);
+    await tester.pumpWidget(const SizedBox());
+    unawaited(state.signInWithAccountNumber(_number));
+    await _settle(tester);
+    await tester.pumpWidget(_host(state));
+    await _settle(tester);
+
+    expect(find.text(S.accountOutOfTimeNote), findsOneWidget);
+    expect(find.widgetWithText(HipCta, S.accountCheckAgain), findsOneWidget);
+    // No store catalog in a test: no plans to point at, so no dead button.
+    expect(find.widgetWithText(HipCta, S.aSeePlans), findsNothing);
+    // Neither line points anywhere outside the stores.
+    _expectNoForbiddenWords();
+
+    // Time added elsewhere: one tap asks the server again.
+    backend.active = true;
+    final before = backend.calls;
+    await tester.ensureVisible(
+      find.widgetWithText(HipCta, S.accountCheckAgain),
+    );
+    await tester.tap(find.widgetWithText(HipCta, S.accountCheckAgain));
+    await _settle(tester);
+    expect(backend.calls, greaterThan(before));
+    expect(state.accountActive, isTrue);
+    expect(find.text(S.accountOutOfTimeNote), findsNothing);
+  });
+
+  testWidgets('an account with time shows no out-of-time actions', (
+    tester,
+  ) async {
+    final state = _state(backend);
+    await tester.pumpWidget(const SizedBox());
+    unawaited(state.signInWithAccountNumber(_number));
+    await _settle(tester);
+    await tester.pumpWidget(_host(state));
+    await _settle(tester);
+
+    expect(find.text(S.accountOutOfTimeNote), findsNothing);
+    expect(find.widgetWithText(HipCta, S.accountCheckAgain), findsNothing);
+  });
+
   testWidgets('storage that fails says so and frees the button', (
     tester,
   ) async {

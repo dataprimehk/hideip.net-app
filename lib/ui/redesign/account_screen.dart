@@ -606,6 +606,13 @@ class _AccountScreenState extends State<AccountScreen> {
     );
   }
 
+  /// The number is fine but has no time left: the one state where the
+  /// screen offers a way forward instead of only saying where things stand.
+  bool get _outOfTime =>
+      !_state.accountActive &&
+      _state.accountIssue == null &&
+      !_state.accountDeviceSignedOut;
+
   List<Widget> _signedIn() {
     final number = _state.accountNumber ?? '';
     final ownId = _state.accountDeviceId;
@@ -623,6 +630,27 @@ class _AccountScreenState extends State<AccountScreen> {
             ),
             const SizedBox(height: 8),
             _standing(),
+            if (_outOfTime) ...[
+              const SizedBox(height: 6),
+              Text(
+                S.accountOutOfTimeNote,
+                style: Hip.sans(400, 13.5, color: Hip.muted, height: 1.45),
+              ),
+              const SizedBox(height: 12),
+              HipCta(
+                S.accountCheckAgain,
+                onTap: _loading ? null : _loadStatus,
+              ),
+              if (kPlansAvailable && _state.plansOffered) ...[
+                const SizedBox(height: 8),
+                HipCta(
+                  S.aSeePlans,
+                  quiet: true,
+                  onTap: () =>
+                      widget.nav.openPaywall(from: HipScreen.account),
+                ),
+              ],
+            ],
             if (_state.accountDeviceSignedOut) ...[
               const SizedBox(height: 12),
               HipCta(

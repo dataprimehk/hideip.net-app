@@ -216,6 +216,30 @@ void main() {
       expect(log.imported, isTrue);
     });
 
+    testWidgets('the choice screen has a quiet way in with an account number',
+        (tester) async {
+      final log = _NavLog();
+      final state = AppState();
+      await _pumpOnboarding(tester, state: state, nav: _navFor(log));
+      await _tap(tester, S.obB1Cta);
+      await _tap(tester, S.obNext);
+      await _tap(tester, S.obNext);
+      expect(find.text(S.accountSignInLink), findsOneWidget);
+      await tester.ensureVisible(find.text(S.accountSignInLink));
+      await tester.tap(find.text(S.accountSignInLink));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(log.went, [HipScreen.account]);
+      // Sign-in ends on Home, so the intro counts as seen.
+      expect(state.prefs.onboarded, isTrue);
+    });
+
+    test('the intro no longer promises "no account" next to an account number',
+        () {
+      for (final line in [S.obB1Note, S.obChoiceNote, S.c2Anon]) {
+        expect(line.toLowerCase(), isNot(contains('no account')));
+      }
+    });
+
     testWidgets('replay ends after the third beat, without the choice',
         (tester) async {
       final log = _NavLog()..ctx = const {'replay': true};
