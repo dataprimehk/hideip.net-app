@@ -2,8 +2,11 @@
 /// provisioning backend.
 ///
 /// The account number is the only credential, so it travels in a POST body
-/// and never in a URL. Every call is anonymous otherwise: no email, no
-/// password, no device identifier beyond the name this phone gives itself.
+/// and never in a URL. A device that came onto the account through a store
+/// purchase and was never told the number proves itself with its own device
+/// token instead, in the same place. Every call is anonymous otherwise: no
+/// email, no password, no device identifier beyond the name this phone gives
+/// itself.
 /// Nothing here throws; every failure is one of the [AccountResult] values
 /// and the screen picks its words from those, never from the server's text.
 library;
@@ -97,6 +100,13 @@ class AccountStatus {
   final List<LinkedDevice>? devices;
   final int deviceLimit;
 
+  /// Whether a store subscription adds time to the account and is still
+  /// running, or null when the answer did not say.
+  final bool? storeLinked;
+
+  /// Which store that subscription is in: `ios` or `android`.
+  final String? storePlatform;
+
   const AccountStatus(
     this.result, {
     this.active = false,
@@ -104,6 +114,8 @@ class AccountStatus {
     this.kind,
     this.devices,
     this.deviceLimit = AccountService.defaultDeviceLimit,
+    this.storeLinked,
+    this.storePlatform,
   });
 }
 
@@ -136,7 +148,8 @@ class AccountRotate {
 String get accountDeviceName =>
     defaultTargetPlatform == TargetPlatform.iOS ? 'iPhone' : 'Android phone';
 
-/// Talks to `/v1/account/*`. Stateless: every call carries the number.
+/// Talks to `/v1/account/*`. Stateless: every call carries the number, or
+/// this device's token on the account when the number is not known here.
 class AccountService {
   /// The provisioning host, the same one the store purchase goes through.
   static String get endpoint => ProvisioningService.endpoint;
@@ -200,6 +213,18 @@ class AccountService {
     return s.isEmpty ? null : s;
   }
 
+  /// What a call proves the account with: the number when there is one,
+  /// otherwise this device's token. Null when neither can be sent, which
+  /// includes a number that fails its check digit.
+  static Map<String, dynamic>? _auth(String? number, String? deviceToken) {
+    if (number != null) {
+      final digits = normalizeAccountNumber(number);
+      return isValidAccountNumber(digits) ? {'account_number': digits} : null;
+    }
+    final token = _text(deviceToken);
+    return token == null ? null : {'device_token': token};
+  }
+
   /// Put this device on the account behind [number]. Passing the
   /// [deviceToken] from an earlier sign-in returns that same device instead
   /// of taking a new slot.
@@ -261,17 +286,14 @@ class AccountService {
     }
   }
 
-  /// The account behind [number]: its time and its devices. Null when the
-  /// server could not be asked, so the caller keeps what it knew.
-  Future<AccountStatus?> status(String number) async {
-    final digits = normalizeAccountNumber(number);
-    if (!isValidAccountNumber(digits)) {
-      return const AccountStatus(AccountResult.invalid);
-    }
+  /// The account behind [number], or behind [deviceToken] when the number
+  /// is not known: its time and its devices. Null when the server could not
+  /// be asked, so the caller keeps what it knew.
+  Future<AccountStatus?> status(String? number, {String? deviceToken}) async {
+    final auth = _auth(number, deviceToken);
+    if (auth == null) return const AccountStatus(AccountResult.invalid);
     try {
-      final resp = await _post('/v1/account/status', {
-        'account_number': digits,
-      });
+      final resp = await _post('/v1/account/status', auth);
       if (resp.statusCode != 200) {
         final result = _failure(resp.statusCode);
         return result == AccountResult.network ? null : AccountStatus(result);
@@ -285,6 +307,10 @@ class AccountService {
         kind: _text(body['kind']),
         devices: parseDevices(resp.body),
         deviceLimit: _limit(body),
+        storeLinked: body['store_linked'] is bool
+            ? body['store_linked'] as bool
+            : null,
+        storePlatform: _text(body['store_platform']),
       );
     } catch (_) {
       return null;
@@ -293,18 +319,18 @@ class AccountService {
 
   /// Swap [number] for a new one. The old number stops working at once;
   /// the time and the devices stay, unless [revokeDevices] signs every
-  /// device out as well (this one included).
+  /// device out as well (this one included). Without a number, [deviceToken]
+  /// asks for one: the way a device that was never told the number gets one.
   Future<AccountRotate> rotate(
-    String number, {
+    String? number, {
+    String? deviceToken,
     bool revokeDevices = false,
   }) async {
-    final digits = normalizeAccountNumber(number);
-    if (!isValidAccountNumber(digits)) {
-      return const AccountRotate(AccountResult.invalid);
-    }
+    final auth = _auth(number, deviceToken);
+    if (auth == null) return const AccountRotate(AccountResult.invalid);
     try {
       final resp = await _post('/v1/account/rotate', {
-        'account_number': digits,
+        ...auth,
         'revoke_devices': revokeDevices,
       });
       if (resp.statusCode != 200) {
@@ -330,30 +356,48 @@ class AccountService {
 
   /// Take one device off the account. A device the account no longer has
   /// is already gone, so that answer counts as done.
-  Future<AccountResult> revokeDevice(String number, String deviceId) =>
-      _revoke(number, {'device_id': deviceId});
+  Future<AccountResult> revokeDevice(
+    String? number,
+    String deviceId, {
+    String? deviceToken,
+  }) => _revoke(number, deviceToken, {'device_id': deviceId});
 
   /// Take every device off the account.
-  Future<AccountResult> revokeAll(String number) =>
-      _revoke(number, {'all': true});
+  Future<AccountResult> revokeAll(String? number, {String? deviceToken}) =>
+      _revoke(number, deviceToken, {'all': true});
 
   Future<AccountResult> _revoke(
-    String number,
+    String? number,
+    String? deviceToken,
     Map<String, dynamic> which,
   ) async {
-    final digits = normalizeAccountNumber(number);
-    if (!isValidAccountNumber(digits)) return AccountResult.invalid;
+    final auth = _auth(number, deviceToken);
+    if (auth == null) return AccountResult.invalid;
     try {
-      final resp = await _post('/v1/account/revoke', {
-        'account_number': digits,
-        ...which,
-      });
+      final resp = await _post('/v1/account/revoke', {...auth, ...which});
       if (resp.statusCode == 200) return AccountResult.ok;
       if (resp.statusCode == 404 &&
           _json(resp.body)?['detail'] == 'unknown_device') {
         return AccountResult.ok;
       }
       return _failure(resp.statusCode);
+    } catch (_) {
+      return AccountResult.network;
+    }
+  }
+
+  /// Delete the account for good: the number stops working and every device
+  /// is signed out. A store subscription that adds time to it is not touched;
+  /// only the store can stop that.
+  Future<AccountResult> delete(String? number, {String? deviceToken}) async {
+    final auth = _auth(number, deviceToken);
+    if (auth == null) return AccountResult.invalid;
+    try {
+      final resp = await _post('/v1/account/delete', auth);
+      if (resp.statusCode != 200) return _failure(resp.statusCode);
+      return _json(resp.body)?['deleted'] == true
+          ? AccountResult.ok
+          : AccountResult.network;
     } catch (_) {
       return AccountResult.network;
     }

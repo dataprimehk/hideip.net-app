@@ -233,6 +233,55 @@ void main() {
       ).status(_number);
       expect(busy!.result, AccountResult.tooManyAttempts);
     });
+
+    test('says whether a store subscription adds time to it', () async {
+      final linked = await AccountService(
+        client: _Recorder().client(
+          200,
+          jsonEncode({
+            'active': true,
+            'expires_ms': 1767225600000,
+            'devices': [],
+            'store_linked': true,
+            'store_platform': 'ios',
+          }),
+        ),
+      ).status(_number);
+      expect(linked!.storeLinked, isTrue);
+      expect(linked.storePlatform, 'ios');
+
+      final older = await AccountService(
+        client: _Recorder().client(200, jsonEncode({'active': true})),
+      ).status(_number);
+      expect(older!.storeLinked, isNull);
+      expect(older.storePlatform, isNull);
+    });
+
+    test('without a number, the device token asks instead', () async {
+      final rec = _Recorder();
+      final s = await AccountService(
+        client: rec.client(200, jsonEncode({'active': true, 'devices': []})),
+      ).status(null, deviceToken: 'k9Q-token');
+      expect(rec.lastJson, {'device_token': 'k9Q-token'});
+      expect(s!.result, AccountResult.ok);
+    });
+
+    test('a known number is sent instead of the token', () async {
+      final rec = _Recorder();
+      await AccountService(
+        client: rec.client(200, jsonEncode({'active': true, 'devices': []})),
+      ).status(_number, deviceToken: 'k9Q-token');
+      expect(rec.lastJson, {'account_number': _number});
+    });
+
+    test('with neither, nothing leaves the device', () async {
+      final rec = _Recorder();
+      final s = await AccountService(
+        client: rec.client(200, '{}'),
+      ).status(null);
+      expect(s!.result, AccountResult.invalid);
+      expect(rec.calls, 0);
+    });
   });
 
   group('rotate', () {
@@ -277,6 +326,18 @@ void main() {
       expect(r.result, AccountResult.network);
       expect(r.accountNumber, isNull);
     });
+
+    test('a device without the number gets one with its token', () async {
+      final rec = _Recorder();
+      final r = await AccountService(
+        client: rec.client(200, jsonEncode({'account_number': _fresh})),
+      ).rotate(null, deviceToken: 'k9Q-token');
+      expect(rec.lastJson, {
+        'device_token': 'k9Q-token',
+        'revoke_devices': false,
+      });
+      expect(r.accountNumber, _fresh);
+    });
   });
 
   group('revoke', () {
@@ -316,6 +377,70 @@ void main() {
         client: _Recorder().client(404, _detail('unknown_account')),
       ).revokeDevice(_number, 'dev_x');
       expect(r, AccountResult.unknown);
+    });
+  });
+
+  group('revoke by device token', () {
+    test('one device', () async {
+      final rec = _Recorder();
+      await AccountService(
+        client: rec.client(200, jsonEncode({'ok': true, 'revoked': 1})),
+      ).revokeDevice(null, 'dev_3c0f', deviceToken: 'k9Q-token');
+      expect(rec.lastJson, {
+        'device_token': 'k9Q-token',
+        'device_id': 'dev_3c0f',
+      });
+    });
+  });
+
+  group('delete', () {
+    test('posts the number to /v1/account/delete', () async {
+      final rec = _Recorder();
+      final r = await AccountService(
+        client: rec.client(200, jsonEncode({'deleted': true})),
+      ).delete(_number);
+      expect(
+        rec.last!.url.toString(),
+        '${ProvisioningService.endpoint}/v1/account/delete',
+      );
+      expect(rec.lastJson, {'account_number': _number});
+      expect(r, AccountResult.ok);
+    });
+
+    test('a device without the number deletes with its token', () async {
+      final rec = _Recorder();
+      final r = await AccountService(
+        client: rec.client(200, jsonEncode({'deleted': true})),
+      ).delete(null, deviceToken: 'k9Q-token');
+      expect(rec.lastJson, {'device_token': 'k9Q-token'});
+      expect(r, AccountResult.ok);
+    });
+
+    test('only a stated deletion counts as done', () async {
+      final r = await AccountService(
+        client: _Recorder().client(200, '{}'),
+      ).delete(_number);
+      expect(r, AccountResult.network);
+    });
+
+    test('the error table applies', () async {
+      final revoked = await AccountService(
+        client: _Recorder().client(403, _detail('account_revoked')),
+      ).delete(_number);
+      expect(revoked, AccountResult.revoked);
+      final busy = await AccountService(
+        client: _Recorder().client(429, _detail('too_many_attempts')),
+      ).delete(_number);
+      expect(busy, AccountResult.tooManyAttempts);
+    });
+
+    test('with neither a number nor a token, nothing is sent', () async {
+      final rec = _Recorder();
+      expect(
+        await AccountService(client: rec.client(200, '{}')).delete(null),
+        AccountResult.invalid,
+      );
+      expect(rec.calls, 0);
     });
   });
 }
