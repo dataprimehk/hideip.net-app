@@ -96,5 +96,113 @@ void main() {
       // iOS keeps exactly {platform, jws}: no product id, no token.
       expect(provisionBody(p), {'platform': 'ios', 'jws': 'a.b.c'});
     });
+
+    test('v2 asks for the account and names the device like a sign-in', () {
+      const p = PurchasePayload.android(
+          purchaseToken: 'tok-xyz', productId: PremiumProducts.yearly);
+      expect(provisionBody(p, v2: true), {
+        'platform': 'android',
+        'purchase_token': 'tok-xyz',
+        'product_id': PremiumProducts.yearly,
+        'v': 2,
+        'device': {'kind': 'phone', 'name': 'Android phone'},
+      });
+    });
+
+    test('v2 carries the device token of the account this device is on', () {
+      const p =
+          PurchasePayload.ios(jws: 'a.b.c', productId: PremiumProducts.monthly);
+      expect(provisionBody(p, v2: true, deviceToken: 'k9Q-token'), {
+        'platform': 'ios',
+        'jws': 'a.b.c',
+        'v': 2,
+        'device_token': 'k9Q-token',
+        'device': {'kind': 'phone', 'name': 'Android phone'},
+      });
+    });
+
+    test('a device token without v2 is not sent', () {
+      const p =
+          PurchasePayload.ios(jws: 'a.b.c', productId: PremiumProducts.monthly);
+      expect(provisionBody(p, deviceToken: 'k9Q-token'),
+          {'platform': 'ios', 'jws': 'a.b.c'});
+    });
+  });
+
+  group('ProvisionAccount', () {
+    test('a new number comes with everything the device runs on', () {
+      final a = ProvisionAccount.fromJson({
+        'linked': 'new',
+        'number': '8236 3877 8895 0319',
+        'active': true,
+        'expires_ms': 1767225600000,
+        'kind': 'yearly',
+        'device_token': 'k9Q-token',
+        'device': {'id': 'dev_abc', 'kind': 'phone', 'name': 'iPhone'},
+        'subscription_url': 'https://api.test/v1/sub/dev_abc',
+        'device_limit': 5,
+        'store': {'platform': 'ios', 'expires_ms': 1767225600000},
+      })!;
+      expect(a.usable, isTrue);
+      expect(a.linked, 'new');
+      expect(a.number, '8236387788950319');
+      expect(a.expires, DateTime.fromMillisecondsSinceEpoch(1767225600000));
+      expect(a.kind, 'yearly');
+      expect(a.deviceToken, 'k9Q-token');
+      expect(a.deviceId, 'dev_abc');
+      expect(a.deviceName, 'iPhone');
+      expect(a.subscriptionUrl, 'https://api.test/v1/sub/dev_abc');
+      expect(a.deviceLimit, 5);
+      expect(a.storePlatform, 'ios');
+      expect(
+          a.storeExpires, DateTime.fromMillisecondsSinceEpoch(1767225600000));
+    });
+
+    test('a later answer leaves the number out', () {
+      final a = ProvisionAccount.fromJson({
+        'linked': 'existing',
+        'number': null,
+        'active': true,
+        'expires_ms': 1767225600000,
+        'device_token': 'k9Q-token',
+        'subscription_url': 'https://api.test/v1/sub/dev_abc',
+      })!;
+      expect(a.usable, isTrue);
+      expect(a.number, isNull);
+    });
+
+    test('a number that fails its check digit is not taken', () {
+      final a = ProvisionAccount.fromJson({
+        'linked': 'new',
+        'number': '1234567890123456',
+        'active': true,
+        'device_token': 'k9Q-token',
+        'subscription_url': 'https://api.test/v1/sub/dev_abc',
+      })!;
+      expect(a.number, isNull);
+    });
+
+    test('an error is kept as it was said', () {
+      final a = ProvisionAccount.fromJson(
+          {'error': 'linked_elsewhere', 'device_limit': 5})!;
+      expect(a.usable, isFalse);
+      expect(a.error, ProvisionAccount.linkedElsewhere);
+    });
+
+    test('an answer the device cannot run on reads as unavailable', () {
+      for (final raw in [
+        {'active': false, 'device_token': 't', 'subscription_url': 'u'},
+        {'active': true, 'subscription_url': 'u'},
+        {'active': true, 'device_token': 't'},
+      ]) {
+        final a = ProvisionAccount.fromJson(raw)!;
+        expect(a.error, ProvisionAccount.unavailable, reason: '$raw');
+      }
+    });
+
+    test('no block is no account', () {
+      expect(ProvisionAccount.fromJson(null), isNull);
+      expect(ProvisionAccount.fromJson('x'), isNull);
+    });
   });
 }

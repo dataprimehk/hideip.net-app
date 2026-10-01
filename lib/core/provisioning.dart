@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'account_number.dart';
+import 'account_service.dart';
 import 'app_version.dart';
 import 'catalog.dart';
 import 'premium.dart';
@@ -72,7 +74,119 @@ class ProvisionResult {
   final ProvisionStatus status;
   final String? url;
 
-  const ProvisionResult(this.status, [this.url]);
+  /// The account number the purchase adds time to, when the request asked
+  /// for one (`v: 2`) and the backend answered with it. Null on an answer
+  /// from a backend that does not link purchases to an account yet: the app
+  /// then runs on [url] the way it always has.
+  final ProvisionAccount? account;
+
+  const ProvisionResult(this.status, [this.url, this.account]);
+}
+
+/// The `account` block of a `v: 2` provision answer: the account number a
+/// store purchase adds its time to, and this device's place on it.
+class ProvisionAccount {
+  /// Why the purchase could not go onto an account, or null when it did:
+  /// [linkedElsewhere], `device_limit_reached` or `unavailable`. An answer
+  /// this app cannot use reads as `unavailable`.
+  final String? error;
+
+  /// How the purchase met the account: `new` (the number was made just
+  /// now), `joined` (the number this device sent) or `existing`.
+  final String? linked;
+
+  /// The number, canonical. Only in the answer that made it; every later
+  /// answer about the same purchase leaves it out.
+  final String? number;
+  final bool active;
+  final DateTime? expires;
+
+  /// What the last payment on the account was: `monthly`, `yearly` or
+  /// `trial`.
+  final String? kind;
+  final String? deviceToken;
+  final String? deviceId;
+  final String? deviceName;
+  final String? subscriptionUrl;
+  final int deviceLimit;
+
+  /// The store the purchase was made in (`ios` or `android`), and when its
+  /// current period ends by the store's own word.
+  final String? storePlatform;
+  final DateTime? storeExpires;
+
+  static const linkedElsewhere = 'linked_elsewhere';
+  static const unavailable = 'unavailable';
+
+  const ProvisionAccount({
+    this.error,
+    this.linked,
+    this.number,
+    this.active = false,
+    this.expires,
+    this.kind,
+    this.deviceToken,
+    this.deviceId,
+    this.deviceName,
+    this.subscriptionUrl,
+    this.deviceLimit = AccountService.defaultDeviceLimit,
+    this.storePlatform,
+    this.storeExpires,
+  });
+
+  /// Whether this device is on an account with time, with everything it
+  /// needs to run on it.
+  bool get usable => error == null;
+
+  /// Reads the block, or null when there is none to read.
+  static ProvisionAccount? fromJson(Object? raw) {
+    if (raw is! Map<String, dynamic>) return null;
+    final limitRaw = raw['device_limit'];
+    final limit = limitRaw is num && limitRaw > 0
+        ? limitRaw.toInt()
+        : AccountService.defaultDeviceLimit;
+    final error = _text(raw['error']);
+    if (error != null) return ProvisionAccount(error: error, deviceLimit: limit);
+    final device = raw['device'];
+    final deviceMap = device is Map<String, dynamic> ? device : null;
+    final store = raw['store'];
+    final storeMap = store is Map<String, dynamic> ? store : null;
+    final digits = normalizeAccountNumber(_text(raw['number']) ?? '');
+    final account = ProvisionAccount(
+      linked: _text(raw['linked']),
+      number: isValidAccountNumber(digits) ? digits : null,
+      active: raw['active'] == true,
+      expires: _ms(raw['expires_ms']),
+      kind: _text(raw['kind']),
+      deviceToken: _text(raw['device_token']),
+      deviceId: _text(deviceMap?['id']),
+      deviceName: _text(deviceMap?['name']),
+      subscriptionUrl: _text(raw['subscription_url']),
+      deviceLimit: limit,
+      storePlatform: _text(storeMap?['platform']),
+      storeExpires: _ms(storeMap?['expires_ms']),
+    );
+    // An account without time, or without the token and the URL this
+    // device runs on, is nothing the app can stand on; the purchase then
+    // works the way it did before accounts.
+    if (!account.active ||
+        account.deviceToken == null ||
+        account.subscriptionUrl == null) {
+      return ProvisionAccount(error: unavailable, deviceLimit: limit);
+    }
+    return account;
+  }
+
+  static String? _text(Object? raw) {
+    final s = raw?.toString().trim() ?? '';
+    return s.isEmpty ? null : s;
+  }
+
+  static DateTime? _ms(Object? raw) {
+    final n = raw is num ? raw.toInt() : int.tryParse(raw?.toString() ?? '');
+    if (n == null || n <= 0) return null;
+    return DateTime.fromMillisecondsSinceEpoch(n);
+  }
 }
 
 /// Exchanges a verified store purchase for tunnel credentials on hideip.net
@@ -111,13 +225,24 @@ class ProvisioningService {
   /// Only 404/410 is a verdict on the purchase; everything else (including a
   /// 200 without a URL) is transient, so a broken backend never reads as a
   /// lapsed subscription.
-  Future<ProvisionResult> provision(PurchasePayload payload) async {
+  ///
+  /// With [v2] the purchase also goes onto an account number: the one
+  /// [deviceToken] belongs to when this device is on one, otherwise the one
+  /// the purchase already adds time to, or a new one. The answer says which
+  /// in [ProvisionResult.account].
+  Future<ProvisionResult> provision(
+    PurchasePayload payload, {
+    bool v2 = false,
+    String? deviceToken,
+  }) async {
     try {
       final resp = await _client
           .post(
             Uri.parse('$endpoint/v1/provision'),
             headers: {'content-type': 'application/json'},
-            body: jsonEncode(provisionBody(payload)),
+            body: jsonEncode(
+              provisionBody(payload, v2: v2, deviceToken: deviceToken),
+            ),
           )
           .timeout(const Duration(seconds: 20));
       if (resp.statusCode == 404 || resp.statusCode == 410) {
@@ -131,7 +256,11 @@ class ProvisioningService {
       if (url == null || url.isEmpty) {
         return const ProvisionResult(ProvisionStatus.transient);
       }
-      return ProvisionResult(ProvisionStatus.ok, url);
+      return ProvisionResult(
+        ProvisionStatus.ok,
+        url,
+        v2 ? ProvisionAccount.fromJson(body['account']) : null,
+      );
     } catch (_) {
       return const ProvisionResult(ProvisionStatus.transient);
     }
@@ -262,14 +391,28 @@ class ProvisioningService {
 /// The `/v1/provision` request body for [payload], per the client/backend
 /// contract. iOS is unchanged from the JWS-only era (`{platform, jws}`);
 /// Android sends the Play token under snake_case keys the backend expects.
-Map<String, dynamic> provisionBody(PurchasePayload payload) =>
-    payload.platform == 'android'
-    ? {
-        'platform': 'android',
-        'purchase_token': payload.purchaseToken,
-        'product_id': payload.productId,
-      }
-    : {'platform': 'ios', 'jws': payload.jws};
+///
+/// [v2] asks for the account the purchase adds time to, and names this
+/// device the way an account sign-in does; [deviceToken] says which account
+/// this device is already on.
+Map<String, dynamic> provisionBody(
+  PurchasePayload payload, {
+  bool v2 = false,
+  String? deviceToken,
+}) => {
+  ...payload.platform == 'android'
+      ? {
+          'platform': 'android',
+          'purchase_token': payload.purchaseToken,
+          'product_id': payload.productId,
+        }
+      : {'platform': 'ios', 'jws': payload.jws},
+  if (v2) ...{
+    'v': 2,
+    'device_token': ?deviceToken,
+    'device': {'kind': 'phone', 'name': accountDeviceName},
+  },
+};
 
 /// Replace the premium-managed profiles inside [current] with [fresh],
 /// leaving every user-imported profile untouched and in place.
