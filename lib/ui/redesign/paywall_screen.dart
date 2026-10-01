@@ -881,7 +881,12 @@ class _PaywallScreenState extends State<PaywallScreen> {
     _wasLocked = sortedByPing(widget.state, widget.state.lockedLocations);
   }
 
-  void _back() => widget.nav.go(widget.from);
+  /// Closing the offer. From onboarding it walks the stack back, which
+  /// restores the choice screen's context (`kObAtChoice`) instead of starting
+  /// the intro over.
+  void _back() => widget.from == HipScreen.onboarding
+      ? widget.nav.back()
+      : widget.nav.go(widget.from);
 
   Future<void> _buy() async {
     setState(() {

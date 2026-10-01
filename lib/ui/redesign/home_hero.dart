@@ -561,9 +561,7 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
                                         }),
                                       ),
                                     if (denied)
-                                      HomeDeniedBanner(
-                                          onOpenSettings:
-                                              VpnController.openVpnSettings),
+                                      HomeDeniedBanner(onTryAgain: _connect),
                                     if (_trialEndsTomorrow(state))
                                       HomeTrialBanner(
                                         price: state
@@ -676,13 +674,19 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
                       disconnecting: _disconnecting,
                       connecting: state.isBusy,
                       offline: state.offline,
-                      denied: denied,
                       darkSurface: mapMode,
                       onConnect: _connect,
                       onCancel: state.cancel,
                       onDisconnect: _disconnect,
                       onAdd: nav.openImport,
-                      onSeePremium: () => nav.go(HipScreen.locations),
+                      // Same test Locations uses for its premium section:
+                      // where no plan is on offer (no catalog, e.g. no store
+                      // billing) that screen has nothing premium to show.
+                      onSeePremium:
+                          (kPlansAvailable && state.plansOffered) ||
+                                  state.premium.isOn
+                              ? () => nav.go(HipScreen.locations)
+                              : null,
                     ),
                   ),
           ),
@@ -727,14 +731,16 @@ class HomeCtaBar extends StatelessWidget {
   final bool disconnecting;
   final bool connecting;
   final bool offline;
-  final bool denied;
   final bool darkSurface;
 
   final VoidCallback onConnect;
   final VoidCallback onCancel;
   final VoidCallback onDisconnect;
   final VoidCallback onAdd;
-  final VoidCallback onSeePremium;
+
+  /// Null when there are no premium locations to show; the empty Home then
+  /// offers only the import.
+  final VoidCallback? onSeePremium;
 
   const HomeCtaBar({
     super.key,
@@ -743,12 +749,11 @@ class HomeCtaBar extends StatelessWidget {
     required this.disconnecting,
     required this.connecting,
     required this.offline,
-    required this.denied,
     required this.onConnect,
     required this.onCancel,
     required this.onDisconnect,
     required this.onAdd,
-    required this.onSeePremium,
+    this.onSeePremium,
     this.darkSurface = false,
   });
 
@@ -757,9 +762,11 @@ class HomeCtaBar extends StatelessWidget {
     if (empty) {
       return Column(mainAxisSize: MainAxisSize.min, children: [
         HipCta(S.tAddConn, connect: true, onTap: onAdd),
-        const SizedBox(height: 8),
-        HipCta(S.b0SeePremium,
-            quiet: true, darkGhost: darkSurface, onTap: onSeePremium),
+        if (onSeePremium != null) ...[
+          const SizedBox(height: 8),
+          HipCta(S.b0SeePremium,
+              quiet: true, darkGhost: darkSurface, onTap: onSeePremium),
+        ],
       ]);
     }
 
@@ -786,7 +793,9 @@ class HomeCtaBar extends StatelessWidget {
         S.tConnect,
         key: const ValueKey('cta-on'),
         connect: true,
-        onTap: offline || denied ? null : onConnect,
+        // A declined VPN request leaves Connect live: the system dialog can
+        // only be raised again from here, never from Android settings.
+        onTap: offline ? null : onConnect,
       );
     }
 

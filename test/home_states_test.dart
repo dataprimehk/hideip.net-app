@@ -54,7 +54,6 @@ void main() {
         disconnecting: false,
         connecting: false,
         offline: false,
-        denied: false,
         onConnect: () {},
         onCancel: () {},
         onDisconnect: () {},
@@ -84,6 +83,29 @@ void main() {
     // block is the plain explanation.
     await tester.pumpWidget(host(const HomeEmptyBlock()));
     expect(find.text(S.accountSignInLink), findsNothing);
+  });
+
+  testWidgets('B0 without plans on offer drops See Premium locations',
+      (tester) async {
+    await tester.pumpWidget(host(Column(children: [
+      const HomeEmptyBlock(),
+      HomeCtaBar(
+        empty: true,
+        connected: false,
+        disconnecting: false,
+        connecting: false,
+        offline: false,
+        onConnect: () {},
+        onCancel: () {},
+        onDisconnect: () {},
+        onAdd: () {},
+      ),
+    ])));
+
+    // No catalog means Locations has no premium section to open onto, so
+    // the button would lead to an empty screen.
+    expect(find.text(S.tAddConn), findsOneWidget);
+    expect(find.text(S.b0SeePremium), findsNothing);
   });
 
   // --- B1 -----------------------------------------------------------------
@@ -136,7 +158,6 @@ void main() {
         disconnecting: false,
         connecting: true,
         offline: false,
-        denied: false,
         onConnect: () {},
         onCancel: () => cancelled = true,
         onDisconnect: () {},
@@ -341,19 +362,19 @@ void main() {
   });
 
   // --- B14 ----------------------------------------------------------------
-  testWidgets('B14 names the declined permission and the way out',
+  testWidgets('B14 names the declined permission and asks again',
       (tester) async {
-    var opened = false;
+    var retried = 0;
+    var connected = 0;
     await tester.pumpWidget(host(Column(children: [
-      HomeDeniedBanner(onOpenSettings: () => opened = true),
+      HomeDeniedBanner(onTryAgain: () => retried++),
       HomeCtaBar(
         empty: false,
         connected: false,
         disconnecting: false,
         connecting: false,
         offline: false,
-        denied: true,
-        onConnect: () {},
+        onConnect: () => connected++,
         onCancel: () {},
         onDisconnect: () {},
         onAdd: () {},
@@ -362,11 +383,17 @@ void main() {
     ])));
 
     expect(find.text(S.b14Line), findsOneWidget);
-    expect(find.text(S.aOpenSettings), findsOneWidget);
-    expect(ctaEnabled(tester, S.tConnect), isFalse);
+    // The system dialog is the only place the permission is given, so the
+    // way out is asking again, never a settings screen without a switch.
+    expect(find.text(S.aTryAgain), findsOneWidget);
+    expect(find.text(S.aOpenSettings), findsNothing);
+    await tester.tap(find.text(S.aTryAgain));
+    expect(retried, 1);
 
-    await tester.tap(find.text(S.aOpenSettings));
-    expect(opened, isTrue);
+    // Connect stays live; pressing it is what raises the dialog again.
+    expect(ctaEnabled(tester, S.tConnect), isTrue);
+    await tester.tap(find.text(S.tConnect));
+    expect(connected, 1);
   });
 
   // --- B15 ----------------------------------------------------------------
@@ -384,7 +411,6 @@ void main() {
         disconnecting: false,
         connecting: false,
         offline: true,
-        denied: false,
         onConnect: () {},
         onCancel: () {},
         onDisconnect: () {},
