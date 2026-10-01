@@ -6,6 +6,7 @@ import 'package:hideip_vpn/core/account_service.dart';
 import 'package:hideip_vpn/core/account_store.dart';
 import 'package:hideip_vpn/core/premium.dart';
 import 'package:hideip_vpn/core/provisioning.dart';
+import 'package:hideip_vpn/core/purchase_service.dart';
 import 'package:hideip_vpn/state/app_state.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -1102,13 +1103,55 @@ void main() {
       expect(state.accountSignedIn, isFalse);
       expect(_provisions, hasLength(1));
 
+      // A Restore that finds nothing leaves it where it is too.
       _provisionAccount = account(linked: 'existing');
       await state.restorePurchases();
-      await purchase(renews: madeUp.add(const Duration(days: 60)));
+      await purchase(renews: madeUp.add(const Duration(days: 45)));
+      expect(_provisions, hasLength(1));
+      expect(state.accountSignedIn, isFalse);
+
+      // One that brings the subscription back signs this device in.
+      await state.storeAnswerForTesting(
+        Premium(
+          status: PremiumStatus.active,
+          plan: PremiumPlan.yearly,
+          renews: madeUp.add(const Duration(days: 60)),
+        ),
+        _proof,
+      );
+      await pumpEventQueue();
       expect(_provisions, hasLength(2));
       expect(state.accountSignedIn, isTrue);
       expect(state.accountNumberKnown, isFalse);
       expect(state.premium.isOn, isTrue);
+    });
+
+    test('a cancelled Buy leaves a paused link paused', () async {
+      _provisionAccount = account(linked: 'new', number: _number);
+      await purchase();
+      await state.signOutAccount();
+      await pumpEventQueue();
+
+      // No store here: the Buy fails without delivering anything.
+      expect(
+        await state.purchasePremium(PremiumPlan.yearly),
+        isNot(PurchaseOutcome.success),
+      );
+      await purchase(renews: madeUp.add(const Duration(days: 30)));
+      expect(_provisions, hasLength(1));
+      expect(state.accountSignedIn, isFalse);
+
+      // An expired entitlement in answer does not lift it either.
+      await state.storeAnswerForTesting(
+        Premium(
+          status: PremiumStatus.expired,
+          plan: PremiumPlan.yearly,
+          renews: madeUp.add(const Duration(days: 31)),
+        ),
+        _proof,
+      );
+      await purchase(renews: madeUp.add(const Duration(days: 32)));
+      expect(_provisions, hasLength(1));
     });
 
     test('an account run out while the store pays is topped up at once', () async {

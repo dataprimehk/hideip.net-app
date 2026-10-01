@@ -206,6 +206,17 @@ class AppState extends ChangeNotifier {
   Future<void> storeEntitlementForTesting(Premium p, [PurchasePayload? proof]) =>
       _onStorePremium(p, proof);
 
+  /// The same, as the answer to a Buy or a Restore the user asked for.
+  @visibleForTesting
+  Future<void> storeAnswerForTesting(Premium p, PurchasePayload proof) {
+    _storeAsked++;
+    try {
+      return _onStorePremium(p, proof);
+    } finally {
+      _storeAsked--;
+    }
+  }
+
   /// Runs the launch refresh of the premium servers on its own, the way
   /// [init] starts it.
   @visibleForTesting
@@ -481,8 +492,13 @@ class AppState extends ChangeNotifier {
   /// Buy the Premium subscription. The entitlement itself lands through the
   /// purchase stream (see [init]); this reports how the attempt ended.
   Future<PurchaseOutcome> purchasePremium(PremiumPlan plan) async {
-    await _premiumRefreshGate.run(_resumeStoreLink);
-    final outcome = await _purchases.buy(plan);
+    final PurchaseOutcome outcome;
+    _storeAsked++;
+    try {
+      outcome = await _purchases.buy(plan);
+    } finally {
+      _storeAsked--;
+    }
     if (outcome == PurchaseOutcome.success) {
       // The stream queues the entitlement before completing the purchase.
       await _premiumRefreshGate.run(() async {});
@@ -492,8 +508,13 @@ class AppState extends ChangeNotifier {
 
   /// Re-check the store for an existing subscription.
   Future<void> restorePurchases() async {
-    await _premiumRefreshGate.run(_resumeStoreLink);
-    final restored = await _purchases.restore();
+    final bool restored;
+    _storeAsked++;
+    try {
+      restored = await _purchases.restore();
+    } finally {
+      _storeAsked--;
+    }
     if (restored) {
       await _premiumRefreshGate.run(() async {});
       showToast(S.toastRestored);
@@ -952,8 +973,8 @@ class AppState extends ChangeNotifier {
     await _setStoreLink(_storeLink.copyWith(linked: false, paused: true));
   }
 
-  /// A purchase or a restore is the user asking for the subscription to
-  /// count on this device again.
+  /// A purchase or a restore that delivered an entitlement is the user
+  /// asking for the subscription to count on this device again.
   Future<void> _resumeStoreLink() async {
     if (!_storeLink.paused) return;
     await _setStoreLink(_storeLink.copyWith(paused: false));
@@ -1165,10 +1186,24 @@ class AppState extends ChangeNotifier {
   /// A store entitlement from the purchase stream. It is always recorded;
   /// it goes into force unless an account number that lasts longer already
   /// is.
-  Future<void> _onStorePremium(Premium p, PurchasePayload? proof) =>
-      _premiumRefreshGate.run(() => _applyStorePremiumLocked(p, proof));
+  Future<void> _onStorePremium(Premium p, PurchasePayload? proof) {
+    // Read now, not when the gate opens: by then the Buy or the Restore the
+    // entitlement answers may already have returned.
+    final asked = _storeAsked > 0;
+    return _premiumRefreshGate.run(
+      () => _applyStorePremiumLocked(p, proof, asked: asked),
+    );
+  }
 
-  Future<void> _applyStorePremiumLocked(Premium p, PurchasePayload? proof) async {
+  /// How many Buy or Restore calls are waiting on the store right now.
+  /// Entitlements arriving meanwhile answer the user, not a renewal.
+  int _storeAsked = 0;
+
+  Future<void> _applyStorePremiumLocked(
+    Premium p,
+    PurchasePayload? proof, {
+    bool asked = false,
+  }) async {
     // The store replays past transactions in arbitrary order (a stale
     // renewal can land right after the newest one); an entitlement only ever
     // moves forward. Plan changes are safe under this rule: in a
@@ -1191,6 +1226,10 @@ class AppState extends ChangeNotifier {
     }
     _storePremium = p;
     await p.save(key: Premium.storeKey);
+    // A Buy or a Restore that delivered a live entitlement is the user
+    // asking for the subscription on this device again. One that was
+    // cancelled or found nothing never gets here, and changes nothing.
+    if (asked && p.isOn && proof != null) await _resumeStoreLink();
     if (_storeLink.paused) {
       // This device left the account the subscription pays for. A renewal
       // arriving on its own does not sign it back in; a restore does.
