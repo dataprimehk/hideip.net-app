@@ -400,9 +400,11 @@ class _AccountScreenState extends State<AccountScreen> {
       const HipSheetTitle(S.accountRotateDone),
       Padding(
         padding: const EdgeInsets.only(top: 14),
-        child: Text(
-          displayAccountNumber(fresh),
-          style: Hip.mono(600, 22, color: Hip.ink, letterSpacing: 1.5),
+        child: _OneLine(
+          Text(
+            displayAccountNumber(fresh),
+            style: Hip.mono(600, 22, color: Hip.ink, letterSpacing: 1.5),
+          ),
         ),
       ),
       const HipSheetBody(S.accountKeepSafe),
@@ -497,29 +499,43 @@ class _AccountScreenState extends State<AccountScreen> {
         child: Row(
           children: [
             Expanded(
-              child: TextField(
-                controller: _field,
-                enabled: !_busy,
-                keyboardType: TextInputType.number,
-                inputFormatters: const [AccountNumberFormatter()],
-                autocorrect: false,
-                enableSuggestions: false,
-                enableIMEPersonalizedLearning: false,
-                textInputAction: TextInputAction.done,
-                onSubmitted: (_) => _signIn(),
-                style: Hip.mono(600, 24, color: Hip.ink, letterSpacing: 2),
-                cursorColor: Hip.blue,
-                decoration: InputDecoration(
-                  isDense: true,
-                  border: InputBorder.none,
-                  hintText: S.accountFieldHint,
-                  hintStyle: Hip.mono(
-                    600,
-                    24,
-                    color: Hip.muted2.withValues(alpha: .5),
-                    letterSpacing: 2,
-                  ),
-                ),
+              child: LayoutBuilder(
+                builder: (context, box) {
+                  final size = accountFieldFontSize(
+                    box.maxWidth,
+                    MediaQuery.textScalerOf(context),
+                  );
+                  final spacing = size < 24 ? 1.0 : 2.0;
+                  return TextField(
+                    controller: _field,
+                    enabled: !_busy,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: const [AccountNumberFormatter()],
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    enableIMEPersonalizedLearning: false,
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) => _signIn(),
+                    style: Hip.mono(
+                      600,
+                      size,
+                      color: Hip.ink,
+                      letterSpacing: spacing,
+                    ),
+                    cursorColor: Hip.blue,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      border: InputBorder.none,
+                      hintText: S.accountFieldHint,
+                      hintStyle: Hip.mono(
+                        600,
+                        size,
+                        color: Hip.muted2.withValues(alpha: .5),
+                        letterSpacing: spacing,
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
           ],
@@ -629,11 +645,13 @@ class _AccountScreenState extends State<AccountScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              _revealed
-                  ? displayAccountNumber(number)
-                  : maskAccountNumber(number),
-              style: Hip.mono(600, 20, color: Hip.ink, letterSpacing: 1.2),
+            _OneLine(
+              Text(
+                _revealed
+                    ? displayAccountNumber(number)
+                    : maskAccountNumber(number),
+                style: Hip.mono(600, 20, color: Hip.ink, letterSpacing: 1.2),
+              ),
             ),
             const SizedBox(height: 8),
             _standing(),
@@ -813,6 +831,38 @@ class _AccountScreenState extends State<AccountScreen> {
 }
 
 /// A flat gray tile in front of a row, as in Settings.
+/// The largest monospace size, up to 24, at which a whole grouped account
+/// number fits in [width] once the system text size is applied. With Display
+/// Zoom or a larger text setting the fixed 24 ran past the field and iOS
+/// showed "0000 0000 0000 ...", so the field shrinks instead, but never below
+/// 14 (past that the number scrolls inside the field as before).
+@visibleForTesting
+double accountFieldFontSize(double width, TextScaler scaler) {
+  const chars = 19; // "0000 0000 0000 0000"
+  const advance = .6; // JetBrains Mono glyph width per em
+  const caret = 4.0;
+  for (var size = 24.0; size > 14; size -= .5) {
+    final spacing = size < 24 ? 1.0 : 2.0;
+    if (chars * (advance * scaler.scale(size) + spacing) + caret <= width) {
+      return size;
+    }
+  }
+  return 14;
+}
+
+/// One line that scales down rather than breaking a number in two.
+class _OneLine extends StatelessWidget {
+  const _OneLine(this.child);
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
+        child: child,
+      );
+}
+
 class _Tile extends StatelessWidget {
   final IconData icon;
   const _Tile(this.icon);

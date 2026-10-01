@@ -153,6 +153,25 @@ void _expectNoForbiddenWords() {
 }
 
 void main() {
+  group('accountFieldFontSize', () {
+    test('keeps 24 when the whole number fits at default text size', () {
+      expect(accountFieldFontSize(340, TextScaler.noScaling), 24);
+    });
+
+    test('shrinks so all 19 characters fit on a zoomed screen', () {
+      // Display Zoom plus a larger text setting: narrow field, scaled text.
+      const scaler = TextScaler.linear(1.2);
+      const width = 290.0;
+      final size = accountFieldFontSize(width, scaler);
+      expect(size, lessThan(24));
+      expect(19 * (.6 * scaler.scale(size) + 1) + 4, lessThanOrEqualTo(width));
+    });
+
+    test('never goes below 14', () {
+      expect(accountFieldFontSize(120, const TextScaler.linear(2)), 14);
+    });
+  });
+
   late _Backend backend;
 
   setUp(() async {
