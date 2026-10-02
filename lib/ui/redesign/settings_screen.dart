@@ -296,6 +296,55 @@ class _MiniButton extends StatelessWidget {
   }
 }
 
+/// Stands in for the sales card on a device that signed out of the account
+/// number its store subscription still pays for: one tap brings it back.
+class StorePausedCard extends StatefulWidget {
+  final String store;
+  final Future<void> Function() onRestore;
+  const StorePausedCard(
+      {super.key, required this.store, required this.onRestore});
+
+  @override
+  State<StorePausedCard> createState() => _StorePausedCardState();
+}
+
+class _StorePausedCardState extends State<StorePausedCard> {
+  bool _busy = false;
+
+  Future<void> _restore() async {
+    setState(() => _busy = true);
+    try {
+      await widget.onRestore();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Hip.blueSoft,
+        border: Border.all(color: Hip.blue.withValues(alpha: .2), width: 1.5),
+        borderRadius: BorderRadius.circular(Hip.radius),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const PremiumBadge(),
+        const SizedBox(height: 11),
+        Text(S.storePausedTitle(widget.store),
+            style: Hip.sans(700, 17.5, color: Hip.ink, letterSpacing: -.39)),
+        const SizedBox(height: 5),
+        Text(S.storePausedBody,
+            style: Hip.sans(400, 13, color: Hip.muted, height: 1.5)),
+        const SizedBox(height: 15),
+        HipCta(S.pwRestore, onTap: _busy ? null : _restore),
+      ]),
+    );
+  }
+}
+
 /// The card that sells, shown only while there is no subscription. Selling
 /// stops the moment someone has paid: that is part of what they bought.
 class PremiumSalesCard extends StatelessWidget {
@@ -494,7 +543,11 @@ class _SettingsScreenState extends State<SettingsScreen>
     final active = state.activeLocation;
     // The card stands in for the Premium row while there is nothing to
     // manage yet; the rest of the Account section shows either way.
-    final sellCard = sellable && premium.status == PremiumStatus.none;
+    // A device that signed out while its store subscription keeps paying is
+    // a subscriber, not a prospect: it gets its restore, never a trial.
+    final paused = state.storePausedHere;
+    final sellCard =
+        sellable && premium.status == PremiumStatus.none && !paused;
     // With an account number, the number is the Premium: one row, to the
     // screen that holds the number, its time, its billing and its devices.
     // A store subscription in force on its own keeps its Premium page and
@@ -554,6 +607,11 @@ class _SettingsScreenState extends State<SettingsScreen>
           child: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             children: [
+              if (paused)
+                StorePausedCard(
+                  store: state.storeName ?? 'App Store',
+                  onRestore: state.restorePurchases,
+                ),
               if (sellCard)
                 PremiumSalesCard(
                   yearlyPrice: state.planInfo(PremiumPlan.yearly).price,

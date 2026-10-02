@@ -951,6 +951,12 @@ class AppState extends ChangeNotifier {
   /// account number, so it did not go onto the one this device is on.
   bool get storeLinkedElsewhere => _storeLink.elsewhere;
 
+  /// This device left the account its store subscription pays for, and the
+  /// subscription is still being paid: a restore brings Premium back here.
+  /// Nothing should sell this device a trial in the meantime.
+  bool get storePausedHere =>
+      _storeLink.paused && !premium.isOn && _storePaying;
+
   /// Whether the store subscription is still being paid: by the server's
   /// date for it, or by the store's own word when that date has passed
   /// before the server heard of the renewal.

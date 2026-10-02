@@ -47,6 +47,18 @@ class _LinkedState extends AppState {
   String? get storeName => 'App Store';
 }
 
+/// A device that signed out of the number its store subscription pays for.
+class _PausedState extends AppState {
+  int restores = 0;
+
+  @override
+  bool get storePausedHere => true;
+  @override
+  String? get storeName => 'App Store';
+  @override
+  Future<void> restorePurchases() async => restores++;
+}
+
 /// A state signed in to an account number whose sign-in answers [active],
 /// with the store entitlement [store] reported first when given. With
 /// [linked] the store subscription adds time to the number.
@@ -121,6 +133,20 @@ void main() {
   });
 
   tearDown(() => Hip.reducedMotion = false);
+
+  testWidgets('a signed-out store subscriber gets a restore, never a trial', (
+    tester,
+  ) async {
+    final state = _PausedState();
+    await tester.pumpWidget(_settings(state, <HipScreen>[]));
+    await tester.pump();
+
+    expect(find.byType(PremiumSalesCard), findsNothing);
+    expect(find.text(S.storePausedTitle('App Store')), findsOneWidget);
+    await tester.tap(find.text(S.pwRestore));
+    await tester.pump();
+    expect(state.restores, 1);
+  });
 
   testWidgets('the Account number row is there with no store behind it', (
     tester,

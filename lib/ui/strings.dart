@@ -979,6 +979,13 @@ abstract final class S {
       'This device signs out of the account number. Your $store subscription '
       'keeps adding time to it. Restore purchases signs this device back in.';
 
+  /// A device that signed out while its store subscription keeps paying.
+  static String storePausedTitle(String store) =>
+      'Your $store subscription is active';
+  static const storePausedBody =
+      'This device signed out of the account number. Restore your purchase '
+      'to use Premium here again.';
+
   /// Starting a store subscription on a number that is already in force.
   static String accountSubscribeStore(String store) => 'Subscribe with $store';
   static const accountSubscribeSub =
