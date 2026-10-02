@@ -3,17 +3,49 @@
 Notable changes to the hideip.net app. The same history is published at
 https://hideip.net/apps/changelog.
 
-## 1.2.0 (unreleased)
+## 1.2.0 (2026-10-02)
 
 Build 8.
 
 ### Added
-- Sign in with an account number (Settings, Account number).
+- Premium runs on an account number: 16 random digits, with no email, phone
+  number or password. Sign in with it on up to 5 devices (Settings, Account
+  number). A subscription bought in the app gets its number by itself and
+  shows it once; a subscription from before 1.2.0 moves onto a number at the
+  next launch, together with the time it has left.
+- Every store renewal adds its period to the number, also when the app is
+  not opened. A refund takes back only the part that was not used.
+- The Account screen lists the signed-in devices and can take one off, give
+  the account a new number, sign this device out and delete the number.
+  Deleting it signs every device out; a store subscription is not cancelled
+  by it and keeps billing until it is cancelled in the store.
+- A device signed out from elsewhere can only sign back in; it no longer
+  offers to remove devices or change the number. The last number is
+  remembered for a one-tap sign-in.
+- Restore purchases brings a signed-out subscription back on the same number.
+- Paste on the Account screen takes only the number out of a longer message.
 - The store's own rating sheet may appear after a few connections that
   worked. It is asked for at most once per version and once every 120 days,
   never on the first launch or after a failed connection. On Android it is
   only asked for when Google Play installed the app; builds from GitHub or
   an F-Droid repo never request it.
+- Locations shows that your own servers swipe: a standing hint, and a short
+  nudge on the first row at most three times.
+
+### Changed
+- The account number field fits on zoomed screens and with large text.
+- Account questions open as a bottom sheet with actions that wrap.
+- The three import buttons keep one height when a label wraps.
+- The note about cleaned-up names and flags moved to "Which formats?".
+- The Protocol and routing row in the Advanced view is gone; it only opened
+  the chosen server.
+- The address on Home is looked up afresh after a connect or disconnect, so
+  it no longer keeps the old address for a few seconds.
+
+### Fixed
+- Connect works again after the VPN permission request is declined.
+- Closing the plans opened from onboarding returns to the choice screen.
+- The empty Home screen hides See Premium locations when no plan is offered.
 
 ## 1.1.1 (2026-09-16)
 
