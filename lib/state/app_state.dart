@@ -515,6 +515,31 @@ class AppState extends ChangeNotifier {
     return outcome;
   }
 
+  /// Brings a store subscription back onto this device after it signed out
+  /// of the account the subscription pays for. The proof of purchase this
+  /// device already holds goes to the server first: it is what linked the
+  /// subscription in the first place, and it needs neither the store nor
+  /// the store's environment to answer. Without one, or when the server
+  /// does not take it, the store is asked as for any restore.
+  Future<void> restoreStoreHere() async {
+    final proof = await PremiumSub.proof();
+    if (proof != null && _storeLink.paused) {
+      var back = false;
+      await _premiumRefreshGate.run(() async {
+        await _resumeStoreLink();
+        back = await _provisionV2Locked(proof) == null;
+        if (!back) {
+          await _setStoreLink(_storeLink.copyWith(paused: true));
+        }
+      });
+      if (back) {
+        showToast(S.toastRestored);
+        return;
+      }
+    }
+    await restorePurchases();
+  }
+
   /// Re-check the store for an existing subscription.
   Future<void> restorePurchases() async {
     final bool restored;

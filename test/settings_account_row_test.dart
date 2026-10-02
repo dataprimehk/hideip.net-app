@@ -56,7 +56,7 @@ class _PausedState extends AppState {
   @override
   String? get storeName => 'App Store';
   @override
-  Future<void> restorePurchases() async => restores++;
+  Future<void> restoreStoreHere() async => restores++;
 }
 
 /// A state signed in to an account number whose sign-in answers [active],
