@@ -962,6 +962,10 @@ class AppState extends ChangeNotifier {
               ? 'App Store'
               : 'Google Play';
 
+  /// This device's store as the server names it.
+  static String get _storePlatformHere =>
+      defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android';
+
   /// When the store charges next, when that is known. The server's reading
   /// of the store wins; failing that only iOS has a real date on the device
   /// (Play hands the app no expiry at all).
@@ -1490,12 +1494,27 @@ class AppState extends ChangeNotifier {
         _statusStoreLinked = status.storeLinked;
         // A renewal the server took from the store on its own moves the
         // date here too, without a provision from this device. Only for the
-        // subscription on this device: another one's date is not its own.
+        // subscription on this device: another one's date is not its own,
+        // and the server names the latest one, which may be the other
+        // store's.
         final storeEnds = status.storeExpires;
+        final ours = status.storePlatform == _storePlatformHere;
         if (_storeLink.linked &&
+            ours &&
             storeEnds != null &&
             storeEnds != _storeLink.renews) {
           await _setStoreLink(_storeLink.copyWith(renews: storeEnds));
+        } else if (!ours &&
+            storeEnds != null &&
+            storeEnds == _storeLink.renews) {
+          // A build before this one took the other store's date as its own.
+          final l = _storeLink;
+          await _setStoreLink(StoreLink(
+            linked: l.linked,
+            paused: l.paused,
+            elsewhere: l.elsewhere,
+            checked: l.checked,
+          ));
         }
         await _premiumRefreshGate.run(() => _applyAccountStanding(status));
       case AccountResult.revoked:

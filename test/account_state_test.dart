@@ -39,6 +39,7 @@ class _Backend {
   List<String> devices = ['dev_abc'];
   bool? storeLinked;
   DateTime? storeExpires;
+  String? storePlatform = 'android';
 
   Map<String, dynamic> body(http.Request r) =>
       jsonDecode(r.body) as Map<String, dynamic>;
@@ -98,6 +99,7 @@ class _Backend {
             'device_limit': 5,
             'store_linked': ?storeLinked,
             'store_expires_ms': ?storeExpires?.millisecondsSinceEpoch,
+            'store_platform': ?storePlatform,
           }),
           200,
         );
@@ -1252,6 +1254,32 @@ void main() {
       expect(state.storeRenews, next);
       expect(state.storeLinked, isTrue);
       expect(_provisions, hasLength(1));
+    });
+
+    test('the other store\'s later date is not this device\'s', () async {
+      _provisionAccount = account(linked: 'new', number: _number);
+      await purchase();
+      expect(state.storeRenews, storeEnds);
+
+      // The same number also renews through the App Store, a year further
+      // out; the server names that one as the latest.
+      final apple = DateTime.fromMillisecondsSinceEpoch(
+        storeEnds.add(const Duration(days: 365)).millisecondsSinceEpoch,
+      );
+      backend.storeLinked = true;
+      backend.storeExpires = apple;
+      backend.storePlatform = 'ios';
+      await state.refreshAccount(force: true);
+      expect(state.storeRenews, storeEnds);
+      expect(state.storeName, 'Google Play');
+
+      // A build that took that date as its own lets go of it.
+      backend.storePlatform = 'android';
+      await state.refreshAccount(force: true);
+      expect(state.storeRenews, apple);
+      backend.storePlatform = 'ios';
+      await state.refreshAccount(force: true);
+      expect(state.storeRenews, isNull);
     });
 
     test('a past server date with the store still live is paying', () async {
