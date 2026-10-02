@@ -2446,16 +2446,18 @@ class AppState extends ChangeNotifier {
   Future<void> _refreshIpAfterToggle() async {
     final before = _publicIp;
     for (var attempt = 0; attempt < 6; attempt++) {
-      await refreshIp();
+      await refreshIp(fresh: true);
       if (_publicIp != null && _publicIp != before) return;
       await Future<void>.delayed(const Duration(milliseconds: 1500));
     }
   }
 
-  Future<void> refreshIp() async {
+  /// [fresh] skips the lookup held from the last few seconds, for a route
+  /// that has just changed.
+  Future<void> refreshIp({bool fresh = false}) async {
     _ipLoading = true;
     notifyListeners();
-    final ip = await IpLookup.current();
+    final ip = await IpLookup.current(fresh: fresh);
     _publicIp = ip;
     _ipLoading = false;
     notifyListeners();
@@ -2508,7 +2510,7 @@ class AppState extends ChangeNotifier {
         _connectedAt = null;
       }
       notifyListeners();
-      refreshIp();
+      refreshIp(fresh: true);
     }
 
     // While connected, refresh live traffic counters each tick.

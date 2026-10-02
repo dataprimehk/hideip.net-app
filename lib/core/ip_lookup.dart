@@ -83,9 +83,12 @@ class IpLookup {
   @visibleForTesting
   static Future<IpLookupData?> Function(String host)? lookupOverride;
 
-  static Future<String?> current() async {
+  /// The public address, from a lookup of the last ten seconds unless
+  /// [fresh]: right after a connect or disconnect the held answer may still
+  /// be the one from the old route.
+  static Future<String?> current({bool fresh = false}) async {
     if (_shotIp.isNotEmpty) return _shotIp;
-    return (await _fetch())?.ip;
+    return (await _fetch(fresh: fresh))?.ip;
   }
 
   /// The country an imported server sits in, or null when nobody knows.
@@ -140,9 +143,10 @@ class IpLookup {
     return (await _fetch())?.geo;
   }
 
-  static Future<IpLookupData?> _fetch() async {
+  static Future<IpLookupData?> _fetch({bool fresh = false}) async {
     final heldAt = _lastAt;
-    if (_last != null &&
+    if (!fresh &&
+        _last != null &&
         heldAt != null &&
         DateTime.now().difference(heldAt) < const Duration(seconds: 10)) {
       return _last;
