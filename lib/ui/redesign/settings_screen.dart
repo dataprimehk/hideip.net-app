@@ -609,7 +609,8 @@ class _SettingsScreenState extends State<SettingsScreen>
             children: [
               if (paused)
                 StorePausedCard(
-                  store: state.storeName ?? 'App Store',
+                  store: state.storeName ??
+                      (_isIos ? 'App Store' : 'Google Play'),
                   onRestore: state.restorePurchases,
                 ),
               if (sellCard)

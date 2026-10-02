@@ -373,6 +373,15 @@ class AppState extends ChangeNotifier {
     _storePremium = store.status != PremiumStatus.none
         ? store
         : (_premium.source == PremiumSource.store ? _premium : null);
+    // An install from before 1.2.0 kept its subscription only as the
+    // entitlement in force. Write it where the store's own record lives now,
+    // before an account number takes that place and the record is lost.
+    final carried = _storePremium;
+    if (store.status == PremiumStatus.none &&
+        carried != null &&
+        carried.status != PremiumStatus.none) {
+      await carried.save(key: Premium.storeKey);
+    }
     _account = await _accountStore.load();
     _freshNumber = await _accountStore.freshNumber();
     _storeLink = await _accountStore.loadStoreLink();
@@ -954,8 +963,14 @@ class AppState extends ChangeNotifier {
   /// This device left the account its store subscription pays for, and the
   /// subscription is still being paid: a restore brings Premium back here.
   /// Nothing should sell this device a trial in the meantime.
-  bool get storePausedHere =>
-      _storeLink.paused && !premium.isOn && _storePaying;
+  bool get storePausedHere {
+    if (!_storeLink.paused || premium.isOn) return false;
+    // The server's date for the subscription is enough on its own: the
+    // device's copy of the entitlement may predate 1.2.0 and be gone.
+    final renews = _storeLink.renews;
+    if (renews != null && renews.isAfter(DateTime.now())) return true;
+    return _storePaying;
+  }
 
   /// Whether the store subscription is still being paid: by the server's
   /// date for it, or by the store's own word when that date has passed
