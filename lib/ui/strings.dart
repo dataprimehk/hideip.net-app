@@ -502,13 +502,6 @@ abstract final class S {
   static const setSpeedNote = 'Speed mode applies to hideip.net locations. '
       'Imported servers keep their own protocol.';
 
-  // F3, the one row Advanced view adds.
-  static const setRouting = 'Protocol and routing';
-
-  /// How the server is chosen, then the protocol that server really runs.
-  static String setRoutingSub(String selection, String proto) =>
-      '$selection · $proto';
-
   // Android only: the in-app opt-in and the shortcut into system settings.
   static const setAlwaysOn = 'Always-on VPN';
   static const setAlwaysOnSub = "Reconnect the last server when Android's "

@@ -540,7 +540,6 @@ class _SettingsScreenState extends State<SettingsScreen>
     // advertise a purchase; an existing subscriber keeps their Premium row
     // regardless (plansOffered stays true while premium is on).
     final sellable = kPlansAvailable && state.plansOffered;
-    final active = state.activeLocation;
     // The card stands in for the Premium row while there is nothing to
     // manage yet; the rest of the Account section shows either way.
     // A device that signed out while its store subscription keeps paying is
@@ -694,19 +693,6 @@ class _SettingsScreenState extends State<SettingsScreen>
                     trailing:
                         Icon(Icons.lock_outline, size: 17, color: Hip.muted2),
                     onTap: () => nav.openPaywall(from: HipScreen.settings),
-                  ),
-                // Advanced view adds the one row that explains how a server
-                // is picked and what it runs. The prototype prints a fixed
-                // failover chain; this app has no failover order, so the row
-                // names the protocol actually in use instead of inventing one.
-                if (prefs.advanced && active != null)
-                  HipListRow(
-                    title: S.setRouting,
-                    subtitle: S.setRoutingSub(
-                        prefs.autoSelect ? S.tAuto : active.label,
-                        active.protoLabel),
-                    trailing: _chevron(),
-                    onTap: () => nav.openDetail(active),
                   ),
                 if (_isAndroid) _AndroidAlwaysOnRows(state: state),
               ]),
