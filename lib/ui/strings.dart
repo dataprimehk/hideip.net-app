@@ -960,9 +960,11 @@ abstract final class S {
 
   /// Signed in through a purchase restored here, with no number on this
   /// device to show.
-  static String accountNoNumberHere(String store) =>
-      'This device is signed in through your $store purchase. To use Premium '
-      'on another device, get a new account number.';
+  static const accountNoNumberTitle =
+      "Your account number isn't on this device";
+  static String accountNoNumberBody(String store) =>
+      'Premium is on through your $store subscription. Enter your account '
+      'number to see it here and use it on your other devices.';
   static String accountLinkedElsewhere(String store) =>
       'This $store subscription already adds time to a different account '
       'number.';
@@ -980,7 +982,7 @@ abstract final class S {
       'to use Premium here again.';
 
   /// A device on the account without its number, putting the number in.
-  static const accountEnterNumber = 'Enter your account number';
+  static const accountEnterNumber = 'Enter account number';
 
   /// Starting a store subscription on a number that is already in force.
   static String accountSubscribeStore(String store) => 'Subscribe with $store';

@@ -117,6 +117,16 @@ class _AccountScreenState extends State<AccountScreen> {
   /// A device without its number asked to put it in.
   bool _enterNumber = false;
 
+  /// Opens the number field on a device that holds the account without its
+  /// number, filled with the one it last used when there is one.
+  void _openNumberEntry() {
+    final last = _state.lastAccountNumber;
+    if (last != null && _field.text.isEmpty) {
+      _field.text = displayAccountNumber(last);
+    }
+    setState(() => _enterNumber = true);
+  }
+
   AccountStatus? _status;
   bool _loading = false;
   bool _statusFailed = false;
@@ -135,6 +145,12 @@ class _AccountScreenState extends State<AccountScreen> {
   void initState() {
     super.initState();
     _field.addListener(_onEdit);
+    // Signed out, the number used last is filled in: signing back in is a
+    // tap, the way the number cannot be shown again by the server.
+    final last = _state.lastAccountNumber;
+    if (!_state.accountSignedIn && last != null) {
+      _field.text = displayAccountNumber(last);
+    }
     if (_state.accountSignedIn) _loadStatus();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) showFreshAccountNumber(_state, widget.nav);
@@ -745,13 +761,14 @@ class _AccountScreenState extends State<AccountScreen> {
     final devices = _status?.devices;
     final linked = _state.storeLinked && _state.storeName != null;
     return [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(4, 4, 4, 16),
-        child: Text(
-          linked ? S.accountExplainStore(_store) : S.accountExplain,
-          style: Hip.sans(400, 14, color: Hip.muted, height: 1.5),
+      if (known)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 4, 4, 16),
+          child: Text(
+            linked ? S.accountExplainStore(_store) : S.accountExplain,
+            style: Hip.sans(400, 14, color: Hip.muted, height: 1.5),
+          ),
         ),
-      ),
       HipCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -767,20 +784,21 @@ class _AccountScreenState extends State<AccountScreen> {
               )
             else ...[
               Text(
-                S.accountNoNumberHere(_store),
-                style: Hip.sans(550, 14, color: Hip.ink, height: 1.45),
+                S.accountNoNumberTitle,
+                style: Hip.sans(650, 16, color: Hip.ink, height: 1.35),
               ),
-              if (!_enterNumber) ...[
-                const SizedBox(height: 10),
-                HipCta(
-                  S.accountEnterNumber,
-                  quiet: true,
-                  onTap: () => setState(() => _enterNumber = true),
-                ),
-              ],
+              const SizedBox(height: 6),
+              Text(
+                S.accountNoNumberBody(_store),
+                style: Hip.sans(400, 14, color: Hip.muted, height: 1.45),
+              ),
             ],
             const SizedBox(height: 8),
             _standing(),
+            if (!known && !_enterNumber) ...[
+              const SizedBox(height: 14),
+              HipCta(S.accountEnterNumber, onTap: _openNumberEntry),
+            ],
             if (_outOfTime) ...[
               const SizedBox(height: 6),
               Text(

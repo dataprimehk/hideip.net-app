@@ -592,7 +592,8 @@ void main() {
     await tester.pumpWidget(_host(state));
     await _settle(tester);
 
-    expect(find.text(S.accountNoNumberHere('App Store')), findsOneWidget);
+    expect(find.text(S.accountNoNumberTitle), findsOneWidget);
+    expect(find.text(S.accountNoNumberBody('App Store')), findsOneWidget);
     expect(find.textContaining('0319'), findsNothing);
     // The number can still be put in here, to see it again.
     expect(find.byType(TextField), findsNothing);

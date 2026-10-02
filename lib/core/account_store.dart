@@ -130,6 +130,7 @@ class AccountStore {
   static const kActive = 'premium_account_active';
   static const kStatusAtMs = 'premium_account_status_at_ms';
   static const kFreshNumber = 'premium_account_fresh_number';
+  static const kLastNumber = 'premium_account_last_number';
   static const kStoreLinked = 'premium_store_link_v2';
   static const kStoreLinkPaused = 'premium_store_link_paused_v2';
   static const kStoreLinkedElsewhere = 'premium_store_link_elsewhere_v2';
@@ -142,6 +143,14 @@ class AccountStore {
       _nonEmpty(await SecretPrefs.readString(kFreshNumber));
 
   Future<void> saveFreshNumber(String? number) => _secret(kFreshNumber, number);
+
+  /// The number this device was last signed in with, kept past a sign-out
+  /// so signing back in is one tap (the server cannot show it again). Only
+  /// deleting the number forgets it.
+  Future<String?> lastNumber() async =>
+      _nonEmpty(await SecretPrefs.readString(kLastNumber));
+
+  Future<void> saveLastNumber(String? number) => _secret(kLastNumber, number);
 
   Future<StoreLink> loadStoreLink() async {
     final prefs = await SharedPreferences.getInstance();

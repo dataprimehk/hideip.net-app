@@ -228,6 +228,7 @@ class AppState extends ChangeNotifier {
   Future<void> loadAccountForTesting() async {
     _account = await _accountStore.load();
     _freshNumber = await _accountStore.freshNumber();
+    _lastNumber = await _accountStore.lastNumber();
     _storeLink = await _accountStore.loadStoreLink();
   }
 
@@ -384,6 +385,7 @@ class AppState extends ChangeNotifier {
     }
     _account = await _accountStore.load();
     _freshNumber = await _accountStore.freshNumber();
+    _lastNumber = await _accountStore.lastNumber();
     _storeLink = await _accountStore.loadStoreLink();
     iapLog(
       '[iap] loaded: ${_premium.status.name} plan=${_premium.plan?.name}'
@@ -953,16 +955,19 @@ class AppState extends ChangeNotifier {
 
   /// The store the subscription on this device is in, by name, or null
   /// when this device has none.
-  String? get storeName => !hasStoreEntitlement
-      ? null
-      : defaultTargetPlatform == TargetPlatform.iOS
-          ? 'App Store'
-          : 'Google Play';
+  String? get storeName =>
+      !hasStoreEntitlement && !_storeLink.linked && !_storeLink.paused
+          ? null
+          : defaultTargetPlatform == TargetPlatform.iOS
+              ? 'App Store'
+              : 'Google Play';
 
   /// When the store charges next, when that is known. The server's reading
   /// of the store wins; failing that only iOS has a real date on the device
   /// (Play hands the app no expiry at all).
   DateTime? get storeRenews {
+    final server = _storeLink.renews;
+    if (server != null) return server;
     if (!hasStoreEntitlement) return null;
     return _storeLink.renews ??
         (defaultTargetPlatform == TargetPlatform.iOS
@@ -1001,9 +1006,11 @@ class AppState extends ChangeNotifier {
   /// date for it, or by the store's own word when that date has passed
   /// before the server heard of the renewal.
   bool get _storePaying {
-    if (!hasStoreEntitlement) return false;
+    // The server's reading of the store first: the device's own record may
+    // predate 1.2.0 and be gone.
     final renews = _storeLink.renews;
     if (renews != null && renews.isAfter(DateTime.now())) return true;
+    if (!hasStoreEntitlement) return false;
     return storeEntitlementLive;
   }
 
@@ -1134,6 +1141,21 @@ class AppState extends ChangeNotifier {
         renews: acc.storeExpires ?? _storeLink.renews,
       ),
     );
+    // The server has just read the store: when this device holds no record
+    // of its own subscription (one from before 1.2.0 that was lost, say),
+    // that reading becomes it, so billing shows and nothing is sold again.
+    final storeExp = acc.storeExpires;
+    if (storeExp != null &&
+        storeExp.isAfter(DateTime.now()) &&
+        (_storePremium == null ||
+            _storePremium!.status == PremiumStatus.none)) {
+      _storePremium = Premium(
+        status: PremiumStatus.active,
+        plan: acc.kind == 'yearly' ? PremiumPlan.yearly : PremiumPlan.monthly,
+        renews: storeExp,
+      );
+      await _storePremium!.save(key: Premium.storeKey);
+    }
     final wasOn = premium.isOn && _premium.source == PremiumSource.account;
     _premium = _accountPremium(creds.kind, creds.expires, active: true);
     await _premium.save();
@@ -1737,15 +1759,30 @@ class AppState extends ChangeNotifier {
       return result;
     }
     await _premiumRefreshGate.run(() async {
-      if (hasStoreEntitlement) {
+      if (hasStoreEntitlement || _storeLink.linked) {
         await _setStoreLink(_storeLink.copyWith(linked: false, paused: true));
       }
       await _forgetAccount();
+      // A deleted number is not offered again.
+      _lastNumber = null;
+      await _accountStore.saveLastNumber(null);
     });
     return AccountResult.ok;
   }
 
+  /// The number this device was last signed in with, for a one-tap sign-in
+  /// after a sign-out. Null once the number was deleted.
+  String? get lastAccountNumber => _account?.number ?? _lastNumber;
+  String? _lastNumber;
+
+  Future<void> _rememberNumber(String? number) async {
+    if (number == null || number == _lastNumber) return;
+    _lastNumber = number;
+    await _accountStore.saveLastNumber(number);
+  }
+
   Future<void> _forgetAccount() async {
+    await _rememberNumber(_account?.number);
     _account = null;
     _accountIssue = null;
     _freshNumber = null;
