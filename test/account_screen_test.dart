@@ -521,7 +521,13 @@ void main() {
     await _settle(tester);
 
     expect(find.text(S.accountExplain), findsOneWidget);
-    expect(find.text(S.pmBilling.toUpperCase()), findsNothing);
+    // Nothing pays for this number from here yet: a store subscription is
+    // offered, and nothing else under Billing.
+    expect(
+      find.text(S.accountSubscribeStore('Google Play')),
+      kPlansAvailable && state.plansOffered ? findsOneWidget : findsNothing,
+    );
+    expect(find.textContaining('subscription · renews'), findsNothing);
     expect(find.text('Desktop'), findsOneWidget);
     expect(find.text(S.accountRotate), findsOneWidget);
     expect(find.text(S.accountLinkDevice), findsOneWidget);
@@ -543,6 +549,7 @@ void main() {
 
     expect(find.text(S.accountExplainStore('App Store')), findsOneWidget);
     expect(find.text(S.accountExplain), findsNothing);
+    expect(find.text(S.accountSubscribeStore('App Store')), findsNothing);
     expect(find.text(S.pmBilling.toUpperCase()), findsOneWidget);
     expect(
       find.textContaining('App Store subscription · renews'),

@@ -845,6 +845,26 @@ class _AccountScreenState extends State<AccountScreen> {
           ],
         ),
       ],
+      // A number in force with nothing paying for it from this device: the
+      // store subscription is offered here, and its time goes onto it.
+      if (manage &&
+          !linked &&
+          !_state.hasStoreEntitlement &&
+          kPlansAvailable &&
+          _state.plansOffered) ...[
+        const HipSectionLabel(S.pmBilling),
+        HipListGroup(
+          children: [
+            HipListRow(
+              title: S.accountSubscribeStore(_store),
+              titleMaxLines: 2,
+              subtitle: S.accountSubscribeSub,
+              trailing: Icon(Icons.chevron_right, size: 17, color: Hip.muted2),
+              onTap: () => widget.nav.openPaywall(from: HipScreen.account),
+            ),
+          ],
+        ),
+      ],
       if (manage) ...[
         HipSectionLabel(S.accountDevices),
         if (_statusFailed)

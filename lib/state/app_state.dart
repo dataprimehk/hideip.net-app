@@ -1241,8 +1241,10 @@ class AppState extends ChangeNotifier {
         (!p.isOn || !_outlasts(p))) {
       notifyListeners();
       // A renewal goes onto the account it pays for right away, rather than
-      // waiting for the store's own word to reach the server.
-      if (_storeLink.linked && p.isOn && proof != null) {
+      // waiting for the store's own word to reach the server; so does a
+      // purchase made from the account screen, which is how a subscription
+      // starts adding time to a number already in force.
+      if ((_storeLink.linked || asked) && p.isOn && proof != null) {
         await _provisionV2Locked(proof);
       }
       return;

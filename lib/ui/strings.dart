@@ -979,6 +979,11 @@ abstract final class S {
       'This device signs out of the account number. Your $store subscription '
       'keeps adding time to it. Restore purchases signs this device back in.';
 
+  /// Starting a store subscription on a number that is already in force.
+  static String accountSubscribeStore(String store) => 'Subscribe with $store';
+  static const accountSubscribeSub =
+      'Adds time to this number and renews on its own.';
+
   /// Linking another device from the account.
   static const accountLinkDevice = 'Link a device';
   static const accountLinkCode = 'Show a code instead';
