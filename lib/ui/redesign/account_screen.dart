@@ -114,6 +114,9 @@ class _AccountScreenState extends State<AccountScreen> {
   bool _savedOnly = false;
   bool _revealed = false;
 
+  /// A device without its number asked to put it in.
+  bool _enterNumber = false;
+
   AccountStatus? _status;
   bool _loading = false;
   bool _statusFailed = false;
@@ -762,11 +765,20 @@ class _AccountScreenState extends State<AccountScreen> {
                   style: Hip.mono(600, 20, color: Hip.ink, letterSpacing: 1.2),
                 ),
               )
-            else
+            else ...[
               Text(
                 S.accountNoNumberHere(_store),
                 style: Hip.sans(550, 14, color: Hip.ink, height: 1.45),
               ),
+              if (!_enterNumber) ...[
+                const SizedBox(height: 10),
+                HipCta(
+                  S.accountEnterNumber,
+                  quiet: true,
+                  onTap: () => setState(() => _enterNumber = true),
+                ),
+              ],
+            ],
             const SizedBox(height: 8),
             _standing(),
             if (_outOfTime) ...[
@@ -830,6 +842,10 @@ class _AccountScreenState extends State<AccountScreen> {
             style: Hip.sans(500, 13.5, color: Hip.danger, height: 1.45),
           ),
         ),
+      if (!known && _enterNumber) ...[
+        const SizedBox(height: 16),
+        ..._signInForm(),
+      ],
       if (known) const HipSubnote(S.accountKeepSafe),
       if (_state.storeLinkedElsewhere)
         HipSubnote(S.accountLinkedElsewhere(_store)),

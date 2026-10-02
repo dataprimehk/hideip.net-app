@@ -594,6 +594,11 @@ void main() {
 
     expect(find.text(S.accountNoNumberHere('App Store')), findsOneWidget);
     expect(find.textContaining('0319'), findsNothing);
+    // The number can still be put in here, to see it again.
+    expect(find.byType(TextField), findsNothing);
+    await tester.tap(find.text(S.accountEnterNumber));
+    await tester.pump();
+    expect(find.byType(TextField), findsOneWidget);
     expect(find.text(S.accountReveal), findsNothing);
     expect(find.text(S.accountCopy), findsNothing);
     expect(find.text(S.accountKeepSafe), findsNothing);

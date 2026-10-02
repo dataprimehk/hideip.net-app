@@ -1340,24 +1340,32 @@ class AppState extends ChangeNotifier {
   }) async {
     final digits = normalizeAccountNumber(number);
     final held = _account;
-    // The same number again reuses this device's slot on the account.
+    // The same number again reuses this device's slot on the account. So
+    // does a device that is on an account without knowing its number (a
+    // restored purchase): it offers its token, and the server takes it only
+    // if the number is that account's.
     final same = held != null && held.number == digits;
+    final unnamed = held != null && held.number == null;
     final result = await _accounts.signIn(
       digits,
       name: name,
-      deviceToken: same ? held.deviceToken : null,
+      deviceToken: same || unnamed ? held.deviceToken : null,
     );
+    // The server kept this device's entry: it is the account already held.
+    final kept = unnamed &&
+        held.deviceId != null &&
+        result.deviceId == held.deviceId;
     switch (result.result) {
       case AccountResult.ok:
         await _premiumRefreshGate.run(() async {
-          if (!same) await _switchAccount();
+          if (!same && !kept) await _switchAccount();
           await _rejoinStoreLink();
           await _adoptAccount(
             AccountCredentials(
               number: digits,
               deviceToken: result.deviceToken,
               deviceId: result.deviceId,
-              kind: same ? held.kind : null,
+              kind: same || kept ? held.kind : null,
               expires: result.expires,
             ),
             result.subscriptionUrl!,

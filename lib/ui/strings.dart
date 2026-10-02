@@ -979,6 +979,9 @@ abstract final class S {
       'This device signed out of the account number. Restore your purchase '
       'to use Premium here again.';
 
+  /// A device on the account without its number, putting the number in.
+  static const accountEnterNumber = 'Enter your account number';
+
   /// Starting a store subscription on a number that is already in force.
   static String accountSubscribeStore(String store) => 'Subscribe with $store';
   static const accountSubscribeSub =
