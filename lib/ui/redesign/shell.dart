@@ -207,6 +207,8 @@ class _HipShellState extends State<HipShell>
   // the importer once the shell settles on a real screen.
   final AppLinks _appLinks = AppLinks();
   StreamSubscription<Uri>? _linkSub;
+  String? _importInitialName;
+  String? _pendingLinkName;
   String? _importInitialText; // consumed by the next import build
   String? _pendingLinkText; // held until the shell is past onboarding
   DeepLinkPairing? _pendingPairing; // same, for a device-link approval
@@ -301,9 +303,10 @@ class _HipShellState extends State<HipShell>
     }
     if (duringOnboarding) {
       _pendingLinkText = parsed.text;
+      _pendingLinkName = parsed.name;
       return;
     }
-    _openImportWith(parsed.text);
+    _openImportWith(parsed.text, name: parsed.name);
   }
 
   /// Shows the approval sheet for [pairing]. A phone with no live subscription
@@ -318,8 +321,9 @@ class _HipShellState extends State<HipShell>
     await showLinkApprovalSheet(context, state: state, pairing: pairing);
   }
 
-  void _openImportWith(String text) {
+  void _openImportWith(String text, {String? name}) {
     _importInitialText = text;
+    _importInitialName = name;
     _importFrom = HipScreen.home;
     _go(HipScreen.import);
   }
@@ -362,6 +366,7 @@ class _HipShellState extends State<HipShell>
     },
     openImport: () {
       _importInitialText = null;
+      _importInitialName = null;
       _importFrom = _screen ?? HipScreen.home;
       _go(HipScreen.import);
     },
@@ -459,6 +464,7 @@ class _HipShellState extends State<HipShell>
             nav: _nav,
             exitTo: _importFrom,
             initialText: _importInitialText,
+            initialName: _importInitialName,
           ),
         HipScreen.settings => SettingsScreen(state: state, nav: _nav),
         HipScreen.detail =>
@@ -540,9 +546,11 @@ class _HipShellState extends State<HipShell>
         // user finishes and the shell leaves the onboarding screen.
         if (_pendingLinkText != null && _screen != HipScreen.onboarding) {
           final text = _pendingLinkText!;
+          final name = _pendingLinkName;
           _pendingLinkText = null;
+          _pendingLinkName = null;
           WidgetsBinding.instance
-              .addPostFrameCallback((_) => _openImportWith(text));
+              .addPostFrameCallback((_) => _openImportWith(text, name: name));
         }
         // Same for a pairing link: the approval sheet needs a settled screen
         // underneath it, so it waits out onboarding too.

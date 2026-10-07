@@ -78,7 +78,12 @@ class SafeHttpFetcher {
         final request = http.Request('GET', uri)
           ..followRedirects = false
           ..persistentConnection = false
-          ..headers.addAll(headers)
+          ..headers.addAll({
+            for (final e in headers.entries)
+              if (!const {'x-hwid', 'x-device-os', 'x-ver-os', 'x-device-model'}.contains(e.key.toLowerCase()) ||
+                  (!isHideipHost(uri.host) && uri.origin == initial.origin))
+                e.key: e.value,
+          })
           ..headers['Accept-Encoding'] = 'identity';
         final response = await client.send(request).timeout(timeout);
 
@@ -253,4 +258,10 @@ bool _publicV4(List<int> b) {
   if (a == 203 && c == 0 && d == 113) return false;
   if (a >= 224) return false;
   return true;
+}
+
+/// Include subdomains and the DNS trailing-dot form.
+bool isHideipHost(String host) {
+  final normalized = host.toLowerCase().replaceFirst(RegExp(r'\.$'), '');
+  return normalized == 'hideip.net' || normalized.endsWith('.hideip.net');
 }

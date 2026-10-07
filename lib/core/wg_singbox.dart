@@ -39,14 +39,13 @@ class WgSingboxConfig {
               'address': profile.dns[i],
               'detour': endpointTag,
             },
-          {'tag': 'local', 'address': '223.5.5.5', 'detour': 'direct'},
-        ],
-        'rules': [
-          {'outbound': 'any', 'server': 'local'},
+          {'type': 'local', 'tag': 'local'},
+          if (profile.dns.isEmpty)
+            {'type': 'tls', 'tag': 'wg-dns-fallback', 'server': '1.1.1.1', 'detour': endpointTag},
         ],
         // Resolve through the tunnel so DNS cannot leak around it, and so the
         // answers reflect the exit country.
-        'final': profile.dns.isEmpty ? 'local' : 'wg-dns-0',
+        'final': profile.dns.isEmpty ? 'wg-dns-fallback' : 'wg-dns-0',
         'strategy': 'prefer_ipv4',
       },
       'inbounds': [
@@ -76,6 +75,7 @@ class WgSingboxConfig {
       ],
       'route': {
         'auto_detect_interface': true,
+        'default_domain_resolver': 'local',
         'final': endpointTag,
         'rules': [
           {'action': 'sniff'},

@@ -1,4 +1,6 @@
 import 'proxy_profile.dart';
+import 'wg_import.dart';
+import 'share_link_parser.dart';
 
 /// Parses a sing-box JSON subscription body (a JSON object with an `outbounds`
 /// array) into [ProxyProfile]s.
@@ -30,8 +32,7 @@ class SingboxJsonParser {
     Map<String, dynamic> doc, {
     required List<String> errors,
   }) {
-    final outbounds = doc['outbounds'];
-    if (outbounds is! List) return const [];
+    final outbounds = doc['outbounds'] is List ? doc['outbounds'] as List : const [];
 
     // Index every outbound by tag so detour references can be resolved, and
     // remember which tags are chain targets: an outbound another one detours
@@ -67,7 +68,63 @@ class SingboxJsonParser {
         errors.add('$label -> ${e is ProfileParseException ? e.message : e}');
       }
     }
+    final endpoints = doc['endpoints'];
+    if (endpoints is List) {
+      for (final raw in endpoints) {
+        if (raw is! Map || raw['type'] != 'wireguard') continue;
+        try {
+          out.add(_wireguard(raw));
+        } catch (_) {
+          errors.add('WireGuard -> Invalid endpoint configuration.');
+        }
+      }
+    }
     return out;
+  }
+
+  static ProxyProfile _wireguard(Map raw) {
+    final peers = raw['peers'];
+    if (peers is! List || peers.isEmpty || raw['address'] is! List) {
+      throw const ProfileParseException('WireGuard endpoint needs addresses and peers');
+    }
+    // Reuse the file parser's key, port and whole-device route checks. Build
+    // only client fields; never import a system interface, listen port or name.
+    String field(Object? value) {
+      final text = value is List ? value.join(', ') : (value ?? '').toString();
+      if (text.contains('\n') || text.contains('\r')) {
+        throw const ProfileParseException('Invalid WireGuard field');
+      }
+      return text;
+    }
+    final b = StringBuffer('[Interface]\n');
+    b.writeln('PrivateKey = ${field(raw['private_key'])}');
+    b.writeln('Address = ${field(raw['address'])}');
+    b.writeln('MTU = ${field(raw['mtu'])}');
+    for (final peer in peers) {
+      if (peer is! Map || peer['address'] == null || peer['port'] == null) {
+        throw const ProfileParseException('WireGuard peer needs an endpoint');
+      }
+      final host = field(peer['address']);
+      b.writeln('[Peer]');
+      b.writeln('PublicKey = ${field(peer['public_key'])}');
+      b.writeln('PresharedKey = ${field(peer['pre_shared_key'])}');
+      b.writeln('AllowedIPs = ${field(peer['allowed_ips'])}');
+      b.writeln('Endpoint = ${host.contains(':') ? '[$host]' : host}:${field(peer['port'])}');
+      b.writeln('PersistentKeepalive = ${field(peer['persistent_keepalive_interval'])}');
+    }
+    final p = WgImport.parseConfig(b.toString());
+    final built = (p.outbound['peers'] as List).cast<Map<String, dynamic>>();
+    for (var i = 0; i < peers.length; i++) {
+      final reserved = (peers[i] as Map)['reserved'];
+      if (reserved != null) {
+        if (reserved is! List || reserved.length != 3 ||
+            reserved.any((v) => v is! int || v < 0 || v > 255)) {
+          throw const ProfileParseException('Invalid WireGuard reserved bytes');
+        }
+        built[i]['reserved'] = List<int>.from(reserved);
+      }
+    }
+    return p.copyWith(name: (raw['tag'] ?? p.name).toString());
   }
 
   static ProxyProfile _one(
@@ -101,6 +158,9 @@ class SingboxJsonParser {
     // The outbound we store is this map without its own tag (re-assigned at
     // build time). detour references stay intact so chains rebuild correctly.
     final outbound = Map<String, dynamic>.from(o)..remove('tag');
+    if (type == 'hysteria2' && outbound['server_ports'] is List) {
+      outbound['server_ports'] = ShareLinkParser.parseHysteriaPorts((outbound['server_ports'] as List).join(','));
+    }
 
     return ProxyProfile(
       name: name,

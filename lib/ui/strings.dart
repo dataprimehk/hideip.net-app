@@ -1,3 +1,7 @@
+import 'dart:ui' show PlatformDispatcher;
+import '../core/subscription.dart';
+import '../core/user_subscription.dart';
+
 /// Every user-facing string in the app, in one place.
 ///
 /// Keys follow the vocabulary in `design/Screen Atlas 1.1.0.html`
@@ -25,6 +29,53 @@
 /// Each screen owns one section below. A new string is appended to the end
 /// of the section it belongs to, so the file never reshuffles under a diff.
 abstract final class S {
+  // These new provider diagnostics follow the system language. The existing
+  // interface currently has English strings only.
+  static String subscriptionSkipped(SubscriptionResult result, {String? language}) {
+    final parts = <String>[];
+    for (final entry in result.unsupported.entries) {
+      parts.add(_panelText(0, language).replaceAll('{n}', '${entry.value}').replaceAll('{type}', entry.key));
+    }
+    if (result.errors.length > result.unsupported.values.fold(0, (a, b) => a + b)) {
+      parts.add(_panelText(5, language));
+    }
+    if (result.placeholders > 0) parts.add(_panelText(6, language));
+    return parts.join(' ');
+  }
+
+  static String subscriptionFailure(SubscriptionFetchException error, {String? language}) {
+    final skipped = error.parsed == null ? '' : subscriptionSkipped(error.parsed!, language: language);
+    if (skipped.isNotEmpty) return skipped;
+    return _panelText(switch (error.reason) {
+      SubscriptionFailure.deviceLimit => 1,
+      SubscriptionFailure.hwidRequired => 2,
+      SubscriptionFailure.placeholder => 6,
+      SubscriptionFailure.empty || SubscriptionFailure.noSupportedProfiles => 3,
+      SubscriptionFailure.http => 4,
+    }, language);
+  }
+
+  static String unsupportedProfile(String type) => _panelText(0, null)
+      .replaceAll('{n}', '1').replaceAll('{type}', type);
+
+  static String _panelText(int index, String? language) =>
+      (_panelMessages[language ?? PlatformDispatcher.instance.locale.languageCode] ?? _panelMessages['en']!)[index];
+
+  static const _panelMessages = <String, List<String>>{
+    'en': ['{n} servers skipped: {type} is not supported.', 'Your provider has reached its device limit. Remove a device in the provider’s bot or panel. Saved servers were kept.', 'The provider requires a supported subscription ID (HWID). Contact your provider. Saved servers were kept.', 'The provider returned no supported servers. Saved servers were kept.', 'The subscription could not be refreshed. Saved servers were kept.', 'Some invalid server entries were skipped.', 'The provider returned a status placeholder instead of a server. Check access and device limits in its bot or panel.'],
+    'sr': ['Preskočeno servera: {n}. Tip {type} nije podržan.', 'Dostignut je limit uređaja kod prodavca. Uklonite uređaj u njegovom botu ili panelu. Postojeći serveri su sačuvani.', 'Prodavac zahteva podržani ID pretplate (HWID). Obratite se prodavcu. Postojeći serveri su sačuvani.', 'Prodavac nije vratio podržane servere. Postojeći serveri su sačuvani.', 'Pretplata nije osvežena. Postojeći serveri su sačuvani.', 'Neispravni zapisi servera su preskočeni.', 'Prodavac je vratio statusnu poruku umesto servera. Proverite pristup i limit uređaja u njegovom botu ili panelu.'],
+    'ru': ['Пропущено серверов: {n}. Тип {type} не поддерживается.', 'Достигнут лимит устройств провайдера. Удалите устройство в его боте или панели. Сохранённые серверы не изменены.', 'Провайдер требует поддерживаемый ID подписки (HWID). Обратитесь к провайдеру. Сохранённые серверы не изменены.', 'Провайдер не вернул поддерживаемых серверов. Сохранённые серверы не изменены.', 'Не удалось обновить подписку. Сохранённые серверы не изменены.', 'Некорректные записи серверов пропущены.', 'Провайдер вернул сообщение о статусе вместо сервера. Проверьте доступ и лимит устройств в его боте или панели.'],
+    'fa': ['{n} سرور رد شد: {type} پشتیبانی نمی‌شود.', 'تعداد دستگاه‌ها به سقف مجاز رسیده است. یک دستگاه را در ربات یا پنل ارائه‌دهنده حذف کنید. سرورهای ذخیره‌شده حفظ شدند.', 'ارائه‌دهنده به شناسه اشتراک معتبر (HWID) نیاز دارد. با او تماس بگیرید. سرورهای ذخیره‌شده حفظ شدند.', 'سرور پشتیبانی‌شده‌ای دریافت نشد. سرورهای ذخیره‌شده حفظ شدند.', 'اشتراک به‌روز نشد. سرورهای ذخیره‌شده حفظ شدند.', 'ورودی‌های نامعتبر سرور رد شدند.', 'ارائه‌دهنده به‌جای سرور پیام وضعیت فرستاد. دسترسی و محدودیت دستگاه را در ربات یا پنل او بررسی کنید.'],
+    'zh': ['已跳过 {n} 个服务器：不支持 {type}。', '已达到服务商的设备上限。请在其机器人或面板中移除设备。已保留现有服务器。', '服务商要求有效的订阅标识（HWID）。请联系服务商。已保留现有服务器。', '服务商未返回受支持的服务器。已保留现有服务器。', '无法刷新订阅。已保留现有服务器。', '已跳过无效的服务器条目。', '服务商返回了状态信息而非服务器。请在其机器人或面板中检查访问权限和设备限制。'],
+    'ar': ['تم تخطي {n} من الخوادم: النوع {type} غير مدعوم.', 'تم بلوغ حد الأجهزة لدى المزود. احذف جهازًا من بوت المزود أو لوحته. تم الاحتفاظ بالخوادم المحفوظة.', 'يتطلب المزود معرّف اشتراك مدعومًا (HWID). تواصل معه. تم الاحتفاظ بالخوادم المحفوظة.', 'لم يُرجع المزود خوادم مدعومة. تم الاحتفاظ بالخوادم المحفوظة.', 'تعذر تحديث الاشتراك. تم الاحتفاظ بالخوادم المحفوظة.', 'تم تخطي إدخالات خوادم غير صالحة.', 'أرجع المزود رسالة حالة بدلًا من خادم. تحقق من الوصول وحد الأجهزة في البوت أو اللوحة.'],
+    'tr': ['{n} sunucu atlandı: {type} desteklenmiyor.', 'Sağlayıcının cihaz sınırına ulaşıldı. Sağlayıcının botundan veya panelinden bir cihazı kaldırın. Kayıtlı sunucular korundu.', 'Sağlayıcı desteklenen bir abonelik kimliği (HWID) istiyor. Sağlayıcınıza başvurun. Kayıtlı sunucular korundu.', 'Sağlayıcı desteklenen sunucu döndürmedi. Kayıtlı sunucular korundu.', 'Abonelik yenilenemedi. Kayıtlı sunucular korundu.', 'Geçersiz sunucu kayıtları atlandı.', 'Sağlayıcı sunucu yerine durum mesajı döndürdü. Botunda veya panelinde erişimi ve cihaz sınırlarını kontrol edin.'],
+    'de': ['{n} Server übersprungen: {type} wird nicht unterstützt.', 'Das Gerätelimit des Anbieters wurde erreicht. Entfernen Sie ein Gerät im Bot oder Panel des Anbieters. Gespeicherte Server wurden beibehalten.', 'Der Anbieter benötigt eine unterstützte Abonnement-ID (HWID). Kontaktieren Sie ihn. Gespeicherte Server wurden beibehalten.', 'Der Anbieter hat keine unterstützten Server geliefert. Gespeicherte Server wurden beibehalten.', 'Das Abonnement konnte nicht aktualisiert werden. Gespeicherte Server wurden beibehalten.', 'Ungültige Servereinträge wurden übersprungen.', 'Der Anbieter hat eine Statusmeldung statt eines Servers geliefert. Prüfen Sie Zugang und Gerätelimit in seinem Bot oder Panel.'],
+    'es': ['Se omitieron {n} servidores: {type} no es compatible.', 'Se alcanzó el límite de dispositivos del proveedor. Elimine un dispositivo en su bot o panel. Se conservaron los servidores guardados.', 'El proveedor requiere un ID de suscripción compatible (HWID). Contacte con él. Se conservaron los servidores guardados.', 'El proveedor no devolvió servidores compatibles. Se conservaron los servidores guardados.', 'No se pudo actualizar la suscripción. Se conservaron los servidores guardados.', 'Se omitieron entradas de servidor no válidas.', 'El proveedor devolvió un mensaje de estado en lugar de un servidor. Revise el acceso y el límite de dispositivos en su bot o panel.'],
+    'fr': ['{n} serveurs ignorés : {type} n’est pas pris en charge.', 'La limite d’appareils du fournisseur est atteinte. Supprimez un appareil dans son bot ou panneau. Les serveurs enregistrés ont été conservés.', 'Le fournisseur exige un identifiant d’abonnement compatible (HWID). Contactez-le. Les serveurs enregistrés ont été conservés.', 'Le fournisseur n’a renvoyé aucun serveur compatible. Les serveurs enregistrés ont été conservés.', 'Impossible d’actualiser l’abonnement. Les serveurs enregistrés ont été conservés.', 'Des entrées de serveur invalides ont été ignorées.', 'Le fournisseur a renvoyé un message d’état au lieu d’un serveur. Vérifiez l’accès et la limite d’appareils dans son bot ou panneau.'],
+    'pt': ['{n} servidores ignorados: {type} não é suportado.', 'O limite de dispositivos do fornecedor foi atingido. Remova um dispositivo no bot ou painel dele. Os servidores guardados foram mantidos.', 'O fornecedor exige um ID de assinatura suportado (HWID). Contacte-o. Os servidores guardados foram mantidos.', 'O fornecedor não devolveu servidores suportados. Os servidores guardados foram mantidos.', 'Não foi possível atualizar a assinatura. Os servidores guardados foram mantidos.', 'Foram ignoradas entradas de servidor inválidas.', 'O fornecedor devolveu uma mensagem de estado em vez de um servidor. Verifique o acesso e o limite de dispositivos no bot ou painel dele.'],
+    'hi': ['{n} सर्वर छोड़े गए: {type} समर्थित नहीं है।', 'प्रदाता की डिवाइस सीमा पूरी हो गई है। उसके बॉट या पैनल से एक डिवाइस हटाएँ। सहेजे गए सर्वर सुरक्षित हैं।', 'प्रदाता को समर्थित सदस्यता ID (HWID) चाहिए। उससे संपर्क करें। सहेजे गए सर्वर सुरक्षित हैं।', 'प्रदाता ने कोई समर्थित सर्वर नहीं भेजा। सहेजे गए सर्वर सुरक्षित हैं।', 'सदस्यता अपडेट नहीं हो सकी। सहेजे गए सर्वर सुरक्षित हैं।', 'अमान्य सर्वर प्रविष्टियाँ छोड़ दी गईं।', 'प्रदाता ने सर्वर के बजाय स्थिति संदेश भेजा। उसके बॉट या पैनल में पहुँच और डिवाइस सीमा जाँचें।'],
+  };
+
   // ---------------------------------------------------------------------
   // Vocabulary (Atlas `vocabulary[]`). The words the whole product agrees on.
   // ---------------------------------------------------------------------

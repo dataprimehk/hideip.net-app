@@ -653,7 +653,42 @@ class HideipVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         }
     }
 
-    override fun localDNSTransport(): io.nekohasekai.libbox.LocalDNSTransport? = null
+    // Android has no usable resolv.conf for the Go resolver. Resolve bootstrap
+    // hostnames using the physical network's system resolver, never the VPN.
+    override fun localDNSTransport(): io.nekohasekai.libbox.LocalDNSTransport =
+        object : io.nekohasekai.libbox.LocalDNSTransport {
+            override fun raw(): Boolean = false
+
+            override fun lookup(
+                ctx: io.nekohasekai.libbox.ExchangeContext?,
+                network: String?,
+                domain: String?,
+            ) {
+                requireNotNull(ctx)
+                require(!domain.isNullOrBlank())
+                val cm = connectivityManager ?: throw java.io.IOException("No physical network")
+                fun usable(n: Network): Boolean {
+                    val caps = cm.getNetworkCapabilities(n) ?: return false
+                    return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                        caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+                }
+                val physical = cm.activeNetwork?.takeIf(::usable)
+                    ?: cm.allNetworks.firstOrNull(::usable)
+                    ?: throw java.io.IOException("No physical network")
+                val addresses = physical.getAllByName(domain).filter {
+                    when (network) {
+                        "ip4" -> it is java.net.Inet4Address
+                        "ip6" -> it is java.net.Inet6Address
+                        else -> true
+                    }
+                }
+                ctx.success(addresses.joinToString("\n") { it.hostAddress!!.substringBefore('%') })
+            }
+
+            override fun exchange(ctx: io.nekohasekai.libbox.ExchangeContext?, message: ByteArray?) {
+                throw UnsupportedOperationException("Only bootstrap address lookups are supported")
+            }
+        }
 
     override fun systemCertificates(): StringIterator? = null
 

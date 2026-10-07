@@ -49,6 +49,7 @@ class ShareLinkParser {
     if (WgImport.looksLikeConfig(link)) return WgImport.parseConfig(link);
     if (link.startsWith('#') || link.startsWith('//')) return null;
     final scheme = link.split('://').first.toLowerCase();
+    if (isPanelPlaceholder(link)) return null;
     switch (scheme) {
       case 'vless':
         return _parseVless(link);
@@ -97,7 +98,9 @@ class ShareLinkParser {
     final flow = q['flow'];
     if (flow != null && flow.isNotEmpty) outbound['flow'] = flow;
     if ((q['encryption'] ?? 'none') != 'none') {
-      // VLESS spec only allows "none"; ignore anything else silently.
+      if (q['encryption']!.isNotEmpty) {
+        throw const UnsupportedProfileException('VLESS encryption (ML-KEM)');
+      }
     }
 
     final tls = _buildTls(q, defaultSni: _host(uri));
@@ -190,8 +193,11 @@ class ShareLinkParser {
       // SIP002: ss://base64(method:pass)@host:port
       final atIdx = body.lastIndexOf('@');
       final userPart = body.substring(0, atIdx);
-      final hostPart = body.substring(atIdx + 1);
-      final creds = utf8.decode(base64.decode(_padBase64(userPart)));
+      final hostPart = body.substring(atIdx + 1).replaceFirst(RegExp(r'/$'), '');
+      final decodedUser = Uri.decodeComponent(userPart);
+      final creds = decodedUser.contains(':')
+          ? decodedUser
+          : utf8.decode(base64.decode(_padBase64(decodedUser)));
       final ci = creds.indexOf(':');
       if (ci < 0) throw const ProfileParseException('ss: bad credentials');
       method = creds.substring(0, ci);
@@ -215,12 +221,18 @@ class ShareLinkParser {
       port = hp.$2;
     }
 
+    // 3x-ui emits an empty server PSK for the single-key ChaCha20 method.
+    if (method == '2022-blake3-chacha20-poly1305' && password.startsWith(':')) {
+      password = password.substring(1);
+    }
     final ssOutbound = <String, dynamic>{
       'type': 'shadowsocks',
       'server': host,
       'server_port': port,
       'method': method,
       'password': password,
+      if (_isTrue(Uri.splitQueryString(query ?? '')['uot']))
+        'udp_over_tcp': {'enabled': true},
     };
 
     // ShadowTLS: ss link carries ?plugin=shadow-tls;host=...;password=...;version=3
@@ -292,6 +304,11 @@ class ShareLinkParser {
       'server_port': _port(uri),
       'password': password,
     };
+
+    final ports = q['mport'] ?? q['mports'];
+    if (ports != null && ports.isNotEmpty) {
+      outbound['server_ports'] = parseHysteriaPorts(ports);
+    }
 
     final obfs = q['obfs'];
     if (obfs != null && obfs.isNotEmpty) {
@@ -524,37 +541,70 @@ class ShareLinkParser {
           if ((q['host'] ?? '').isNotEmpty) 'host': q['host'],
           if ((q['path'] ?? '').isNotEmpty) 'path': q['path'],
         };
+      case 'quic':
+        if ((q['quicSecurity'] ?? 'none') != 'none' ||
+            (q['key'] ?? '').isNotEmpty ||
+            !const ['', 'none'].contains(q['headerType'] ?? '')) {
+          throw const UnsupportedProfileException('QUIC obfuscation');
+        }
+        return {'type': 'quic'};
+      case '':
       case 'tcp':
+        if (!const ['', 'none'].contains(q['headerType'] ?? '')) {
+          throw const UnsupportedProfileException('TCP header obfuscation');
+        }
+        return null;
       default:
-        return null; // plain TCP needs no transport object
+        throw UnsupportedProfileException(safeFeature(type));
     }
   }
 
   /// vmess JSON variant transport (keys: net, path, host, type/grpc serviceName).
   static Map<String, dynamic>? _vmessTransport(Map<String, dynamic> j) {
-    final net = (j['net'] ?? 'tcp').toString().toLowerCase();
     String s(String k) => (j[k] ?? '').toString();
-    switch (net) {
-      case 'ws':
-        return {
-          'type': 'ws',
-          if (s('path').isNotEmpty) 'path': s('path'),
-          if (s('host').isNotEmpty) 'headers': {'Host': s('host')},
-        };
-      case 'grpc':
-        return {
-          'type': 'grpc',
-          if (s('path').isNotEmpty) 'service_name': s('path'),
-        };
-      case 'h2':
-        return {
-          'type': 'http',
-          if (s('host').isNotEmpty) 'host': s('host').split(','),
-          if (s('path').isNotEmpty) 'path': s('path'),
-        };
-      default:
-        return null;
+    return _buildTransport({
+      'type': s('net').isEmpty ? 'tcp' : s('net'),
+      'host': s('host'),
+      'path': s('path'),
+      'serviceName': s('serviceName').isEmpty ? s('path') : s('serviceName'),
+      'headerType': s('type'),
+      if (s('net') == 'quic') 'quicSecurity': s('host').isEmpty ? 'none' : s('host'),
+      if (s('net') == 'quic') 'key': s('path'),
+    });
+  }
+
+  /// Do not expose arbitrary provider strings or credentials in diagnostics.
+  static String safeFeature(String value) =>
+      RegExp(r'^[a-zA-Z0-9_-]{1,24}$').hasMatch(value) ? value : 'unknown transport';
+
+  /// Synthetic subscription status rows must never become dialable servers.
+  static bool isPanelPlaceholder(String link) {
+    try {
+      final u = Uri.parse(link);
+      if (!const ['vless', 'trojan'].contains(u.scheme)) return false;
+      if (u.queryParameters['sni'] == 'fake_ip_for_sub_link') return true;
+      final label = Uri.decodeComponent(u.fragment).toLowerCase();
+      return const ['0.0.0.0', '127.0.0.1'].contains(u.host) && u.port == 1 &&
+          RegExp(r'usage|expire|traffic|app.*not.*supported|device.*limit').hasMatch(label);
+    } catch (_) {
+      return false;
     }
+  }
+
+  static List<String> parseHysteriaPorts(String value) {
+    final result = <String>[];
+    for (final raw in value.split(',')) {
+      final part = raw.trim();
+      final match = RegExp(r'^(\d+)(?:[-:](\d+))?$').firstMatch(part);
+      if (match == null) throw const ProfileParseException('Invalid Hysteria2 port range');
+      final start = int.parse(match[1]!);
+      final end = int.parse(match[2] ?? match[1]!);
+      if (start < 1 || end > 65535 || start > end) {
+        throw const ProfileParseException('Invalid Hysteria2 port range');
+      }
+      result.add(match[2] == null ? '$start' : '$start:$end');
+    }
+    return result;
   }
 
   static ProxyProfile _profile(String proto, Uri uri, Map<String, dynamic> outbound) {
@@ -572,7 +622,7 @@ class ShareLinkParser {
 
   static Uri _uri(String link) {
     final uri = Uri.tryParse(link);
-    if (uri == null) throw ProfileParseException('Malformed URL: $link');
+    if (uri == null) throw const ProfileParseException('Malformed proxy URL');
     return uri;
   }
 

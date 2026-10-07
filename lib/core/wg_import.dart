@@ -194,6 +194,9 @@ class WgImport {
       throw const ProfileParseException('malformed wireguard:// link');
     }
     final q = uri.queryParameters;
+    if (q.containsKey('pk') || q.containsKey('peer_pk')) {
+      throw const UnsupportedProfileException('Hiddify WireGuard link');
+    }
 
     final privateKey = Uri.decodeComponent(uri.userInfo).isNotEmpty
         ? Uri.decodeComponent(uri.userInfo)

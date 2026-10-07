@@ -36,11 +36,8 @@ class SingboxConfig {
       'log': {'level': logLevel, 'timestamp': true},
       'dns': {
         'servers': [
-          {'tag': 'remote', 'address': 'tls://1.1.1.1'},
-          {'tag': 'local', 'address': '223.5.5.5', 'detour': 'direct'},
-        ],
-        'rules': [
-          {'outbound': 'any', 'server': 'local'},
+          {'type': 'tls', 'tag': 'remote', 'server': '1.1.1.1', 'detour': proxyTag},
+          {'type': 'local', 'tag': 'local'},
         ],
         'final': 'remote',
         'strategy': 'prefer_ipv4',
@@ -73,6 +70,7 @@ class SingboxConfig {
       ],
       'route': {
         'auto_detect_interface': true,
+        'default_domain_resolver': 'local',
         'final': proxyTag,
         'rules': [
           // Keep DNS queries and private ranges off the tunnel sanely.

@@ -64,7 +64,7 @@ ImportPayload? classifyImportPayload(String raw) {
   // neither rule above catches it. Opened through the file picker it is the
   // same body a provider would send, and the subscription parser already
   // reads an `outbounds` array; without this branch it is refused outright.
-  if (text.startsWith('{') && text.contains('"outbounds"')) {
+  if (text.startsWith('{') && (text.contains('"outbounds"') || text.contains('"endpoints"'))) {
     return const ImportPayload(ImportPayloadKind.subscriptionBlob);
   }
 

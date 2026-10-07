@@ -57,6 +57,8 @@ class Subscription {
 
     final profiles = <ProxyProfile>[];
     final errors = <String>[];
+    final unsupported = <String, int>{};
+    var placeholders = 0;
     if (lines.length > maxEntries) {
       throw const SubscriptionLimitException(
         'The subscription has too many entries.',
@@ -67,6 +69,10 @@ class Subscription {
       final l = line.trim();
       if (l.isEmpty) continue;
       try {
+        if (ShareLinkParser.isPanelPlaceholder(l)) {
+          placeholders++;
+          continue;
+        }
         final p = ShareLinkParser.parse(l);
         if (p != null) {
           profiles.add(p);
@@ -78,12 +84,17 @@ class Subscription {
         }
       } catch (e) {
         if (e is SubscriptionLimitException) rethrow;
+        if (e is UnsupportedProfileException) {
+          unsupported.update(e.feature, (n) => n + 1, ifAbsent: () => 1);
+        }
         if (errors.length < maxErrors) {
-          errors.add('Line ${index + 1} -> Could not parse profile.');
+          errors.add(e is UnsupportedProfileException
+              ? 'Line ${index + 1} -> ${e.message}'
+              : 'Line ${index + 1} -> Could not parse profile.');
         }
       }
     }
-    return SubscriptionResult(profiles: profiles, errors: errors);
+    return SubscriptionResult(profiles: profiles, errors: errors, unsupported: unsupported, placeholders: placeholders);
   }
 
   /// Parsing can involve third-party JSON/YAML. Keep that work off the UI
@@ -100,7 +111,7 @@ class Subscription {
     if (!body.startsWith('{')) return null;
     try {
       final decoded = jsonDecode(body);
-      if (decoded is Map<String, dynamic> && decoded['outbounds'] is List) {
+      if (decoded is Map<String, dynamic> && (decoded['outbounds'] is List || decoded['endpoints'] is List)) {
         _validateTree(decoded);
         return decoded;
       }
@@ -115,7 +126,6 @@ class Subscription {
   /// top-level `proxies:` list, else null.
   static Map<dynamic, dynamic>? _tryClashYaml(String body) {
     // A link list / base64 blob is not YAML we care about; skip cheaply.
-    if (body.contains('://')) return null;
     if (!body.contains('proxies:')) return null;
     _checkYamlIndentation(body);
     try {
@@ -315,7 +325,9 @@ class SubscriptionLimitException implements Exception {
 class SubscriptionResult {
   final List<ProxyProfile> profiles;
   final List<String> errors;
-  const SubscriptionResult({required this.profiles, required this.errors});
+  final Map<String, int> unsupported;
+  final int placeholders;
+  const SubscriptionResult({required this.profiles, required this.errors, this.unsupported = const {}, this.placeholders = 0});
 
   bool get isEmpty => profiles.isEmpty;
 }

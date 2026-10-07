@@ -30,6 +30,7 @@ import '../core/sub_info.dart';
 import '../core/subscription.dart';
 import '../core/ui_prefs.dart';
 import '../core/user_subscription.dart';
+import '../core/subscription_identity.dart';
 import '../core/votes.dart';
 import '../core/wg_keys.dart';
 import '../core/wg_profile.dart';
@@ -94,9 +95,10 @@ String fmtDur(Duration d) {
 /// profile, the connection state, the current public IP, and bridges the
 /// parser/config to [VpnController]. Backed by [ProfileStore] for persistence.
 class AppState extends ChangeNotifier {
-  AppState({AccountService? accounts, ProvisioningService? provisioning})
+  AppState({AccountService? accounts, ProvisioningService? provisioning, UserSubscriptionService? userSubscriptions})
       : _accounts = accounts ?? AccountService(),
-        _provisioning = provisioning ?? ProvisioningService();
+        _provisioning = provisioning ?? ProvisioningService(),
+        _userSubs = userSubscriptions ?? UserSubscriptionService();
 
   final List<ProxyProfile> _profiles = [];
   int _selected = -1;
@@ -114,7 +116,29 @@ class AppState extends ChangeNotifier {
   final PurchaseService _purchases = PurchaseService();
   final ProvisioningService _provisioning;
   final AsyncGate _premiumRefreshGate = AsyncGate();
-  final UserSubscriptionService _userSubs = UserSubscriptionService();
+  final UserSubscriptionService _userSubs;
+  final Map<String, String> _subscriptionNotices = {};
+  String? subscriptionNotice(String url) => _subscriptionNotices[url];
+
+  Future<SubFetch?> _readUserSubscription(String url) async {
+    try {
+      final result = await _userSubs.read(url);
+      final notice = result.parsed == null ? '' : S.subscriptionSkipped(result.parsed!);
+      _subscriptionNotices[url] = notice;
+      if (notice.isNotEmpty) showToast(notice);
+      return result;
+    } on SubscriptionFetchException catch (e) {
+      final message = S.subscriptionFailure(e);
+      _subscriptionNotices[url] = message;
+      showToast(message);
+      return null;
+    } catch (_) {
+      final message = S.subscriptionFailure(const SubscriptionFetchException(SubscriptionFailure.http));
+      _subscriptionNotices[url] = message;
+      showToast(message);
+      return null;
+    }
+  }
   // Plan metadata (data used, expiry, provider name/links) keyed by
   // subscription URL, captured from the provider's response headers on refresh.
   final Map<String, SubInfo> _subInfos = {};
@@ -1818,11 +1842,16 @@ class AppState extends ChangeNotifier {
 
   /// On launch: re-pull every subscription URL the user has imported and swap
   /// in the fresh server lists (providers rotate servers behind their URL).
-  /// A transient failure keeps the current servers; only a definitive 404/410
-  /// clears a group, since the provider retired that link.
+  /// Any failed or empty response keeps current servers, including a 404
+  /// because device-limited panels use it for denied subscriptions.
   Future<void> _refreshUserSubscriptions() async {
+    await SubscriptionIdentity.retain(userSubUrls(_profiles));
     for (final url in userSubUrls(_profiles)) {
-      final result = await _userSubs.fetch(url);
+      final result = await _readUserSubscription(url);
+      if (!userSubUrls(_profiles).contains(url)) {
+        await SubscriptionIdentity.remove(url);
+        continue;
+      }
       if (result == null) continue; // transient failure: keep what we have
       if (result.info != null) {
         _subInfos[url] = result.info!;
@@ -1981,7 +2010,11 @@ class AppState extends ChangeNotifier {
   /// be reached: a failure keeps every server already on the device, because
   /// nothing should be dropped over a provider being briefly unreachable.
   Future<int?> refreshSubscription(String subUrl) async {
-    final result = await _userSubs.fetch(subUrl);
+    final result = await _readUserSubscription(subUrl);
+    if (!userSubUrls(_profiles).contains(subUrl)) {
+      await SubscriptionIdentity.remove(subUrl);
+      return null;
+    }
     if (result == null) return null;
     final info = result.info;
     if (info != null) await SubInfoStore.put(subUrl, info);
@@ -2055,7 +2088,12 @@ class AppState extends ChangeNotifier {
 
   Future<void> remove(int index) async {
     if (index < 0 || index >= _profiles.length) return;
-    _profiles.removeAt(index);
+    final removed = _profiles.removeAt(index);
+    final subUrl = removed.subUrl;
+    if (subUrl != null && !userSubUrls(_profiles).contains(subUrl)) {
+      await SubscriptionIdentity.remove(subUrl);
+      _subscriptionNotices.remove(subUrl);
+    }
     if (_selected == index) {
       _selected = _profiles.isEmpty ? -1 : 0;
     } else if (_selected > index) {

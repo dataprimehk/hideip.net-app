@@ -4,6 +4,11 @@
 /// a "tag"; the tag is assigned by [SingboxConfig] when the full config is built,
 /// so a profile can be reused under different tags. [name] is the human label
 /// (from the link fragment or subscription), [protocol] the scheme (vless, etc.).
+class UnsupportedProfileException extends ProfileParseException {
+  final String feature;
+  const UnsupportedProfileException(this.feature) : super('Unsupported: $feature');
+}
+
 class ProxyProfile {
   final String name;
   final String protocol;

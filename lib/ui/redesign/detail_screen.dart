@@ -290,6 +290,11 @@ class _DetailScreenState extends State<DetailScreen> {
                   place: _placeLine(loc),
                   onLocation: _pickLocation,
                 ),
+              if (subUrl != null && (widget.state.subscriptionNotice(subUrl)?.isNotEmpty ?? false))
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Text(widget.state.subscriptionNotice(subUrl)!),
+                ),
               if (advanced) ...[
                 const HipSectionLabel(S.gRawConfig),
                 Container(

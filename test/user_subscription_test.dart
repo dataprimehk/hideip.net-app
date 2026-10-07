@@ -3,6 +3,7 @@ import 'package:hideip_vpn/core/proxy_profile.dart';
 import 'package:hideip_vpn/core/user_subscription.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 ProxyProfile _p(String name,
         {String server = '1.2.3.4', bool premium = false, String? subUrl}) =>
@@ -16,6 +17,8 @@ ProxyProfile _p(String name,
         subUrl: subUrl);
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   const url = 'https://provider.example/sub/abc';
 
   group('fetch', () {
@@ -69,14 +72,13 @@ void main() {
       expect(await svc.fetch(url), isNull);
     });
 
-    test('returns empty profiles only when the provider retired the link',
+    test('keeps cached profiles on ambiguous retired or device-denied status',
         () async {
       for (final code in [404, 410]) {
         final svc = UserSubscriptionService(
             client: MockClient((req) async => http.Response('', code)));
         final res = await svc.fetch(url);
-        expect(res, isNotNull);
-        expect(res!.profiles, isEmpty);
+        expect(res, isNull);
       }
     });
   });

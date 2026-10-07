@@ -5,7 +5,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../core/app_version.dart';
 import '../../core/camera_permission.dart';
 import '../../core/deep_link.dart';
 import '../../core/haptics.dart';
@@ -14,7 +13,7 @@ import '../../core/ip_lookup.dart';
 import '../../core/location.dart';
 import '../../core/ping.dart';
 import '../../core/proxy_profile.dart';
-import '../../core/safe_http.dart';
+import '../../core/user_subscription.dart';
 import '../../core/share_link_parser.dart';
 import '../../core/srv_naming.dart';
 import '../../core/srv_suggest.dart';
@@ -79,7 +78,10 @@ class ImportHooks {
   /// Where the parsed endpoint sits, for the suggested name and the flag.
   final Future<IpLookupData?> Function(String host) geo;
 
+  final Future<SubFetch> Function(String) fetchSubscription;
+
   const ImportHooks({
+    this.fetchSubscription = _fetchSubscription,
     this.camStatus = CameraPermission.status,
     this.camRequest = CameraPermission.request,
     this.openCamSettings = CameraPermission.openSettings,
@@ -91,6 +93,8 @@ class ImportHooks {
     this.geo = IpLookup.geoFor,
   });
 }
+
+Future<SubFetch> _fetchSubscription(String url) => UserSubscriptionService().read(url);
 
 Future<PingResult> _ping(String host, int port) =>
     Ping.measure(host, port, timeout: const Duration(seconds: 3));
@@ -114,6 +118,7 @@ class ImportScreen extends StatefulWidget {
   /// screen still shows the detected preview and waits for the user to tap
   /// Import; it never auto-imports.
   final String? initialText;
+  final String? initialName;
 
   final ImportHooks hooks;
 
@@ -123,6 +128,7 @@ class ImportScreen extends StatefulWidget {
     required this.nav,
     this.exitTo = HipScreen.home,
     this.initialText,
+    this.initialName,
     this.hooks = const ImportHooks(),
   });
 
@@ -142,6 +148,9 @@ class _ImportScreenState extends State<ImportScreen> {
   bool _qr = false;
   bool _pasteDenied = false;
   String? _error;
+  String _notice = '';
+  String? _fetchedUrl;
+  SubInfo? _pendingInfo;
 
   // Parse progress: which of [_steps] are done / active.
   List<String> _steps = const [];
@@ -266,6 +275,9 @@ class _ImportScreenState extends State<ImportScreen> {
       _syncBackClaim();
       _stepDone = 0;
       _error = null;
+      _notice = '';
+      _pendingInfo = null;
+      _fetchedUrl = null;
       _isSubscription = isSub;
       _steps = [
         isSub ? S.e5FetchSub : S.e5ReadLink,
@@ -280,30 +292,23 @@ class _ImportScreenState extends State<ImportScreen> {
       List<ProxyProfile> profiles;
       if (isSub &&
           input.startsWith(RegExp(r'https?://', caseSensitive: false))) {
-        final res = await SafeHttpFetcher().get(
-          Uri.parse(input),
-          headers: subscriptionHeaders,
-          timeout: const Duration(seconds: 12),
-        );
-        if (res.statusCode != 200) throw S.eSubStatus(res.statusCode);
-        final parsed = await Subscription.parseAsync(res.body);
-        if (parsed.profiles.isEmpty) throw _subError(parsed);
-        // Remember the origin so the app can re-pull it on later launches
-        // when the provider rotates its servers.
-        profiles = parsed.profiles
-            .map((p) => p.copyWith(subUrl: input))
-            .toList();
-        // Capture any plan metadata the provider sent (data used, expiry,
-        // panel link) so the locations screen can show it under this sub.
-        final info = SubInfo.fromHeaders(
-          res.headers,
-          fetchedAt: DateTime.now(),
-        );
-        if (info != null) await SubInfoStore.put(input, info);
+        _fetchedUrl = input;
+        final fetched = await widget.hooks.fetchSubscription(input);
+        profiles = fetched.profiles;
+        _notice = fetched.parsed == null ? '' : S.subscriptionSkipped(fetched.parsed!);
+        _pendingInfo = fetched.info;
+        final name = widget.initialName?.trim();
+        if (name != null && name.isNotEmpty) {
+          final info = _pendingInfo?.toJson() ?? <String, dynamic>{};
+          info['title'] = name;
+          info['fetchedAt'] ??= DateTime.now().millisecondsSinceEpoch;
+          _pendingInfo = SubInfo.fromJson(info);
+        }
       } else if (isSub) {
         final parsed = await Subscription.parseAsync(input);
         if (parsed.profiles.isEmpty) throw _subError(parsed);
         profiles = parsed.profiles;
+        _notice = S.subscriptionSkipped(parsed);
       } else {
         final p = ShareLinkParser.parse(input);
         if (p == null) throw S.eNotALink;
@@ -360,13 +365,16 @@ class _ImportScreenState extends State<ImportScreen> {
       setState(() {
         _phase = _Phase.input;
         _syncBackClaim();
-        _error = e is ProfileParseException ? e.message : e.toString();
+        _error = e is SubscriptionFetchException ? S.subscriptionFailure(e)
+            : e is UnsupportedProfileException ? S.unsupportedProfile(e.feature)
+            : e is ProfileParseException ? e.message : e.toString();
       });
     }
   }
 
   static String _subError(SubscriptionResult r) =>
-      r.errors.isNotEmpty ? S.eSubFailed(r.errors.first) : S.eSubEmpty;
+      S.subscriptionSkipped(r).isNotEmpty ? S.subscriptionSkipped(r)
+          : r.errors.isNotEmpty ? S.eSubFailed(r.errors.first) : S.eSubEmpty;
 
   /// Marks step [n] done with a small beat so the progress reads naturally.
   Future<void> _advance(int n) async {
@@ -400,6 +408,9 @@ class _ImportScreenState extends State<ImportScreen> {
 
   Future<void> _commit({required bool connect}) async {
     final profiles = _named;
+    if (_fetchedUrl != null && _pendingInfo != null) {
+      await SubInfoStore.put(_fetchedUrl!, _pendingInfo!);
+    }
     await widget.state.addProfiles(profiles, select: true);
     final city = profiles.first.customName ?? _preview!.city;
     var go = connect;
@@ -835,6 +846,10 @@ class _ImportScreenState extends State<ImportScreen> {
                   : S.e6Ready,
           tone: _Tone.ok,
         ),
+        if (_notice.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _DetectBox(text: _notice, tone: _Tone.error),
+        ],
         const SizedBox(height: 12),
         HipCard(
           child: Column(
