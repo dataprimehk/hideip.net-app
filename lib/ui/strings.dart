@@ -1301,10 +1301,11 @@ abstract final class S {
   static String freeSpeed(int mbps) => 'Up to $mbps Mbit/s';
   static const freeNoAccount = 'No account needed';
 
-  /// A free server's row: where it is, then how fast it may go. Without a
-  /// limit the place stands alone.
+  /// A free server's row: how fast it may go, then where it is, so a
+  /// narrow row cuts the place before the speed. Without a limit the place
+  /// stands alone.
   static String freeSub(String place, int mbps) =>
-      mbps > 0 ? '$place · Up to $mbps Mbit/s' : place;
+      mbps > 0 ? 'Up to $mbps Mbit/s · $place' : place;
 
   /// While the free key is asked for. The proof the server asks for takes
   /// a few seconds on a phone.

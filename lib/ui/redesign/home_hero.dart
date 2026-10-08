@@ -1087,8 +1087,9 @@ class _HomeList extends StatelessWidget {
               : (l.provider != null ? HipBadge.blue(l.provider!) : null),
       subtitle: advanced
           ? S.tunnelChain(l.protoLabel, l.host)
+          // The speed stands in for the latency here; the bars still show it.
           : isFree
-              ? S.freeSub(place, state.freeInfo.speedMbps)
+              ? S.freeSub(rowPlace(l), state.freeInfo.speedMbps)
               : place,
       subtitleMono: advanced,
       selected: chosen,

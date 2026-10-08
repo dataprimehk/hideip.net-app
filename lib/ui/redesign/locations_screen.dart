@@ -414,8 +414,9 @@ class LocationsBody extends StatelessWidget {
                   : (l.provider != null ? HipBadge.blue(l.provider!) : null),
       subtitle: advanced
           ? S.tunnelChain(l.protoLabel, l.host)
+          // The speed stands in for the latency here; the bars still show it.
           : isFree
-              ? S.freeSub(place, free.speedMbps)
+              ? S.freeSub(rowPlace(l), free.speedMbps)
               : place,
       subtitleMono: advanced,
       trailing: Row(mainAxisSize: MainAxisSize.min, children: [
