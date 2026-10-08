@@ -1281,8 +1281,8 @@ abstract final class S {
       'device uses that account instead.';
   static String accountSwitchBodyStore(String store) =>
       'Nothing changes here until the other device adds this one. Then this '
-      'device uses that account instead. The $store subscription does not '
-      'move with it and keeps paying for what it pays for now.';
+      'device uses that account instead. The $store subscription stays with '
+      'the account it pays for now.';
 
   /// Under the code: the account number as the other way in.
   static const accountNewDeviceOrNumber = 'Or sign in with the account number';
