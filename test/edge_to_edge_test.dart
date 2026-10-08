@@ -7,6 +7,7 @@ import 'package:hideip_vpn/core/camera_permission.dart';
 import 'package:hideip_vpn/core/location.dart';
 import 'package:hideip_vpn/core/proxy_profile.dart';
 import 'package:hideip_vpn/core/secret_prefs.dart';
+import 'package:hideip_vpn/core/srv_countries.dart';
 import 'package:hideip_vpn/state/app_state.dart';
 import 'package:hideip_vpn/ui/redesign/hip.dart';
 import 'package:hideip_vpn/ui/redesign/hip_sheet.dart';
@@ -15,6 +16,7 @@ import 'package:hideip_vpn/ui/redesign/import_screen.dart';
 import 'package:hideip_vpn/ui/redesign/locations_screen.dart';
 import 'package:hideip_vpn/ui/redesign/qr_popup.dart';
 import 'package:hideip_vpn/ui/redesign/shell.dart';
+import 'package:hideip_vpn/ui/redesign/srv_location_picker.dart';
 import 'package:hideip_vpn/ui/redesign/system_bars.dart';
 import 'package:hideip_vpn/ui/strings.dart';
 
@@ -240,6 +242,112 @@ void main() {
         _lastStyle['systemNavigationBarIconBrightness'],
         'Brightness.light',
       );
+    });
+  });
+
+  group('the location picker sheet', () {
+    Future<List<SrvCountry>> countries() async => const [
+      SrvCountry('DE', 'Germany'),
+      SrvCountry('FR', 'France'),
+      SrvCountry('NL', 'Netherlands'),
+    ];
+
+    Future<void> open(WidgetTester tester, {bool overridden = false}) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => Center(
+                child: TextButton(
+                  onPressed: () => showSrvLocationPicker(
+                    context,
+                    cc: overridden ? 'FR' : null,
+                    city: overridden ? 'Lyon' : null,
+                    overridden: overridden,
+                    loadCountries: countries,
+                  ),
+                  child: const Text('open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+    }
+
+    // Before the body could scroll, the overridden picker (three actions)
+    // overflowed by 43px at this size and lost Cancel under the keyboard.
+    for (final overridden in [false, true]) {
+      testWidgets('rides above the keyboard without losing its actions'
+          '${overridden ? ' (overridden)' : ''}', (tester) async {
+        _phone(tester);
+        await open(tester, overridden: overridden);
+
+        await tester.showKeyboard(find.byType(TextField).last);
+        _phone(tester, ime: _keyboard);
+        await tester.pumpAndSettle();
+
+        expect(
+          tester.takeException(),
+          isNull,
+          reason: 'nothing overflows with the keyboard up',
+        );
+        const kbTop = _h - _keyboard;
+        final city = tester.getRect(find.byType(TextField).last);
+        expect(
+          city.bottom,
+          lessThanOrEqualTo(kbTop),
+          reason: 'the field being typed in is above the keyboard',
+        );
+
+        // With the keyboard up the last action may need a scroll, but it is
+        // reachable and lands above the keyboard, not under it.
+        final cancel = find.widgetWithText(HipCta, S.aCancel);
+        await tester.ensureVisible(cancel);
+        await tester.pumpAndSettle();
+        final rect = tester.getRect(cancel);
+        expect(rect.bottom, lessThanOrEqualTo(kbTop));
+        expect(rect.top, greaterThanOrEqualTo(_status));
+      });
+    }
+
+    testWidgets('large text on a short phone scrolls instead of cutting off', (
+      tester,
+    ) async {
+      // (At 320dp and 1.6x a long action label overflows sideways inside
+      // HipCta, which is a width problem of the button, not of the insets.)
+      const short = Size(360, 640);
+      _phone(tester, size: short);
+      tester.platformDispatcher.textScaleFactorTestValue = 1.3;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await open(tester, overridden: true);
+      await tester.showKeyboard(find.byType(TextField).first);
+      _phone(tester, size: short, ime: 260);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      final search = tester.getRect(find.byType(TextField).first);
+      expect(search.bottom, lessThanOrEqualTo(short.height - 260));
+      final cancel = find.widgetWithText(HipCta, S.aCancel);
+      await tester.ensureVisible(cancel);
+      await tester.pumpAndSettle();
+      expect(
+        tester.getRect(cancel).bottom,
+        lessThanOrEqualTo(short.height - 260),
+      );
+    });
+
+    testWidgets('with the keyboard down the actions clear the buttons', (
+      tester,
+    ) async {
+      _phone(tester);
+      await open(tester, overridden: true);
+      expect(tester.takeException(), isNull);
+      final cancel = find.widgetWithText(HipCta, S.aCancel);
+      await tester.ensureVisible(cancel);
+      await tester.pumpAndSettle();
+      expect(tester.getRect(cancel).bottom, lessThanOrEqualTo(_h - _buttons));
     });
   });
 
