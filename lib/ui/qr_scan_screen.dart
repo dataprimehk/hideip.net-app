@@ -210,7 +210,7 @@ class _QrScanScreenState extends State<QrScanScreen> {
             right: 0,
             bottom: QrOverlay.captionBottom(inset),
             child: Text(
-              S.e9Hint,
+              S.accountScanHint,
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.85),

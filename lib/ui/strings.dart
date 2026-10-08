@@ -1154,6 +1154,12 @@ abstract final class S {
       'A browser or computer shows a QR code that this phone scans.';
   static const accountScanQr = 'Scan QR code';
   static const accountScanQrSub = 'The new device is shown here before it is added.';
+
+  /// Under the full-screen scanner, which only ever reads another device's
+  /// code. The import screen has its own hint for a server's code.
+  static const accountScanHint =
+      'Point the camera at the QR code on the other device';
+
   static const accountEnterCode = 'Enter code';
   static const accountEnterCodeSub = 'For a TV or computer across the room.';
   static const accountOrSignIn = 'Or sign in on the new device';

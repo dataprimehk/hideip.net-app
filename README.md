@@ -166,7 +166,7 @@ dart run flutter_launcher_icons
 | `INTERNET`, `ACCESS_NETWORK_STATE` | network access |
 | `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SPECIAL_USE` | keep the tunnel alive |
 | `POST_NOTIFICATIONS` | the ongoing connection notification (optional; declining it still lets the tunnel run) |
-| `CAMERA` | scanning a server QR code (only used on the scan screen) |
+| `CAMERA` | scanning a QR code: a server to import, or a device to add to the account (only used on the scan screen) |
 
 ## License
 
