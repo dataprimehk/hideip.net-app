@@ -77,6 +77,10 @@ class CatalogServer {
   final String audience;
   final List<CatalogEndpoint> endpoints;
 
+  /// `premium` or `free`. A catalog from before the free location has no
+  /// tier on any server, and every one of them is premium.
+  final String tier;
+
   const CatalogServer({
     required this.id,
     required this.label,
@@ -84,7 +88,12 @@ class CatalogServer {
     required this.sortWeight,
     required this.audience,
     required this.endpoints,
+    this.tier = 'premium',
   });
+
+  /// A server of the free location: never a premium profile and never a
+  /// locked premium row. A tier this build does not know is premium.
+  bool get free => tier == 'free';
 }
 
 class CatalogDocument {
@@ -178,6 +187,7 @@ CatalogDocument _parseCatalog(Map<String, dynamic> value) {
     final sortWeight = serverValue['sort_weight'];
     final audience = serverValue['audience'];
     final endpointValues = serverValue['endpoints'];
+    final tier = serverValue['tier'];
     if (id is! String ||
         id.isEmpty ||
         label is! String ||
@@ -185,7 +195,8 @@ CatalogDocument _parseCatalog(Map<String, dynamic> value) {
         host.isEmpty ||
         sortWeight is! int ||
         audience is! String ||
-        endpointValues is! List) {
+        endpointValues is! List ||
+        (tier != null && tier is! String)) {
       throw const FormatException('Catalog server fields are invalid');
     }
 
@@ -230,6 +241,7 @@ CatalogDocument _parseCatalog(Map<String, dynamic> value) {
         sortWeight: sortWeight,
         audience: audience,
         endpoints: endpoints,
+        tier: (tier as String?)?.trim().toLowerCase() ?? 'premium',
       ),
     );
   }
@@ -332,6 +344,9 @@ List<ProxyProfile> profilesFromCatalog(
   final profiles = <ProxyProfile>[];
   for (final server in servers) {
     if (!_audienceAllowsPhone(server.audience)) continue;
+    // A premium key does not work on a free node, and the free key never
+    // comes this way: free servers are not premium profiles.
+    if (server.free) continue;
     for (final endpoint in server.endpoints) {
       if (endpoint.protocol != 'vless-reality' || endpoint.publicKey.isEmpty) {
         continue;

@@ -11,10 +11,13 @@ import '../core/async_gate.dart';
 import '../core/cc_iso.dart';
 import '../core/connectivity.dart';
 import '../core/device_link.dart';
+import '../core/free_access.dart';
 import '../core/haptics.dart';
 import '../core/ip_lookup.dart';
 import '../core/location.dart';
 import '../core/notifications.dart';
+import '../core/pairing.dart';
+import '../core/pairing_store.dart';
 import '../core/ping.dart';
 import '../core/premium.dart';
 import '../core/premium_catalog.dart';
@@ -39,6 +42,7 @@ import '../core/wg_singbox.dart';
 import '../core/wg_speed_mode.dart';
 import '../ui/strings.dart';
 import '../vpn_controller.dart';
+import 'app_pairing.dart';
 
 enum ConnState { disconnected, connecting, connected, error }
 
@@ -95,10 +99,25 @@ String fmtDur(Duration d) {
 /// profile, the connection state, the current public IP, and bridges the
 /// parser/config to [VpnController]. Backed by [ProfileStore] for persistence.
 class AppState extends ChangeNotifier {
-  AppState({AccountService? accounts, ProvisioningService? provisioning, UserSubscriptionService? userSubscriptions})
-      : _accounts = accounts ?? AccountService(),
+  /// [linkPollInterval] is how often an open request for access is asked
+  /// about while this device shows its code; null leaves the asking to
+  /// [pollLinkRequest]. [tablet] overrides the screen-size reading of what
+  /// this device is.
+  AppState({
+    AccountService? accounts,
+    ProvisioningService? provisioning,
+    UserSubscriptionService? userSubscriptions,
+    PairingClient? pairing,
+    FreeService? free,
+    FreeProver? freeProver,
+    this._linkPollInterval = const Duration(seconds: 3),
+    this._tablet,
+  })  : _accounts = accounts ?? AccountService(),
         _provisioning = provisioning ?? ProvisioningService(),
-        _userSubs = userSubscriptions ?? UserSubscriptionService();
+        _userSubs = userSubscriptions ?? UserSubscriptionService(),
+        _pairing = pairing ?? PairingClient(),
+        _free = free ?? FreeService(),
+        _freeProver = freeProver ?? platformFreeProver();
 
   final List<ProxyProfile> _profiles = [];
   int _selected = -1;
@@ -254,6 +273,14 @@ class AppState extends ChangeNotifier {
     _freshNumber = await _accountStore.freshNumber();
     _lastNumber = await _accountStore.lastNumber();
     _storeLink = await _accountStore.loadStoreLink();
+  }
+
+  /// Reads the entitlement and the subscription token the way a launch
+  /// does, for a test that restarts the app partway through a flow.
+  @visibleForTesting
+  Future<void> loadPremiumForTesting() async {
+    _premium = await Premium.load();
+    await _loadSubToken();
   }
 
   /// Whether the provisioning backend has finished with this subscription:
@@ -465,6 +492,12 @@ class AppState extends ChangeNotifier {
     _syncStatus(initial: true);
     // The hideip.net fleet as it is shown to someone who has not bought it.
     unawaited(refreshLockedLocations());
+    // The free location: whether it is on, and the key this install already
+    // has, if any. No key is asked for here; that waits for a tap.
+    unawaited(_startFree());
+    // A request for access this device made before it was last closed: its
+    // answer may have arrived meanwhile, or be stored and not yet confirmed.
+    unawaited(_resumeLinkRequest());
     if (_prefs.autoConnect && _profiles.isNotEmpty && !isConnected) {
       connect();
     }
@@ -480,13 +513,20 @@ class AppState extends ChangeNotifier {
   /// nothing to show, because those same servers are real profiles by then.
   Future<void> refreshLockedLocations() async {
     if (premium.isOn) {
-      if (_lockedLocations.isEmpty) return;
+      if (_lockedLocations.isEmpty && _freeCatalog.isEmpty) return;
       _lockedLocations = const [];
+      _freeCatalog = const [];
       notifyListeners();
       return;
     }
-    final fresh = await PremiumCatalog.fetchLocked();
-    if (fresh.isEmpty || premium.isOn) return;
+    final split = await PremiumCatalog.fetchSplit();
+    final fresh = split.locked;
+    if (premium.isOn) return;
+    if (split.free.isNotEmpty) {
+      _freeCatalog = split.free;
+      notifyListeners();
+    }
+    if (fresh.isEmpty) return;
     _lockedLocations = fresh;
     notifyListeners();
     // Real bars need a real measurement; the row would rather say nothing
@@ -619,6 +659,8 @@ class AppState extends ChangeNotifier {
   /// premium profiles in, and bring Speed mode along.
   Future<void> _adoptSubscriptionUrl(String url) async {
     _premiumEnded = false;
+    // Premium is here: the free key goes, and its servers with it.
+    await _dropFreeAccess();
     await PremiumSub.saveUrl(url);
     // The linked-devices section keys off this token being present.
     await _loadSubToken();
@@ -862,7 +904,8 @@ class AppState extends ChangeNotifier {
   /// subscription whose provisioned token is on disk. Read once at load and
   /// again whenever premium changes, so the Settings section can be gated
   /// without every build hitting storage.
-  bool get canLinkDevices => premium.isOn && _linkToken != null;
+  bool get canLinkDevices =>
+      premium.isOn && _linkToken != null && _account?.manage != false;
   String? _subToken;
 
   /// The token the link API authenticates with, or null when this phone
@@ -944,10 +987,13 @@ class AppState extends ChangeNotifier {
   /// be on the account, and the account has to answer.
   bool get accountCanManage {
     final held = _account;
+    // The number manages the account wherever it is entered; a device that
+    // only holds its own token manages it when the server has not said it
+    // may not (pairing v2 gives that right per device).
     return held != null &&
         !accountDeviceSignedOut &&
         _accountIssue == null &&
-        (held.number != null || held.hasDevice);
+        (held.number != null || (held.hasDevice && held.manage != false));
   }
 
   /// This device's entry on the account, for the "This device" badge.
@@ -1348,6 +1394,9 @@ class AppState extends ChangeNotifier {
     _premium = p;
     notifyListeners();
     await p.save();
+    // A purchase ends the free key on the spot, not only once its servers
+    // arrive.
+    if (p.isOn) await _dropFreeAccess();
     // Every live entitlement re-provisions: a first purchase creates the
     // server profile, a renewal extends its lifetime server-side.
     if (p.isOn && proof != null) await _provisionPremiumLocked(proof);
@@ -1593,10 +1642,14 @@ class AppState extends ChangeNotifier {
       kind: status.kind,
       expires: status.expires,
       active: status.active,
+      manage: status.manage,
     );
     final devices = status.devices;
     final id = creds.deviceId;
+    // A device that may not manage the account is sent no list at all, so
+    // its own absence from it says nothing.
     if (status.active &&
+        status.manage != false &&
         creds.hasDevice &&
         id != null &&
         devices != null &&
@@ -1626,6 +1679,7 @@ class AppState extends ChangeNotifier {
       expires: creds.expires,
       active: creds.active,
     );
+    if (status.manage != null) await _accountStore.saveManage(status.manage);
     if (!status.active) {
       if (await _creditFromStoreLocked()) return;
       await _accountOutOfTime(creds);
@@ -1659,7 +1713,18 @@ class AppState extends ChangeNotifier {
       // No number to sign in with: the store purchase that put this device
       // on the account brings it back instead.
       final proof = await PremiumSub.proof();
-      if (proof != null && !_storeLink.paused) await _provisionV2Locked(proof);
+      if (proof != null && !_storeLink.paused) {
+        await _provisionV2Locked(proof);
+        return;
+      }
+      // A device added from another one has no purchase either: its own
+      // token asks for its credentials again.
+      final token = creds.deviceToken;
+      if (token == null) return;
+      final again = await _pairing.refresh(token);
+      final url = again.subUrl;
+      if (again.active != true || url == null) return;
+      await _adoptAccount(creds.withStanding(manage: again.manage), url);
       return;
     }
     final again = await _accounts.signIn(
@@ -1838,6 +1903,575 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  // --- Pairing v2: this device as the one that approves -------------------
+
+  final PairingClient _pairing;
+
+  /// What the server's pairing speaks. Cached for a few minutes; a server
+  /// from before pairing v2, or none at all, reads as
+  /// [PairingCapabilities.unknown], and nothing newer is offered then.
+  Future<PairingCapabilities> pairingCapabilities({bool fresh = false}) =>
+      _pairing.capabilities(fresh: fresh);
+
+  /// Pairing v2 for the Account and Linked devices screens: preview,
+  /// approve, the device list, removal and permissions. The same object
+  /// every time.
+  late final AppPairingPort pairingPort = AppPairingPort(this, _pairing);
+
+  /// What this device proves itself with when it manages the account, or
+  /// null when it may not. A secret, like [subToken]: its own token on the
+  /// account (or, without an account, the store subscription's token), and
+  /// the number when it is kept here. Unlike [subToken] it does not need
+  /// Premium to be on: managing the devices works on an expired account too.
+  PairingAuth? get pairingAuth {
+    final held = _account;
+    if (held != null) {
+      if (!accountCanManage) return null;
+      return PairingAuth(token: held.deviceToken, accountNumber: held.number);
+    }
+    final token = _subToken;
+    return token == null ? null : PairingAuth(token: token);
+  }
+
+  /// The device list changed on the server: read the account again.
+  void pairingChanged() {
+    if (_account != null) unawaited(refreshAccount(force: true));
+  }
+
+  // --- Pairing v2: this device as the one that asks -----------------------
+
+  final PendingLinkStore _linkStore = const PendingLinkStore();
+  final AsyncGate _linkGate = AsyncGate();
+  final Duration? _linkPollInterval;
+  final bool? _tablet;
+  PendingLink? _pendingLink;
+  LinkRequestPhase _linkPhase = LinkRequestPhase.idle;
+  Timer? _linkTimer;
+
+  /// Where this device's own request for access stands.
+  LinkRequestPhase get linkPhase => _linkPhase;
+
+  /// The request this device shows while it waits: the QR payload, the
+  /// short code and when it lapses. Null when there is none open.
+  LinkTicket? get linkTicket => _pendingLink?.ticket;
+
+  /// Whether asking for access here moves this device off what it runs on
+  /// now (an account number, or Premium of any kind). The screen asks the
+  /// user first and passes `confirmSwitch: true` once they agree. What is in
+  /// force stays in force until the new account is stored and confirmed.
+  bool get linkRequestNeedsConfirm => _account != null || premium.isOn;
+
+  /// Opens a request for access to an account, for another device to
+  /// approve. Answers [LinkRequestPhase.needsConfirm] without asking the
+  /// server while [linkRequestNeedsConfirm] holds and [confirmSwitch] is
+  /// false; [LinkRequestPhase.unsupported] when the server has no pairing
+  /// v2, so the screen can say so instead of showing a code nobody can use.
+  Future<LinkRequestPhase> startLinkRequest({bool confirmSwitch = false}) =>
+      _linkGate.run(() async {
+        final held = _pendingLink;
+        if (held != null &&
+            (_linkPhase == LinkRequestPhase.waiting ||
+                _linkPhase == LinkRequestPhase.storing)) {
+          return _linkPhase;
+        }
+        final switching = linkRequestNeedsConfirm;
+        if (switching && !confirmSwitch) {
+          return _setLinkPhase(LinkRequestPhase.needsConfirm);
+        }
+        final caps = await _pairing.capabilities();
+        if (!caps.request) {
+          return _setLinkPhase(LinkRequestPhase.unsupported);
+        }
+        final tablet = (_tablet ?? _looksLikeTablet()) &&
+            caps.kinds.contains('tablet');
+        final started = await _pairing.start(
+          kind: tablet ? 'tablet' : 'phone',
+          name: _linkDeviceName(tablet),
+          platform: defaultTargetPlatform == TargetPlatform.iOS
+              ? 'ios'
+              : 'android',
+        );
+        final ticket = started.ticket;
+        if (ticket == null) {
+          return _setLinkPhase(switch (started.error) {
+            LinkStartError.unsupported => LinkRequestPhase.unsupported,
+            LinkStartError.tooManyAttempts => LinkRequestPhase.tooManyAttempts,
+            _ => LinkRequestPhase.failed,
+          });
+        }
+        final pending = PendingLink(ticket: ticket, switching: switching);
+        try {
+          await _linkStore.save(pending);
+        } catch (_) {
+          // A secret that cannot be kept is a request that cannot be
+          // collected after a restart: withdraw it rather than leave a code
+          // up that might be approved for nothing.
+          unawaited(_pairing.cancel(ticket));
+          return _setLinkPhase(LinkRequestPhase.failed);
+        }
+        _pendingLink = pending;
+        _setLinkPhase(LinkRequestPhase.waiting);
+        _startLinkTimer();
+        return _linkPhase;
+      });
+
+  /// Asks once whether the request was approved, and carries an approved
+  /// one through: stored here first, then confirmed to the server, then put
+  /// in force. Safe to call at any time and as often as wanted; the timer
+  /// calls it on its own while the code is up.
+  Future<LinkRequestPhase> pollLinkRequest() =>
+      _linkGate.run(_pollLinkLocked);
+
+  Future<LinkRequestPhase> _pollLinkLocked() async {
+    final pending = _pendingLink;
+    if (pending == null) return _linkPhase;
+    if (pending.handoff != null) return _finishLinkLocked(pending);
+    final answer = await _pairing.poll(pending.ticket);
+    switch (answer.status) {
+      case LinkPollStatus.pending:
+      case LinkPollStatus.network:
+      case LinkPollStatus.tooManyAttempts:
+        // Nothing decided. The server is the judge of the deadline: a
+        // request approved in its last second is still collected.
+        return _linkPhase;
+      case LinkPollStatus.approved:
+        var handoff = answer.handoff!;
+        if (handoff.subUrl == null) {
+          final again = await _pairing.refresh(handoff.deviceToken);
+          final url = again.subUrl;
+          if (url == null) return _linkPhase;
+          handoff = handoff.withSubUrl(url);
+        }
+        final staged = pending.withHandoff(handoff);
+        try {
+          await _linkStore.save(staged);
+        } catch (_) {
+          // Not stored, so not confirmed: the same answer is there to be
+          // collected on the next try.
+          return _linkPhase;
+        }
+        _pendingLink = staged;
+        _setLinkPhase(LinkRequestPhase.storing);
+        return _finishLinkLocked(staged);
+      case LinkPollStatus.delivered:
+        // Confirmed already, yet nothing is stored here to show for it:
+        // the record was lost. Only a new request can help.
+        return _endLink(LinkRequestPhase.expired);
+      case LinkPollStatus.expired:
+      case LinkPollStatus.unknown:
+        // A lapsed request reads as unknown once the server has swept it.
+        return _endLink(LinkRequestPhase.expired);
+      case LinkPollStatus.cancelled:
+        return _endLink(LinkRequestPhase.cancelled);
+      case LinkPollStatus.revoked:
+        return _endLink(LinkRequestPhase.revoked);
+      case LinkPollStatus.inactive:
+        return _endLink(LinkRequestPhase.inactive);
+    }
+  }
+
+  /// The answer is stored here. The server hears so, and then the new
+  /// account goes into force. A device that runs on nothing yet takes the
+  /// new account even when the confirmation is lost, since it has nothing
+  /// to lose and using it is what the server reads as delivered; one that
+  /// is moving off another account moves only on a confirmation.
+  Future<LinkRequestPhase> _finishLinkLocked(PendingLink staged) async {
+    final handoff = staged.handoff!;
+    final ack = await _pairing.ack(staged.ticket);
+    switch (ack) {
+      case LinkCloseResult.ok:
+        await _adoptLinkedAccount(handoff, switching: staged.switching);
+        return _endLink(LinkRequestPhase.done);
+      case LinkCloseResult.network:
+        if (!staged.switching) {
+          await _adoptLinkedAccount(handoff, switching: false);
+        }
+        _setLinkPhase(LinkRequestPhase.storing);
+        _startLinkTimer();
+        return _linkPhase;
+      case LinkCloseResult.unknown:
+      case LinkCloseResult.alreadyDelivered:
+      case LinkCloseResult.notApproved:
+        // The server no longer holds this request. A device moving off
+        // another account stays where it was; one that had nothing keeps
+        // what it got, and the account status says whether it still works.
+        if (staged.switching) return _endLink(LinkRequestPhase.expired);
+        await _adoptLinkedAccount(handoff, switching: false);
+        return _endLink(LinkRequestPhase.done);
+    }
+  }
+
+  /// Withdraws this device's open request. An approval not yet confirmed
+  /// goes with it on the server. A device that already runs on the new
+  /// account keeps it; signing out is how it leaves.
+  Future<void> cancelLinkRequest() => _linkGate.run(() async {
+        final pending = _pendingLink;
+        if (pending == null) {
+          _setLinkPhase(LinkRequestPhase.idle);
+          return;
+        }
+        final adopted = pending.handoff != null &&
+            _account?.deviceToken == pending.handoff!.deviceToken;
+        if (!adopted) unawaited(_pairing.cancel(pending.ticket));
+        await _endLink(adopted ? LinkRequestPhase.done : LinkRequestPhase.idle);
+      });
+
+  /// Puts a finished request's phase back to idle, once the screen has
+  /// shown how it ended.
+  void clearLinkPhase() {
+    if (_pendingLink != null) return;
+    _setLinkPhase(LinkRequestPhase.idle);
+  }
+
+  Future<void> _resumeLinkRequest() => _linkGate.run(() async {
+        final held = await _linkStore.load();
+        if (held == null) return;
+        _pendingLink = held;
+        _setLinkPhase(
+          held.handoff == null
+              ? LinkRequestPhase.waiting
+              : LinkRequestPhase.storing,
+        );
+        await _pollLinkLocked();
+        if (_pendingLink != null) _startLinkTimer();
+      });
+
+  /// Reads back a request kept from an earlier run, the way a launch does.
+  @visibleForTesting
+  Future<void> resumeLinkRequestForTesting() => _resumeLinkRequest();
+
+  /// Puts the collected account in force here, under the same rule as a
+  /// sign-in with the number. Done once per answer: the same token again is
+  /// the account already in force.
+  Future<void> _adoptLinkedAccount(
+    LinkHandoff handoff, {
+    required bool switching,
+  }) async {
+    final url = handoff.subUrl;
+    if (url == null) return;
+    AccountCredentials? left;
+    var adopted = false;
+    await _premiumRefreshGate.run(() async {
+      final held = _account;
+      if (held?.deviceToken == handoff.deviceToken) return;
+      adopted = true;
+      if (held != null) {
+        // The number is kept for a one-tap way back; a store subscription
+        // keeps paying for the account it was on, not this one.
+        await _rememberNumber(held.number);
+        await _leaveStoreLink();
+        await _switchAccount();
+        left = held;
+      }
+      await _adoptAccount(
+        AccountCredentials(
+          number: null,
+          deviceToken: handoff.deviceToken,
+          deviceId: handoff.deviceId,
+          expires: handoff.expires,
+          active: handoff.active,
+          manage: handoff.manage,
+        ),
+        url,
+      );
+    });
+    // The device's place on the account it left is given back, best effort,
+    // the way a sign-out gives it back.
+    final old = left;
+    final oldId = old?.deviceId;
+    if (old != null && oldId != null && old.deviceToken != null) {
+      unawaited(
+        _accounts.revokeDevice(old.number, oldId, deviceToken: old.deviceToken),
+      );
+    }
+    // The plan and this device's rights come with the status call.
+    if (adopted) unawaited(refreshAccount(force: true));
+  }
+
+  /// Whether [linkId] or [code] names the request this device itself has
+  /// open. A device does not approve itself.
+  bool ownsLinkRequest({String? linkId, String? code}) {
+    final ticket = _pendingLink?.ticket;
+    if (ticket == null) return false;
+    if (linkId != null && linkId == ticket.linkId) return true;
+    if (code == null || ticket.code.isEmpty) return false;
+    return normalizePairingCode(code) == normalizePairingCode(ticket.code);
+  }
+
+  Future<LinkRequestPhase> _endLink(LinkRequestPhase phase) async {
+    _linkTimer?.cancel();
+    _linkTimer = null;
+    _pendingLink = null;
+    try {
+      await _linkStore.clear();
+    } catch (_) {
+      // A record left behind is read again on the next launch and settled
+      // there by the server's answer.
+    }
+    return _setLinkPhase(phase);
+  }
+
+  LinkRequestPhase _setLinkPhase(LinkRequestPhase phase) {
+    if (_linkPhase != phase) {
+      _linkPhase = phase;
+      notifyListeners();
+    }
+    return phase;
+  }
+
+  void _startLinkTimer() {
+    final every = _linkPollInterval;
+    if (every == null || _linkTimer != null) return;
+    _linkTimer = Timer.periodic(every, (_) {
+      if (_pendingLink == null) {
+        _linkTimer?.cancel();
+        _linkTimer = null;
+        return;
+      }
+      unawaited(pollLinkRequest());
+    });
+  }
+
+  /// The platform's large-screen reading: 600 logical pixels on the short
+  /// side is where Android and iOS both draw the tablet line.
+  static bool _looksLikeTablet() {
+    final views = PlatformDispatcher.instance.views;
+    if (views.isEmpty) return false;
+    final view = views.first;
+    final size = view.physicalSize / view.devicePixelRatio;
+    return size.shortestSide >= 600;
+  }
+
+  static String _linkDeviceName(bool tablet) {
+    if (!tablet) return accountDeviceName;
+    return defaultTargetPlatform == TargetPlatform.iOS
+        ? 'iPad'
+        : 'Android tablet';
+  }
+
+  // --- Free location --------------------------------------------------------
+
+  final FreeService _free;
+  final FreeProver _freeProver;
+  final FreeStore _freeStore = const FreeStore();
+  final AsyncGate _freeGate = AsyncGate();
+  FreeInfo _freeInfo = FreeInfo.off;
+  List<Location> _freeCatalog = const [];
+  bool _freeBusy = false;
+
+  /// A gone key is asked for again on its own at most once per run.
+  bool _freeReissued = false;
+
+  /// What the server last said about the free location. Off until it says
+  /// otherwise, and off again on any failure.
+  FreeInfo get freeInfo => _freeInfo;
+
+  /// Whether the free location is offered on this device right now: the
+  /// server has it on, and Premium is not (Premium has better servers).
+  bool get freeOffered => !premium.isOn && _freeInfo.enabled;
+
+  /// Whether this install holds the free servers already.
+  bool get freeHeld => _profiles.any((p) => p.free);
+
+  /// True while the free key is being asked for (the proof can take a few
+  /// seconds on a phone).
+  bool get freeBusy => _freeBusy;
+
+  /// The free location's rows before the key is asked for, from the signed
+  /// catalog. Not connectable: tapping one goes through [connectFree]. Empty
+  /// once the free servers are on the device (they are in [locations] then),
+  /// and whenever the free location is not offered. With no usable catalog
+  /// the list is empty while [freeOffered] can still be true; the screen
+  /// then shows one plain free row.
+  List<Location> get freeLocations =>
+      freeOffered && !freeHeld ? List.unmodifiable(_freeCatalog) : const [];
+
+  /// Reads whether the free location is on. Quiet: an answer that does not
+  /// come leaves it off.
+  Future<void> refreshFreeInfo({bool fresh = false}) async {
+    if (premium.isOn) return;
+    final info = await _free.info(fresh: fresh);
+    if (premium.isOn) return;
+    _freeInfo = info;
+    notifyListeners();
+  }
+
+  /// Runs the launch step of the free location on its own.
+  @visibleForTesting
+  Future<void> startFreeForTesting() => _startFree();
+
+  Future<void> _startFree() async {
+    final url = await _freeStore.subUrl();
+    if (premium.isOn) {
+      // Premium arrived while this install held a free key (a purchase
+      // that landed while the app was closed, for one).
+      if (url != null || freeHeld) await _freeGate.run(_dropFreeLocked);
+      return;
+    }
+    await refreshFreeInfo();
+    if (url != null) await _freeGate.run(() => _refreshFreeLocked(url));
+  }
+
+  /// The free servers for [url] again, which also keeps the key from
+  /// lapsing. A key the server no longer knows is let go and asked for once
+  /// more, quietly, at most once per run.
+  Future<FreeAccessResult> _refreshFreeLocked(String url) async {
+    final got = await _free.profiles(url);
+    if (premium.isOn) return FreeAccessResult.premium;
+    if (got.gone) {
+      await _forgetFreeLocked();
+      if (_freeReissued || !_freeInfo.enabled) return FreeAccessResult.network;
+      _freeReissued = true;
+      return _registerFreeLocked();
+    }
+    final fresh = got.profiles;
+    if (fresh == null) {
+      return freeHeld ? FreeAccessResult.ok : FreeAccessResult.network;
+    }
+    _applyFreeProfiles(fresh);
+    return FreeAccessResult.ok;
+  }
+
+  /// Makes sure this install holds the free servers: the key it has, or a
+  /// new one asked for now. Called on the tap that wants the free location,
+  /// never before. Never throws and never shows anything by itself.
+  Future<FreeAccessResult> ensureFreeAccess() => _freeGate.run(() async {
+        if (premium.isOn) return FreeAccessResult.premium;
+        if (freeHeld) return FreeAccessResult.ok;
+        final url = await _freeStore.subUrl();
+        if (url != null) {
+          final r = await _refreshFreeLocked(url);
+          if (r != FreeAccessResult.network || await _freeStore.subUrl() != null) {
+            return r;
+          }
+        }
+        final info = await _free.info();
+        _freeInfo = info;
+        if (!info.enabled) {
+          notifyListeners();
+          return FreeAccessResult.disabled;
+        }
+        return _registerFreeLocked();
+      });
+
+  Future<FreeAccessResult> _registerFreeLocked() async {
+    _freeBusy = true;
+    notifyListeners();
+    final FreeRegistration reg;
+    try {
+      reg = await _free.register(_freeProver);
+    } finally {
+      _freeBusy = false;
+      notifyListeners();
+    }
+    if (premium.isOn) return FreeAccessResult.premium;
+    final url = reg.subUrl;
+    if (!reg.ok || url == null) {
+      if (reg.status == FreeRegisterStatus.disabled) {
+        _freeInfo = FreeInfo.off;
+        _free.forgetInfo();
+        notifyListeners();
+      }
+      return switch (reg.status) {
+        FreeRegisterStatus.disabled => FreeAccessResult.disabled,
+        FreeRegisterStatus.rateLimited => FreeAccessResult.rateLimited,
+        FreeRegisterStatus.badChallenge ||
+        FreeRegisterStatus.badProof => FreeAccessResult.rejected,
+        FreeRegisterStatus.unsupported => FreeAccessResult.unsupported,
+        _ => FreeAccessResult.network,
+      };
+    }
+    try {
+      await _freeStore.save(url);
+    } catch (_) {
+      return FreeAccessResult.network;
+    }
+    final got = await _free.profiles(url);
+    if (premium.isOn) {
+      await _dropFreeLocked();
+      return FreeAccessResult.premium;
+    }
+    final fresh = got.profiles;
+    if (fresh == null || fresh.isEmpty) return FreeAccessResult.network;
+    _applyFreeProfiles(fresh);
+    return FreeAccessResult.ok;
+  }
+
+  /// Connects to the free location: [at] when it names one of its servers,
+  /// otherwise the free server with the best latency. Asks for the key
+  /// first when this install has none. A failure says so in a toast and
+  /// leaves everything else as it was. True when a connect was started.
+  Future<bool> connectFree({Location? at}) async {
+    final result = await ensureFreeAccess();
+    if (result != FreeAccessResult.ok) {
+      if (result != FreeAccessResult.premium) {
+        showToast(
+          result == FreeAccessResult.rateLimited
+              ? S.toastFreeBusy
+              : S.toastFreeUnavailable,
+        );
+      }
+      return false;
+    }
+    final free = [
+      for (final l in locations)
+        if (l.profile.free) l,
+    ];
+    if (free.isEmpty) return false;
+    final host = at?.profile.server;
+    Location? pick;
+    if (host != null) {
+      for (final l in free) {
+        if (l.profile.server == host) pick = l;
+      }
+    }
+    if (pick == null) {
+      int? best;
+      for (final l in free) {
+        final ping = pingFor(l.profile);
+        if (ping is PingOk && (best == null || ping.ms < best)) {
+          best = ping.ms;
+          pick = l;
+        }
+      }
+    }
+    await selectLocation(pick ?? free.first);
+    await connect();
+    return true;
+  }
+
+  void _applyFreeProfiles(List<ProxyProfile> fresh) {
+    _applyMerged([
+      for (final p in _profiles)
+        if (!p.free) p,
+      ...fresh,
+    ]);
+  }
+
+  /// Premium arrived: the free key and its servers go. Nothing is sent: the
+  /// key only ever had a VLESS user on the free nodes, and the server lets
+  /// an unused key lapse on its own.
+  Future<void> _dropFreeAccess() => _freeGate.run(_dropFreeLocked);
+
+  Future<void> _dropFreeLocked() async {
+    final url = await _freeStore.subUrl();
+    _freeCatalog = const [];
+    if (url == null && !freeHeld) return;
+    await _forgetFreeLocked();
+  }
+
+  Future<void> _forgetFreeLocked() async {
+    await _freeStore.clear();
+    if (freeHeld) {
+      _applyMerged([
+        for (final p in _profiles)
+          if (!p.free) p,
+      ]);
+    } else {
+      notifyListeners();
+    }
+  }
+
   // --- User subscriptions --------------------------------------------------
 
   /// On launch: re-pull every subscription URL the user has imported and swap
@@ -1934,6 +2568,7 @@ class AppState extends ChangeNotifier {
     _slowTimer?.cancel();
     _failTimer?.cancel();
     _reviewHold?.cancel();
+    _linkTimer?.cancel();
     unawaited(_connectivity.dispose());
     _purchases.dispose();
     super.dispose();
@@ -2111,8 +2746,10 @@ class AppState extends ChangeNotifier {
     if (_pinging || _profiles.isEmpty) return;
     _pinging = true;
     notifyListeners();
+    // A copy: the list can be swapped out while the probes run (a refresh
+    // landing, the free servers arriving or leaving).
     await forEachBounded(
-      _profiles,
+      [..._profiles],
       limit: 8,
       action: (p) async {
         final key = '${p.server}:${p.port}';
@@ -2583,7 +3220,7 @@ class AppState extends ChangeNotifier {
   Future<void> replaceProfile(int index, ProxyProfile next) async {
     if (index < 0 || index >= _profiles.length) return;
     final old = _profiles[index];
-    if (old.premium) return;
+    if (old.premium || old.free) return;
     final sameAddress = old.server == next.server;
     // A name that places itself (a city or country token) makes the old
     // lookup moot; otherwise it still describes the same address.
@@ -2610,7 +3247,7 @@ class AppState extends ChangeNotifier {
   Future<void> setServerLocation(int index, {String? cc, String? city}) async {
     if (index < 0 || index >= _profiles.length) return;
     final old = _profiles[index];
-    if (old.premium) return;
+    if (old.premium || old.free) return;
     final code = Location.validCc(cc) ? cc!.toUpperCase() : null;
     final town = code == null ? null : city?.trim();
     var next = old.copyWith(

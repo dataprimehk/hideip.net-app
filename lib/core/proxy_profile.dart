@@ -48,6 +48,12 @@ class ProxyProfile {
   /// lapses; user imports are never touched.
   final bool premium;
 
+  /// True for the hideip.net free location's servers: managed by the app
+  /// like [premium] ones (never edited, replaced on refresh, dropped when
+  /// Premium arrives), but reached with the install's anonymous free key
+  /// rather than a subscription.
+  final bool free;
+
   /// For a profile imported from a user's own subscription URL, that URL.
   /// Null for single-link imports and pasted blobs (nothing to re-fetch).
   /// The app re-pulls each distinct [subUrl] on launch so a provider rotating
@@ -81,6 +87,7 @@ class ProxyProfile {
     this.ccOverride,
     this.cityOverride,
     this.premium = false,
+    this.free = false,
     this.subUrl,
     this.customName,
     this.source,
@@ -97,6 +104,7 @@ class ProxyProfile {
     Object? ccOverride = _keep,
     Object? cityOverride = _keep,
     bool? premium,
+    bool? free,
     String? subUrl,
     Object? customName = _keep,
     Object? source = _keep,
@@ -118,6 +126,7 @@ class ProxyProfile {
             ? this.cityOverride
             : cityOverride as String?,
         premium: premium ?? this.premium,
+        free: free ?? this.free,
         subUrl: subUrl ?? this.subUrl,
         customName: identical(customName, _keep)
             ? this.customName
@@ -138,6 +147,7 @@ class ProxyProfile {
         ccOverride: ccOverride,
         cityOverride: cityOverride,
         premium: premium,
+        free: free,
         subUrl: subUrl,
         customName: customName,
         source: source,
@@ -152,6 +162,7 @@ class ProxyProfile {
         if (city != null) 'city': city,
         if (ccOverride != null) 'ccOverride': ccOverride,
         if (cityOverride != null) 'cityOverride': cityOverride,
+        if (free) 'free': true,
       };
 
   /// This profile with the fields of [storedExtras] read back from [m].
@@ -160,6 +171,7 @@ class ProxyProfile {
         city: m['city'] as String?,
         ccOverride: m['ccOverride'] as String?,
         cityOverride: m['cityOverride'] as String?,
+        free: m['free'] == true,
       );
 
   /// A copy of [outbound] with the given [tag] injected.

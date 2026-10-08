@@ -15,5 +15,8 @@ import UIKit
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "VpnChannel") {
       VpnChannel.register(with: registrar)
     }
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "AppAttestChannel") {
+      AppAttestChannel.register(with: registrar)
+    }
   }
 }

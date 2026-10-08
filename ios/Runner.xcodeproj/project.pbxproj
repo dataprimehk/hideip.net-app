@@ -23,6 +23,7 @@
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
 		A2F980DD2FDDF00BB9BFDA6A /* Libbox.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 01C96341969C57B17D86E1EA /* Libbox.xcframework */; };
 		D733976045C636E7CC381CBF /* VpnChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F460A5652A963ACA70BC7CCE /* VpnChannel.swift */; };
+		7825B6EB788C12D9DD1D66B9 /* AppAttestChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09CDBED237BA13995303634D /* AppAttestChannel.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -92,6 +93,7 @@
 		D09E88980BF887CBC060C6B0 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		D23B2816FF974DC34CE8E66E /* PacketTunnelProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PacketTunnelProvider.swift; sourceTree = "<group>"; };
 		F460A5652A963ACA70BC7CCE /* VpnChannel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VpnChannel.swift; sourceTree = "<group>"; };
+		09CDBED237BA13995303634D /* AppAttestChannel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppAttestChannel.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -191,6 +193,7 @@
 				7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
 				F460A5652A963ACA70BC7CCE /* VpnChannel.swift */,
+				09CDBED237BA13995303634D /* AppAttestChannel.swift */,
 			);
 			path = Runner;
 			sourceTree = "<group>";
@@ -410,6 +413,7 @@
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
 				33CF66CDD3A76541F4E8D266 /* TunnelShared.swift in Sources */,
 				D733976045C636E7CC381CBF /* VpnChannel.swift in Sources */,
+				7825B6EB788C12D9DD1D66B9 /* AppAttestChannel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

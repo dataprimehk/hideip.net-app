@@ -36,6 +36,11 @@ class AccountCredentials {
   /// works this out from [expires]: time can be added from anywhere.
   final bool active;
 
+  /// Whether this device may manage the account, as the server last said.
+  /// Null when it has not said, which a server from before pairing v2
+  /// never does: every device on the account managed it then.
+  final bool? manage;
+
   const AccountCredentials({
     required this.number,
     this.deviceToken,
@@ -43,6 +48,7 @@ class AccountCredentials {
     this.kind,
     this.expires,
     this.active = true,
+    this.manage,
   });
 
   /// Whether this device is on the account. False after an account with no
@@ -54,6 +60,7 @@ class AccountCredentials {
     String? kind,
     DateTime? expires,
     bool? active,
+    bool? manage,
   }) => AccountCredentials(
     number: number,
     deviceToken: deviceToken,
@@ -61,6 +68,7 @@ class AccountCredentials {
     kind: kind ?? this.kind,
     expires: expires ?? this.expires,
     active: active ?? this.active,
+    manage: manage ?? this.manage,
   );
 
   /// The same number with this device no longer on the account.
@@ -129,6 +137,7 @@ class AccountStore {
   static const kExpiresMs = 'premium_account_expires_ms';
   static const kActive = 'premium_account_active';
   static const kStatusAtMs = 'premium_account_status_at_ms';
+  static const kManage = 'premium_account_manage_v2';
   static const kFreshNumber = 'premium_account_fresh_number';
   static const kLastNumber = 'premium_account_last_number';
   static const kStoreLinked = 'premium_store_link_v2';
@@ -192,6 +201,7 @@ class AccountStore {
       kind: prefs.getString(kKind),
       expires: ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms),
       active: prefs.getBool(kActive) ?? true,
+      manage: prefs.getBool(kManage),
     );
   }
 
@@ -206,6 +216,17 @@ class AccountStore {
       expires: credentials.expires,
       active: credentials.active,
     );
+    await saveManage(credentials.manage);
+  }
+
+  /// Whether this device may manage the account; null forgets the answer.
+  Future<void> saveManage(bool? manage) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (manage == null) {
+      await prefs.remove(kManage);
+    } else {
+      await prefs.setBool(kManage, manage);
+    }
   }
 
   /// Updates the standing only; the secrets stay as they are.
@@ -239,6 +260,7 @@ class AccountStore {
     await prefs.remove(kExpiresMs);
     await prefs.remove(kActive);
     await prefs.remove(kStatusAtMs);
+    await prefs.remove(kManage);
   }
 
   /// When the server was last asked about the account, or null if never.
