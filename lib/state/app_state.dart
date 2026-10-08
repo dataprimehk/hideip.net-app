@@ -1425,12 +1425,15 @@ class AppState extends ChangeNotifier implements AccountUiHost {
       }
       return;
     }
+    final wasOn = premium.isOn;
     _premium = p;
     notifyListeners();
     await p.save();
     // A purchase ends the free key on the spot, not only once its servers
     // arrive.
     if (p.isOn) await _dropFreeAccess();
+    // A subscription that ran out leaves the free location on offer again.
+    if (wasOn && !p.isOn) _offerFreeAgain();
     // Every live entitlement re-provisions: a first purchase creates the
     // server profile, a renewal extends its lifetime server-side.
     if (p.isOn && proof != null) await _provisionPremiumLocked(proof);
@@ -1456,12 +1459,17 @@ class AppState extends ChangeNotifier implements AccountUiHost {
       _premium = store;
       await _premium.save();
       notifyListeners();
+      // Premium stays on, now from the store: no free key next to it.
+      await _dropFreeAccess();
       await _provisionPremiumLocked(proof);
       return;
     }
     _premium = leftover;
     await _premium.save();
     notifyListeners();
+    // No Premium left in force: the free location is offered again, the
+    // number signed in or not (AF-23).
+    _offerFreeAgain();
   }
 
   /// Sign this device in with [number]. On success the premium servers
@@ -1542,19 +1550,20 @@ class AppState extends ChangeNotifier implements AccountUiHost {
     await _accountStore.save(creds);
     _account = creds;
     _accountIssue = null;
-    // Any account on the device ends the free key (C8), whether or not its
-    // time outlasts what is in force.
-    await _dropFreeAccess();
     final candidate = _accountPremium(creds.kind, creds.expires, active: true);
     if (!_outlasts(candidate)) {
       // A store subscription that runs longer stays in force; the number is
-      // kept for when it does not.
+      // kept for when it does not. Premium is on either way, so the free
+      // key goes (C8, AF-23).
       notifyListeners();
+      await _dropFreeAccess();
       return;
     }
     _premium = candidate;
     await _premium.save();
     notifyListeners();
+    // An account with time is Premium in force: the free key goes there
+    // (C8).
     await _adoptSubscriptionUrl(url);
   }
 
@@ -1564,8 +1573,9 @@ class AppState extends ChangeNotifier implements AccountUiHost {
     await _accountStore.save(creds);
     _account = creds;
     _accountIssue = null;
-    // Signed in, even with no time left: the free key goes (C8).
-    await _dropFreeAccess();
+    // A number with no time left is not Premium: a free key this device
+    // holds stays, and the free location stays on offer (AF-23). It goes
+    // once time is added and the account is in force.
     if (_premium.source != PremiumSource.account && premium.isOn) {
       notifyListeners();
       return;
@@ -2402,18 +2412,18 @@ class AppState extends ChangeNotifier implements AccountUiHost {
   FreeInfo get freeInfo => _freeInfo;
 
   /// Whether the free location is offered on this device right now: the
-  /// server has it on, Premium is not (Premium has better servers), and no
-  /// account number is signed in here. A purchase or a sign-in ends the
-  /// free key (C8); an account that ran out of time is offered its plans
-  /// again, not the free location.
-  bool get freeOffered =>
-      !premium.isOn && _account == null && _freeInfo.enabled;
+  /// server has it on and Premium is not in force here (Premium has better
+  /// servers). An account number signed in with no time left is not
+  /// Premium, so it is offered the free location too (AF-23). Premium
+  /// coming into force, by a purchase or by an account with time, ends the
+  /// free key (C8).
+  bool get freeOffered => !premium.isOn && _freeInfo.enabled;
 
   /// The free location's servers this install holds, while they are its
   /// to use. They stay on show when the server's switch is read as off or
   /// cannot be read: the key keeps working until the server lets it lapse,
   /// and a failed read must not take a working server out of the list.
-  List<Location> get freeHeldLocations => premium.isOn || _account != null
+  List<Location> get freeHeldLocations => premium.isOn
       ? const []
       : [
           for (final l in locations)
@@ -2452,9 +2462,9 @@ class AppState extends ChangeNotifier implements AccountUiHost {
 
   Future<void> _startFree() async {
     final url = await _freeStore.subUrl();
-    if (premium.isOn || _account != null) {
-      // Premium or an account arrived while this install held a free key
-      // (a purchase that landed while the app was closed, for one).
+    if (premium.isOn) {
+      // Premium arrived while this install held a free key (a purchase
+      // that landed while the app was closed, for one).
       if (url != null || freeHeld) await _freeGate.run(_dropFreeLocked);
       return;
     }
@@ -2467,7 +2477,7 @@ class AppState extends ChangeNotifier implements AccountUiHost {
   /// more, quietly, at most once per run.
   Future<FreeAccessResult> _refreshFreeLocked(String url) async {
     final got = await _free.profiles(url);
-    if (premium.isOn || _account != null) return FreeAccessResult.premium;
+    if (premium.isOn) return FreeAccessResult.premium;
     if (got.gone) {
       await _forgetFreeLocked();
       if (_freeReissued || !_freeInfo.enabled) return FreeAccessResult.network;
@@ -2486,7 +2496,7 @@ class AppState extends ChangeNotifier implements AccountUiHost {
   /// new one asked for now. Called on the tap that wants the free location,
   /// never before. Never throws and never shows anything by itself.
   Future<FreeAccessResult> ensureFreeAccess() => _freeGate.run(() async {
-        if (premium.isOn || _account != null) return FreeAccessResult.premium;
+        if (premium.isOn) return FreeAccessResult.premium;
         if (freeHeld) return FreeAccessResult.ok;
         final url = await _freeStore.subUrl();
         if (url != null) {
@@ -2505,8 +2515,9 @@ class AppState extends ChangeNotifier implements AccountUiHost {
       });
 
   Future<FreeAccessResult> _registerFreeLocked() async {
-    // No key for a device on an account, signed in with time or without.
-    if (premium.isOn || _account != null) return FreeAccessResult.premium;
+    // No key while Premium is in force. A number with no time left is not
+    // Premium and may hold one (AF-23).
+    if (premium.isOn) return FreeAccessResult.premium;
     _freeBusy = true;
     notifyListeners();
     final FreeRegistration reg;
@@ -2516,7 +2527,7 @@ class AppState extends ChangeNotifier implements AccountUiHost {
       _freeBusy = false;
       notifyListeners();
     }
-    if (premium.isOn || _account != null) return FreeAccessResult.premium;
+    if (premium.isOn) return FreeAccessResult.premium;
     final url = reg.subUrl;
     if (!reg.ok || url == null) {
       if (reg.status == FreeRegisterStatus.disabled) {
@@ -2621,6 +2632,13 @@ class AppState extends ChangeNotifier implements AccountUiHost {
   /// key only ever had a VLESS user on the free nodes, and the server lets
   /// an unused key lapse on its own.
   Future<void> _dropFreeAccess() => _freeGate.run(_dropFreeLocked);
+
+  /// Premium is no longer in force here: whether the free location is on is
+  /// read again, so its row comes back. Its key still waits for a tap.
+  void _offerFreeAgain() {
+    if (premium.isOn) return;
+    unawaited(refreshFreeInfo());
+  }
 
   Future<void> _dropFreeLocked() async {
     final url = await _freeStore.subUrl();

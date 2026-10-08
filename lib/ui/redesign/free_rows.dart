@@ -11,8 +11,9 @@ import 'hip.dart';
 /// Before the key: the rows the signed catalog names, or one plain row when
 /// it names none; tapping one asks for the key. After it: the free servers
 /// themselves, which are ordinary servers in the list from then on. Nothing
-/// at all when the server has the free location off or cannot be asked,
-/// while Premium is on, or with an account signed in.
+/// at all when the server has the free location off or cannot be asked, or
+/// while Premium is on. An account number with no time left is not Premium:
+/// it sees the free location like any device without Premium (AF-23).
 @immutable
 class FreeOffer {
   /// Free servers this install holds: real, selectable servers.

@@ -7,6 +7,7 @@ import 'package:hideip_vpn/core/account_store.dart';
 import 'package:hideip_vpn/core/free_access.dart';
 import 'package:hideip_vpn/core/location.dart';
 import 'package:hideip_vpn/core/pairing.dart';
+import 'package:hideip_vpn/core/premium.dart';
 import 'package:hideip_vpn/core/provisioning.dart';
 import 'package:hideip_vpn/core/secret_prefs.dart';
 import 'package:hideip_vpn/core/share_link_parser.dart';
@@ -25,6 +26,7 @@ import 'support/account_fakes.dart';
 
 const _challenge = 'aGlkZWlwLWZyZWUtdGVzdA';
 const _number = '8236387788950319';
+const _premiumSub = 'https://api.test/v1/sub/dev_abc';
 final _catalog = Uri.parse('https://mirror.test/catalog');
 
 String _freeSub(int n) => '${ProvisioningService.endpoint}/v1/sub/free_tok_$n';
@@ -37,7 +39,8 @@ http.Response _json(Object body, [int status = 200]) =>
     http.Response(jsonEncode(body), status);
 
 /// The free routes of CONTRACT-FREE C5, the switch in [info], and an
-/// account sign-in that can come back with no time on it.
+/// account whose sign-in and status come back with or without time on it
+/// ([accountActive]).
 class _Backend {
   final requests = <http.Request>[];
   Object? info = {
@@ -58,6 +61,7 @@ class _Backend {
     requests.add(req);
     if (req.url == _catalog) return http.Response('', 503);
     final url = req.url.toString();
+    if (url == _premiumSub) return http.Response(_link('de-fra-01'), 200);
     for (var n = 1; n <= 3; n++) {
       if (url == _freeSub(n)) {
         return http.Response(
@@ -92,16 +96,45 @@ class _Backend {
       case '/v1/account/signin':
         return _json({
           'active': accountActive,
-          'expires_ms': DateTime.now()
-              .subtract(const Duration(days: 3))
-              .millisecondsSinceEpoch,
+          'expires_ms': _expires.millisecondsSinceEpoch,
+          'subscription_url': ?(accountActive ? _premiumSub : null),
           'device': {'id': 'dev_abc', 'kind': 'phone', 'name': 'x'},
           'device_token': 'k9Q-token',
+          'device_limit': 5,
+        });
+      case '/v1/account/status':
+        return _json({
+          'active': accountActive,
+          'expires_ms': _expires.millisecondsSinceEpoch,
+          'kind': 'yearly',
+          'devices': [
+            {'id': 'dev_abc', 'kind': 'phone', 'name': 'x'},
+          ],
           'device_limit': 5,
         });
     }
     return http.Response('', 404);
   });
+
+  DateTime get _expires => accountActive
+      ? DateTime.now().add(const Duration(days: 30))
+      : DateTime.now().subtract(const Duration(days: 3));
+
+  /// R2-5: the free key never goes to a route that manages an account or
+  /// a device, in the path, a header or the body.
+  void expectFreeKeyKeptToItself() {
+    final managing = requests.where(
+      (r) =>
+          r.url.path.startsWith('/v1/account') ||
+          r.url.path.startsWith('/v1/link') ||
+          r.url.path.startsWith('/v1/pairing'),
+    );
+    for (final r in managing) {
+      expect(r.url.toString(), isNot(contains('free_tok')));
+      expect(r.headers.values.join(' '), isNot(contains('free_tok')));
+      expect(r.body, isNot(contains('free_tok')));
+    }
+  }
 }
 
 late _Backend _backend;
@@ -219,27 +252,55 @@ void main() {
       },
     );
 
-    test('an account signed in, even out of time, is not offered the free '
-        'location', () async {
+    test('a number signed in with no time left is offered the free '
+        'location, and gets it on the tap (AF-23)', () async {
       final state = _fresh();
       await state.refreshFreeInfo();
       expect(state.freeOffered, isTrue);
 
       final signed = await state.signInWithAccountNumber(_number);
+      await pumpEventQueue();
       expect(signed.result, AccountResult.inactive);
       expect(state.premium.isOn, isFalse);
       expect(state.accountSignedIn, isTrue);
+      expect(state.freeOffered, isTrue);
+      expect(FreeOffer.of(state).any, isTrue);
+      // Still lazy: the sign-in asked for no key.
+      expect(_backend.to('/v1/free/challenge'), isEmpty);
+
+      expect(await state.selectFree(), isTrue);
+      expect(_backend.to('/v1/free/register'), hasLength(1));
+      expect(state.activeLocation!.profile.free, isTrue);
+      expect(state.freeHeldLocations, hasLength(2));
+      // The free key gives the account nothing: no subscription token and
+      // no Premium, and it is never sent where the account is managed.
+      expect(state.subToken, isNull);
+      expect(state.premium.isOn, isFalse);
+      expect(state.canLinkDevices, isFalse);
+      await state.refreshAccount(force: true);
+      _backend.expectFreeKeyKeptToItself();
+    });
+
+    test('a number with time hides the free location', () async {
+      _backend.accountActive = true;
+      final state = _fresh();
+      await state.refreshFreeInfo();
+      expect(state.freeOffered, isTrue);
+
+      final signed = await state.signInWithAccountNumber(_number);
+      await pumpEventQueue();
+      expect(signed.result, AccountResult.ok);
+      expect(state.premium.isOn, isTrue);
       expect(state.freeOffered, isFalse);
-      expect(state.freeLocations, isEmpty);
+      expect(FreeOffer.of(state).any, isFalse);
       expect(await state.ensureFreeAccess(), FreeAccessResult.premium);
       expect(_backend.to('/v1/free/challenge'), isEmpty);
-      expect(FreeOffer.of(state).any, isFalse);
     });
   });
 
-  group('R1: an account ends the free key (N3)', () {
+  group('AF-23: only Premium in force ends the free key', () {
     test(
-      'a number signed in with no time left drops the key it held',
+      'a number signed in with no time left keeps the key it held',
       () async {
         final state = _fresh();
         await state.refreshFreeInfo();
@@ -249,31 +310,161 @@ void main() {
         final signed = await state.signInWithAccountNumber(_number);
         expect(signed.result, AccountResult.inactive);
         await pumpEventQueue();
-        expect(state.freeHeld, isFalse);
-        expect(await const FreeStore().subUrl(), isNull);
-        expect(state.locations.where((l) => l.profile.free), isEmpty);
+        expect(state.freeHeld, isTrue);
+        expect(await const FreeStore().subUrl(), _freeSub(1));
+        expect(state.freeHeldLocations, hasLength(2));
+        expect(await state.ensureFreeAccess(), FreeAccessResult.ok);
+        expect(_backend.to('/v1/free/register'), hasLength(1));
+        _backend.expectFreeKeyKeptToItself();
       },
     );
 
     test(
-      'a launch with an account keeps no free key and asks for none',
+      'a number with time drops the key it held, and its servers',
+      () async {
+        final state = _fresh();
+        await state.refreshFreeInfo();
+        expect(await state.ensureFreeAccess(), FreeAccessResult.ok);
+        expect(state.freeHeld, isTrue);
+
+        _backend.accountActive = true;
+        final signed = await state.signInWithAccountNumber(_number);
+        expect(signed.result, AccountResult.ok);
+        await pumpEventQueue();
+        expect(state.premium.isOn, isTrue);
+        expect(state.freeHeld, isFalse);
+        expect(await const FreeStore().subUrl(), isNull);
+        expect(state.locations.where((l) => l.profile.free), isEmpty);
+        expect(state.freeHeldLocations, isEmpty);
+        expect(state.locations.where((l) => l.premium), hasLength(1));
+      },
+    );
+
+    test(
+      'an expired number renewed: the free key goes once time is back',
+      () async {
+        final state = _fresh();
+        // On the account with time from the start, so the free switch was
+        // never read; then the time runs out.
+        _backend.accountActive = true;
+        await state.signInWithAccountNumber(_number);
+        await pumpEventQueue();
+        expect(state.premium.isOn, isTrue);
+        expect(state.freeOffered, isFalse);
+        expect(_backend.to('/v1/free/info'), isEmpty);
+
+        _backend.accountActive = false;
+        await state.refreshAccount(force: true);
+        await pumpEventQueue();
+        expect(state.premium.isOn, isFalse);
+        expect(state.accountSignedIn, isTrue);
+        // Offered again: the switch is read once more, and it is still
+        // lazy, so no key until the tap.
+        expect(_backend.to('/v1/free/info'), hasLength(1));
+        expect(state.freeOffered, isTrue);
+        expect(_backend.to('/v1/free/challenge'), isEmpty);
+
+        expect(await state.ensureFreeAccess(), FreeAccessResult.ok);
+        expect(state.freeHeld, isTrue);
+
+        // Time is added to the number elsewhere; the status call finds it.
+        _backend.accountActive = true;
+        await state.refreshAccount(force: true);
+        await pumpEventQueue();
+        expect(state.premium.isOn, isTrue);
+        expect(state.freeHeld, isFalse);
+        expect(state.freeOffered, isFalse);
+        expect(await const FreeStore().subUrl(), isNull);
+        expect(state.locations.where((l) => l.premium), hasLength(1));
+        _backend.expectFreeKeyKeptToItself();
+      },
+    );
+
+    test(
+      'a number with no time left signed in again with time drops the key',
+      () async {
+        final state = _fresh();
+        await state.refreshFreeInfo();
+        await state.signInWithAccountNumber(_number);
+        await pumpEventQueue();
+        expect(await state.ensureFreeAccess(), FreeAccessResult.ok);
+
+        _backend.accountActive = true;
+        await state.signInWithAccountNumber(_number);
+        await pumpEventQueue();
+        expect(state.premium.isOn, isTrue);
+        expect(state.freeHeld, isFalse);
+        expect(await const FreeStore().subUrl(), isNull);
+      },
+    );
+
+    test(
+      'a purchase with a number out of time signed in drops the key',
+      () async {
+        final state = _fresh();
+        await state.refreshFreeInfo();
+        await state.signInWithAccountNumber(_number);
+        await pumpEventQueue();
+        expect(await state.ensureFreeAccess(), FreeAccessResult.ok);
+
+        await state.storeAnswerForTesting(
+          Premium(
+            status: PremiumStatus.active,
+            plan: PremiumPlan.yearly,
+            renews: DateTime.now().add(const Duration(days: 365)),
+          ),
+          const PurchasePayload.android(
+            purchaseToken: 'play-token',
+            productId: PremiumProducts.yearly,
+          ),
+        );
+        await pumpEventQueue();
+        expect(state.premium.isOn, isTrue);
+        expect(state.freeHeld, isFalse);
+        expect(state.freeOffered, isFalse);
+        expect(await const FreeStore().subUrl(), isNull);
+      },
+    );
+
+    test(
+      'a launch with a number out of time keeps its key and offers free',
       () async {
         final first = _fresh();
         await first.refreshFreeInfo();
-        await first.ensureFreeAccess();
         await first.signInWithAccountNumber(_number);
         await pumpEventQueue();
-        // A key left behind by an older build, for one.
-        await const FreeStore().save(_freeSub(1));
+        await first.ensureFreeAccess();
+        expect(await const FreeStore().subUrl(), _freeSub(1));
 
         final again = _fresh();
         await again.loadAccountForTesting();
+        await again.loadPremiumForTesting();
         await again.startFreeForTesting();
-        expect(await const FreeStore().subUrl(), isNull);
-        expect(again.freeOffered, isFalse);
+        expect(again.accountSignedIn, isTrue);
+        expect(again.premium.isOn, isFalse);
+        expect(await const FreeStore().subUrl(), _freeSub(1));
+        expect(again.freeOffered, isTrue);
+        expect(again.freeHeld, isTrue);
         expect(_backend.to('/v1/free/register'), hasLength(1));
       },
     );
+
+    test('a launch with a number in force drops a key left behind', () async {
+      _backend.accountActive = true;
+      final first = _fresh();
+      await first.signInWithAccountNumber(_number);
+      await pumpEventQueue();
+      // A key left behind by an older build, for one.
+      await const FreeStore().save(_freeSub(1));
+
+      final again = _fresh();
+      await again.loadAccountForTesting();
+      await again.loadPremiumForTesting();
+      await again.startFreeForTesting();
+      expect(await const FreeStore().subUrl(), isNull);
+      expect(again.freeOffered, isFalse);
+      expect(_backend.to('/v1/free/register'), isEmpty);
+    });
   });
 
   group('Locations', () {
@@ -325,6 +516,49 @@ void main() {
       expect(find.textContaining('Up to 10 Mbit/s'), findsNWidgets(2));
       expect(find.byType(HipSwipeRow), findsNothing);
       expect(find.text(S.dNoServers), findsOneWidget);
+    });
+
+    testWidgets('a number out of time: the open Free row is there (AF-23)', (
+      tester,
+    ) async {
+      _phone(tester);
+      final state = _fresh();
+      await _drive(tester, () async {
+        await state.refreshFreeInfo();
+        await state.signInWithAccountNumber(_number);
+      }());
+      expect(state.accountSignedIn, isTrue);
+      expect(state.premium.isOn, isFalse);
+      await tester.pumpWidget(_locations(state));
+      await _settle(tester);
+
+      final row = find.byType(FreeOfferRow);
+      expect(row, findsOneWidget);
+      expect(find.text(S.freeTag.toUpperCase()), findsOneWidget);
+      expect(_backend.to('/v1/free/register'), isEmpty);
+
+      await tester.tap(row);
+      await _settle(tester);
+      expect(_backend.to('/v1/free/register'), hasLength(1));
+      expect(state.activeLocation!.profile.free, isTrue);
+      await _drain(tester);
+    });
+
+    testWidgets('a number with time: no Free group at all', (tester) async {
+      _phone(tester);
+      _backend.accountActive = true;
+      final state = _fresh();
+      await _drive(tester, () async {
+        await state.refreshFreeInfo();
+        await state.signInWithAccountNumber(_number);
+      }());
+      expect(state.premium.isOn, isTrue);
+      await tester.pumpWidget(_locations(state));
+      await _settle(tester);
+
+      expect(find.byType(FreeOfferRow), findsNothing);
+      expect(find.text(S.freeTag.toUpperCase()), findsNothing);
+      await _drain(tester);
     });
 
     testWidgets('off: no free row, and the list is as it was', (tester) async {
@@ -432,6 +666,27 @@ void main() {
       expect(find.text(S.tConnect), findsOneWidget);
       expect(find.text(S.freeTag), findsWidgets);
       expect(state.conn, ConnState.disconnected);
+      await _drain(tester);
+    });
+
+    testWidgets('empty, signed in with a number out of time: the row too', (
+      tester,
+    ) async {
+      _phone(tester);
+      final state = _fresh();
+      await _drive(tester, () async {
+        await state.refreshFreeInfo();
+        await state.signInWithAccountNumber(_number);
+      }());
+      await tester.pumpWidget(home(state));
+      await _settle(tester);
+
+      expect(find.text(S.b0Title), findsOneWidget);
+      expect(find.byType(FreeOfferRow), findsOneWidget);
+      await tester.tap(find.byType(FreeOfferRow));
+      await _settle(tester);
+      expect(_backend.to('/v1/free/register'), hasLength(1));
+      expect(find.text(S.tConnect), findsOneWidget);
       await _drain(tester);
     });
 
