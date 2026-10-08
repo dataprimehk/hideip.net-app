@@ -36,6 +36,7 @@ ALLOWED = {
     "lib/core/catalog.dart": {CRYPTO_IMPORT},
     "lib/core/wg_keys.dart": {CRYPTO_IMPORT},
     "lib/core/secret_prefs.dart": {CRYPTO_IMPORT},
+    "lib/core/free_access.dart": {CRYPTO_IMPORT},
     "lib/core/premium.dart": {
         "static const yearly = PlanInfo('Yearly', r'$29.99', 'year', 'billed yearly',",
         "trial: true, perMonth: r'$2.50');",

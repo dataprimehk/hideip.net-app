@@ -183,6 +183,10 @@ abstract final class S {
   static const toastLinkEmpty = 'That link carries nothing we can import';
   static const toastLinkNeedsPremium =
       'Premium is needed to link another device';
+  static const toastFreeUnavailable =
+      'The free location is not available right now';
+  static const toastFreeBusy =
+      'Too many free sign-ups from this network today';
 
   /// The tunnel chip, always visible while connected. Simple view names the
   /// path in words; Advanced view carries the full chain instead.

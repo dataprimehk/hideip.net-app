@@ -11,6 +11,7 @@ import '../core/async_gate.dart';
 import '../core/cc_iso.dart';
 import '../core/connectivity.dart';
 import '../core/device_link.dart';
+import '../core/free_access.dart';
 import '../core/haptics.dart';
 import '../core/ip_lookup.dart';
 import '../core/location.dart';
@@ -107,12 +108,16 @@ class AppState extends ChangeNotifier {
     ProvisioningService? provisioning,
     UserSubscriptionService? userSubscriptions,
     PairingClient? pairing,
+    FreeService? free,
+    FreeProver? freeProver,
     this._linkPollInterval = const Duration(seconds: 3),
     this._tablet,
   })  : _accounts = accounts ?? AccountService(),
         _provisioning = provisioning ?? ProvisioningService(),
         _userSubs = userSubscriptions ?? UserSubscriptionService(),
-        _pairing = pairing ?? PairingClient();
+        _pairing = pairing ?? PairingClient(),
+        _free = free ?? FreeService(),
+        _freeProver = freeProver ?? platformFreeProver();
 
   final List<ProxyProfile> _profiles = [];
   int _selected = -1;
@@ -487,6 +492,9 @@ class AppState extends ChangeNotifier {
     _syncStatus(initial: true);
     // The hideip.net fleet as it is shown to someone who has not bought it.
     unawaited(refreshLockedLocations());
+    // The free location: whether it is on, and the key this install already
+    // has, if any. No key is asked for here; that waits for a tap.
+    unawaited(_startFree());
     // A request for access this device made before it was last closed: its
     // answer may have arrived meanwhile, or be stored and not yet confirmed.
     unawaited(_resumeLinkRequest());
@@ -505,13 +513,20 @@ class AppState extends ChangeNotifier {
   /// nothing to show, because those same servers are real profiles by then.
   Future<void> refreshLockedLocations() async {
     if (premium.isOn) {
-      if (_lockedLocations.isEmpty) return;
+      if (_lockedLocations.isEmpty && _freeCatalog.isEmpty) return;
       _lockedLocations = const [];
+      _freeCatalog = const [];
       notifyListeners();
       return;
     }
-    final fresh = await PremiumCatalog.fetchLocked();
-    if (fresh.isEmpty || premium.isOn) return;
+    final split = await PremiumCatalog.fetchSplit();
+    final fresh = split.locked;
+    if (premium.isOn) return;
+    if (split.free.isNotEmpty) {
+      _freeCatalog = split.free;
+      notifyListeners();
+    }
+    if (fresh.isEmpty) return;
     _lockedLocations = fresh;
     notifyListeners();
     // Real bars need a real measurement; the row would rather say nothing
@@ -644,6 +659,8 @@ class AppState extends ChangeNotifier {
   /// premium profiles in, and bring Speed mode along.
   Future<void> _adoptSubscriptionUrl(String url) async {
     _premiumEnded = false;
+    // Premium is here: the free key goes, and its servers with it.
+    await _dropFreeAccess();
     await PremiumSub.saveUrl(url);
     // The linked-devices section keys off this token being present.
     await _loadSubToken();
@@ -1377,6 +1394,9 @@ class AppState extends ChangeNotifier {
     _premium = p;
     notifyListeners();
     await p.save();
+    // A purchase ends the free key on the spot, not only once its servers
+    // arrive.
+    if (p.isOn) await _dropFreeAccess();
     // Every live entitlement re-provisions: a first purchase creates the
     // server profile, a renewal extends its lifetime server-side.
     if (p.isOn && proof != null) await _provisionPremiumLocked(proof);
@@ -2229,6 +2249,229 @@ class AppState extends ChangeNotifier {
         : 'Android tablet';
   }
 
+  // --- Free location --------------------------------------------------------
+
+  final FreeService _free;
+  final FreeProver _freeProver;
+  final FreeStore _freeStore = const FreeStore();
+  final AsyncGate _freeGate = AsyncGate();
+  FreeInfo _freeInfo = FreeInfo.off;
+  List<Location> _freeCatalog = const [];
+  bool _freeBusy = false;
+
+  /// A gone key is asked for again on its own at most once per run.
+  bool _freeReissued = false;
+
+  /// What the server last said about the free location. Off until it says
+  /// otherwise, and off again on any failure.
+  FreeInfo get freeInfo => _freeInfo;
+
+  /// Whether the free location is offered on this device right now: the
+  /// server has it on, and Premium is not (Premium has better servers).
+  bool get freeOffered => !premium.isOn && _freeInfo.enabled;
+
+  /// Whether this install holds the free servers already.
+  bool get freeHeld => _profiles.any((p) => p.free);
+
+  /// True while the free key is being asked for (the proof can take a few
+  /// seconds on a phone).
+  bool get freeBusy => _freeBusy;
+
+  /// The free location's rows before the key is asked for, from the signed
+  /// catalog. Not connectable: tapping one goes through [connectFree]. Empty
+  /// once the free servers are on the device (they are in [locations] then),
+  /// and whenever the free location is not offered. With no usable catalog
+  /// the list is empty while [freeOffered] can still be true; the screen
+  /// then shows one plain free row.
+  List<Location> get freeLocations =>
+      freeOffered && !freeHeld ? List.unmodifiable(_freeCatalog) : const [];
+
+  /// Reads whether the free location is on. Quiet: an answer that does not
+  /// come leaves it off.
+  Future<void> refreshFreeInfo({bool fresh = false}) async {
+    if (premium.isOn) return;
+    final info = await _free.info(fresh: fresh);
+    if (premium.isOn) return;
+    _freeInfo = info;
+    notifyListeners();
+  }
+
+  /// Runs the launch step of the free location on its own.
+  @visibleForTesting
+  Future<void> startFreeForTesting() => _startFree();
+
+  Future<void> _startFree() async {
+    final url = await _freeStore.subUrl();
+    if (premium.isOn) {
+      // Premium arrived while this install held a free key (a purchase
+      // that landed while the app was closed, for one).
+      if (url != null || freeHeld) await _freeGate.run(_dropFreeLocked);
+      return;
+    }
+    await refreshFreeInfo();
+    if (url != null) await _freeGate.run(() => _refreshFreeLocked(url));
+  }
+
+  /// The free servers for [url] again, which also keeps the key from
+  /// lapsing. A key the server no longer knows is let go and asked for once
+  /// more, quietly, at most once per run.
+  Future<FreeAccessResult> _refreshFreeLocked(String url) async {
+    final got = await _free.profiles(url);
+    if (premium.isOn) return FreeAccessResult.premium;
+    if (got.gone) {
+      await _forgetFreeLocked();
+      if (_freeReissued || !_freeInfo.enabled) return FreeAccessResult.network;
+      _freeReissued = true;
+      return _registerFreeLocked();
+    }
+    final fresh = got.profiles;
+    if (fresh == null) {
+      return freeHeld ? FreeAccessResult.ok : FreeAccessResult.network;
+    }
+    _applyFreeProfiles(fresh);
+    return FreeAccessResult.ok;
+  }
+
+  /// Makes sure this install holds the free servers: the key it has, or a
+  /// new one asked for now. Called on the tap that wants the free location,
+  /// never before. Never throws and never shows anything by itself.
+  Future<FreeAccessResult> ensureFreeAccess() => _freeGate.run(() async {
+        if (premium.isOn) return FreeAccessResult.premium;
+        if (freeHeld) return FreeAccessResult.ok;
+        final url = await _freeStore.subUrl();
+        if (url != null) {
+          final r = await _refreshFreeLocked(url);
+          if (r != FreeAccessResult.network || await _freeStore.subUrl() != null) {
+            return r;
+          }
+        }
+        final info = await _free.info();
+        _freeInfo = info;
+        if (!info.enabled) {
+          notifyListeners();
+          return FreeAccessResult.disabled;
+        }
+        return _registerFreeLocked();
+      });
+
+  Future<FreeAccessResult> _registerFreeLocked() async {
+    _freeBusy = true;
+    notifyListeners();
+    final FreeRegistration reg;
+    try {
+      reg = await _free.register(_freeProver);
+    } finally {
+      _freeBusy = false;
+      notifyListeners();
+    }
+    if (premium.isOn) return FreeAccessResult.premium;
+    final url = reg.subUrl;
+    if (!reg.ok || url == null) {
+      if (reg.status == FreeRegisterStatus.disabled) {
+        _freeInfo = FreeInfo.off;
+        _free.forgetInfo();
+        notifyListeners();
+      }
+      return switch (reg.status) {
+        FreeRegisterStatus.disabled => FreeAccessResult.disabled,
+        FreeRegisterStatus.rateLimited => FreeAccessResult.rateLimited,
+        FreeRegisterStatus.badChallenge ||
+        FreeRegisterStatus.badProof => FreeAccessResult.rejected,
+        FreeRegisterStatus.unsupported => FreeAccessResult.unsupported,
+        _ => FreeAccessResult.network,
+      };
+    }
+    try {
+      await _freeStore.save(url);
+    } catch (_) {
+      return FreeAccessResult.network;
+    }
+    final got = await _free.profiles(url);
+    if (premium.isOn) {
+      await _dropFreeLocked();
+      return FreeAccessResult.premium;
+    }
+    final fresh = got.profiles;
+    if (fresh == null || fresh.isEmpty) return FreeAccessResult.network;
+    _applyFreeProfiles(fresh);
+    return FreeAccessResult.ok;
+  }
+
+  /// Connects to the free location: [at] when it names one of its servers,
+  /// otherwise the free server with the best latency. Asks for the key
+  /// first when this install has none. A failure says so in a toast and
+  /// leaves everything else as it was. True when a connect was started.
+  Future<bool> connectFree({Location? at}) async {
+    final result = await ensureFreeAccess();
+    if (result != FreeAccessResult.ok) {
+      if (result != FreeAccessResult.premium) {
+        showToast(
+          result == FreeAccessResult.rateLimited
+              ? S.toastFreeBusy
+              : S.toastFreeUnavailable,
+        );
+      }
+      return false;
+    }
+    final free = [
+      for (final l in locations)
+        if (l.profile.free) l,
+    ];
+    if (free.isEmpty) return false;
+    final host = at?.profile.server;
+    Location? pick;
+    if (host != null) {
+      for (final l in free) {
+        if (l.profile.server == host) pick = l;
+      }
+    }
+    if (pick == null) {
+      int? best;
+      for (final l in free) {
+        final ping = pingFor(l.profile);
+        if (ping is PingOk && (best == null || ping.ms < best)) {
+          best = ping.ms;
+          pick = l;
+        }
+      }
+    }
+    await selectLocation(pick ?? free.first);
+    await connect();
+    return true;
+  }
+
+  void _applyFreeProfiles(List<ProxyProfile> fresh) {
+    _applyMerged([
+      for (final p in _profiles)
+        if (!p.free) p,
+      ...fresh,
+    ]);
+  }
+
+  /// Premium arrived: the free key and its servers go. Nothing is sent: the
+  /// key only ever had a VLESS user on the free nodes, and the server lets
+  /// an unused key lapse on its own.
+  Future<void> _dropFreeAccess() => _freeGate.run(_dropFreeLocked);
+
+  Future<void> _dropFreeLocked() async {
+    final url = await _freeStore.subUrl();
+    _freeCatalog = const [];
+    if (url == null && !freeHeld) return;
+    await _forgetFreeLocked();
+  }
+
+  Future<void> _forgetFreeLocked() async {
+    await _freeStore.clear();
+    if (freeHeld) {
+      _applyMerged([
+        for (final p in _profiles)
+          if (!p.free) p,
+      ]);
+    } else {
+      notifyListeners();
+    }
+  }
+
   // --- User subscriptions --------------------------------------------------
 
   /// On launch: re-pull every subscription URL the user has imported and swap
@@ -2977,7 +3220,7 @@ class AppState extends ChangeNotifier {
   Future<void> replaceProfile(int index, ProxyProfile next) async {
     if (index < 0 || index >= _profiles.length) return;
     final old = _profiles[index];
-    if (old.premium) return;
+    if (old.premium || old.free) return;
     final sameAddress = old.server == next.server;
     // A name that places itself (a city or country token) makes the old
     // lookup moot; otherwise it still describes the same address.
@@ -3004,7 +3247,7 @@ class AppState extends ChangeNotifier {
   Future<void> setServerLocation(int index, {String? cc, String? city}) async {
     if (index < 0 || index >= _profiles.length) return;
     final old = _profiles[index];
-    if (old.premium) return;
+    if (old.premium || old.free) return;
     final code = Location.validCc(cc) ? cc!.toUpperCase() : null;
     final town = code == null ? null : city?.trim();
     var next = old.copyWith(
