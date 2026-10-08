@@ -22,16 +22,21 @@ Future<SrvPlace?> showSrvLocationPicker(
   String? cc,
   String? city,
   required bool overridden,
+  Future<List<SrvCountry>> Function() loadCountries = SrvCountries.load,
 }) {
   return showHipSheet<SrvPlace>(
     context,
     children: [
-      SrvLocationPicker(
-        cc: cc,
-        city: city,
-        overridden: overridden,
-        onDone: (place) => Navigator.of(context).pop(place),
-        onCancel: () => Navigator.of(context).pop(),
+      // Takes what height the sheet has left, so the body can scroll in it.
+      Flexible(
+        child: SrvLocationPicker(
+          cc: cc,
+          city: city,
+          overridden: overridden,
+          onDone: (place) => Navigator.of(context).pop(place),
+          onCancel: () => Navigator.of(context).pop(),
+          loadCountries: loadCountries,
+        ),
       ),
     ],
   );
@@ -126,96 +131,101 @@ class _SrvLocationPickerState extends State<SrvLocationPicker> {
   @override
   Widget build(BuildContext context) {
     final shown = _shown;
-    // The sheet rides above the keyboard while a field has it.
+    // The sheet rides above the keyboard while a field has it. With the
+    // keyboard up the body no longer fits a phone's height (three actions,
+    // a 220px list), so it scrolls rather than losing its bottom, where
+    // the actions are.
     return AnimatedPadding(
       duration: Hip.dur(const Duration(milliseconds: 200)),
       curve: Curves.easeOutCubic,
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const HipSheetTitle(S.srvLocationTitle),
-          const HipSheetBody(S.srvLocationBody),
-          const SizedBox(height: 14),
-          TextField(
-            controller: _search,
-            autocorrect: false,
-            style: Hip.sans(550, 15, color: Hip.ink),
-            decoration: _field(S.srvCountrySearch),
-          ),
-          SizedBox(
-            height: 220,
-            child: _countries.isEmpty
-                ? Center(
-                    child: SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Hip.muted2,
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const HipSheetTitle(S.srvLocationTitle),
+            const HipSheetBody(S.srvLocationBody),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _search,
+              autocorrect: false,
+              style: Hip.sans(550, 15, color: Hip.ink),
+              decoration: _field(S.srvCountrySearch),
+            ),
+            SizedBox(
+              height: 220,
+              child: _countries.isEmpty
+                  ? Center(
+                      child: SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Hip.muted2,
+                        ),
                       ),
-                    ),
-                  )
-                : ListView.builder(
-                    itemCount: shown.length,
-                    itemBuilder: (context, i) {
-                      final c = shown[i];
-                      final chosen = c.cc == _cc;
-                      return InkWell(
-                        onTap: () => setState(() => _cc = c.cc),
-                        borderRadius: BorderRadius.circular(10),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 4,
-                            vertical: 7,
-                          ),
-                          child: Row(
-                            children: [
-                              HipFlag(cc: c.cc, small: true),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  c.name,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Hip.sans(
-                                    chosen ? 650 : 500,
-                                    15,
-                                    color: Hip.ink,
+                    )
+                  : ListView.builder(
+                      itemCount: shown.length,
+                      itemBuilder: (context, i) {
+                        final c = shown[i];
+                        final chosen = c.cc == _cc;
+                        return InkWell(
+                          onTap: () => setState(() => _cc = c.cc),
+                          borderRadius: BorderRadius.circular(10),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 7,
+                            ),
+                            child: Row(
+                              children: [
+                                HipFlag(cc: c.cc, small: true),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    c.name,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Hip.sans(
+                                      chosen ? 650 : 500,
+                                      15,
+                                      color: Hip.ink,
+                                    ),
                                   ),
                                 ),
-                              ),
-                              if (chosen)
-                                Icon(Icons.check, size: 18, color: Hip.blue),
-                            ],
+                                if (chosen)
+                                  Icon(Icons.check, size: 18, color: Hip.blue),
+                              ],
+                            ),
                           ),
-                        ),
-                      );
-                    },
+                        );
+                      },
+                    ),
+            ),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _city,
+              autocorrect: false,
+              textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _save(),
+              style: Hip.sans(550, 15, color: Hip.ink),
+              decoration: _field(S.srvCityHint),
+            ),
+            HipSheetActions(
+              children: [
+                HipCta(S.gSave, onTap: _cc == null ? null : _save),
+                if (widget.overridden)
+                  HipCta(
+                    S.srvUseDetected,
+                    ghost: true,
+                    onTap: () => widget.onDone(SrvPlace.detected),
                   ),
-          ),
-          const SizedBox(height: 6),
-          TextField(
-            controller: _city,
-            autocorrect: false,
-            textCapitalization: TextCapitalization.words,
-            textInputAction: TextInputAction.done,
-            onSubmitted: (_) => _save(),
-            style: Hip.sans(550, 15, color: Hip.ink),
-            decoration: _field(S.srvCityHint),
-          ),
-          HipSheetActions(
-            children: [
-              HipCta(S.gSave, onTap: _cc == null ? null : _save),
-              if (widget.overridden)
-                HipCta(
-                  S.srvUseDetected,
-                  ghost: true,
-                  onTap: () => widget.onDone(SrvPlace.detected),
-                ),
-              HipCta(S.aCancel, quiet: true, onTap: widget.onCancel),
-            ],
-          ),
-        ],
+                HipCta(S.aCancel, quiet: true, onTap: widget.onCancel),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

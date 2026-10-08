@@ -22,6 +22,7 @@ import 'locations_screen.dart';
 import 'onboarding_screen.dart';
 import 'paywall_screen.dart';
 import 'settings_screen.dart';
+import 'system_bars.dart';
 
 /// Whether the "get access from hideip.net" plans flow can exist on this
 /// platform at all. Both stores ship it (StoreKit on iOS, Play Billing on
@@ -581,10 +582,17 @@ class _HipShellState extends State<HipShell>
 
         return AnnotatedRegion<SystemUiOverlayStyle>(
           // Home also starts under the dark hero panel; in dark mode every
-          // surface is dark.
-          value: onDark || _screen == HipScreen.home || Hip.dm
-              ? SystemUiOverlayStyle.light
-              : SystemUiOverlayStyle.dark,
+          // surface is dark. The navigation bar sits over whatever the screen
+          // ends on: Home's map mode ends on the hero colour, every other
+          // light screen on the light surface.
+          value: hipBars(
+            darkTop: onDark || _screen == HipScreen.home || Hip.dm,
+            bottom: onDark
+                ? Hip.dark
+                : _screen == HipScreen.home && state.prefs.homeMap
+                    ? Hip.hero
+                    : Hip.surface,
+          ),
           child: PopScope(
             // The shell handles every back gesture itself; screens are a
             // state machine, not a Navigator stack, so a real pop would

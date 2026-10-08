@@ -5,6 +5,7 @@ import '../../core/haptics.dart';
 import '../qr_scan_screen.dart';
 import '../strings.dart';
 import 'hip.dart';
+import 'system_bars.dart';
 
 /// Builds the live camera preview the popup scans with. Swapped in tests for
 /// something that fires a code on demand, so the flow can be driven without a
@@ -155,7 +156,9 @@ class _QrPopupState extends State<QrPopup>
                   right: 0,
                   bottom: 0,
                   height: MediaQuery.sizeOf(context).height * .62,
-                  child: _scanner(),
+                  // The dark panel meets the navigation bar, so it sets the
+                  // colour of that bar's icons while it is up.
+                  child: HipNavBarRegion(bottom: Hip.dark, child: _scanner()),
                 ),
             ],
           ),
@@ -227,8 +230,8 @@ class _QrPopupState extends State<QrPopup>
 
   Widget _scanner() {
     // What the reader's controls stand on, so the caption can stand above
-    // them. On iOS this is the home indicator's 34px; on Android it is
-    // usually nothing, which is why only iOS ever showed them collide.
+    // them. On iOS this is the home indicator's 34px; on Android 15 and
+    // later, which always draw edge to edge, it is the navigation bar.
     final inset = MediaQuery.paddingOf(context).bottom;
     // Absorbs its own taps: only the scrim above the panel closes the popup.
     return GestureDetector(

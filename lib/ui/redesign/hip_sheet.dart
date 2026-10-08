@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'hip.dart';
+import 'system_bars.dart';
 
 /// The one modal surface in the app: an explanation that needs a decision.
 ///
@@ -18,32 +19,37 @@ class HipSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: Hip.card,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        border: Border.all(color: Hip.line, width: 1.5),
-      ),
-      padding: EdgeInsets.fromLTRB(
-          22, 10, 22, MediaQuery.paddingOf(context).bottom + 22),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Center(
-            child: Container(
-              width: 38,
-              height: 4,
-              margin: const EdgeInsets.only(bottom: 18),
-              decoration: BoxDecoration(
-                color: Hip.line,
-                borderRadius: BorderRadius.circular(999),
+    // The card reaches the bottom edge, under the navigation bar, so it
+    // claims the colour of that bar's icons.
+    return HipNavBarRegion(
+      bottom: Hip.card,
+      child: Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: Hip.card,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          border: Border.all(color: Hip.line, width: 1.5),
+        ),
+        padding: EdgeInsets.fromLTRB(
+            22, 10, 22, MediaQuery.paddingOf(context).bottom + 22),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 38,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 18),
+                decoration: BoxDecoration(
+                  color: Hip.line,
+                  borderRadius: BorderRadius.circular(999),
+                ),
               ),
             ),
-          ),
-          ...children,
-        ],
+            ...children,
+          ],
+        ),
       ),
     );
   }
