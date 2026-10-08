@@ -5,6 +5,7 @@ library;
 
 import '../core/account_service.dart';
 import '../core/pairing.dart';
+import '../ui/redesign/account/pairing_port.dart' show PairingPort;
 import 'app_state.dart';
 
 /// Where this device's own request for access stands (the new device's
@@ -58,13 +59,15 @@ enum LinkRequestPhase {
 ///
 /// It has the same members as `PairingPort` in the Account screen module,
 /// so that interface can be put on it as it stands.
-class AppPairingPort {
+class AppPairingPort implements PairingPort {
   final AppState _state;
   final PairingClient _client;
   AppPairingPort(this._state, this._client);
 
+  @override
   Future<PairingCapabilities> capabilities() => _client.capabilities();
 
+  @override
   Future<PairingPreviewResult> preview({String? linkId, String? code}) async {
     final caps = await _client.capabilities();
     if (!caps.v2) {
@@ -80,6 +83,7 @@ class AppPairingPort {
     return _client.preview(auth, linkId: linkId, code: code);
   }
 
+  @override
   Future<PairingApproveResult> approve({
     required String linkId,
     required bool grantManage,
@@ -107,6 +111,7 @@ class AppPairingPort {
   /// The devices on the account. With a token the pairing list answers,
   /// marking this device; with the number alone the account status does,
   /// since a number never goes in a URL.
+  @override
   Future<List<AccountDevice>?> devices() async {
     final auth = _state.pairingAuth;
     if (auth == null) return null;
@@ -120,6 +125,7 @@ class AppPairingPort {
         .toList(growable: false);
   }
 
+  @override
   Future<DeviceChangeResult> revoke(
     String deviceId, {
     bool confirmLastManager = false,
@@ -141,6 +147,7 @@ class AppPairingPort {
     return result;
   }
 
+  @override
   Future<DeviceChangeResult> setManage(
     String deviceId, {
     required bool manage,

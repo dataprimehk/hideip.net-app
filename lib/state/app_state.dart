@@ -42,6 +42,7 @@ import '../core/wg_singbox.dart';
 import '../core/wg_speed_mode.dart';
 import '../ui/strings.dart';
 import '../vpn_controller.dart';
+import '../ui/redesign/account/account_port.dart';
 import 'app_pairing.dart';
 
 enum ConnState { disconnected, connecting, connected, error }
@@ -98,7 +99,7 @@ String fmtDur(Duration d) {
 /// Single source of truth for the UI: holds the profile list, the selected
 /// profile, the connection state, the current public IP, and bridges the
 /// parser/config to [VpnController]. Backed by [ProfileStore] for persistence.
-class AppState extends ChangeNotifier {
+class AppState extends ChangeNotifier implements AccountUiHost {
   /// [linkPollInterval] is how often an open request for access is asked
   /// about while this device shows its code; null leaves the asking to
   /// [pollLinkRequest]. [tablet] overrides the screen-size reading of what
@@ -1916,7 +1917,11 @@ class AppState extends ChangeNotifier {
   /// Pairing v2 for the Account and Linked devices screens: preview,
   /// approve, the device list, removal and permissions. The same object
   /// every time.
+  @override
   late final AppPairingPort pairingPort = AppPairingPort(this, _pairing);
+
+  @override
+  AccountPort get accountPort => AppStateAccountPort(this);
 
   /// What this device proves itself with when it manages the account, or
   /// null when it may not. A secret, like [subToken]: its own token on the

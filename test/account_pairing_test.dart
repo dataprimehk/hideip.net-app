@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hideip_vpn/core/account_service.dart';
 import 'package:hideip_vpn/core/camera_permission.dart';
 import 'package:hideip_vpn/core/deep_link.dart';
+import 'package:hideip_vpn/state/app_pairing.dart';
 import 'package:hideip_vpn/state/app_state.dart';
 import 'package:hideip_vpn/ui/redesign/account/account_device.dart';
 import 'package:hideip_vpn/ui/redesign/account/account_port.dart';
@@ -867,7 +868,7 @@ void main() {
 
     test('without a host, the screens read AppState through adapters', () {
       expect(accountPortOf(_app), isA<AppStateAccountPort>());
-      expect(pairingPortOf(_app), isA<LegacyPairingPort>());
+      expect(pairingPortOf(_app), isA<AppPairingPort>());
     });
   });
 

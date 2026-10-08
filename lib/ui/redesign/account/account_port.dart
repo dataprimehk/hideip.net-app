@@ -106,15 +106,9 @@ abstract interface class AccountUiHost {
   PairingPort get pairingPort;
 }
 
-AccountPort accountPortOf(AppState state) => switch (state) {
-  AccountUiHost host => host.accountPort,
-  _ => AppStateAccountPort(state),
-};
+AccountPort accountPortOf(AppState state) => state.accountPort;
 
-PairingPort pairingPortOf(AppState state) => switch (state) {
-  AccountUiHost host => host.pairingPort,
-  _ => LegacyPairingPort(state),
-};
+PairingPort pairingPortOf(AppState state) => state.pairingPort;
 
 /// The 1.2.0 `AppState`, read through [AccountPort]. Every member is a
 /// straight pass-through; nothing is kept here.
