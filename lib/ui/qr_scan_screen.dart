@@ -3,6 +3,7 @@ import 'package:flutter_zxing/flutter_zxing.dart';
 
 import '../core/haptics.dart';
 import 'brand.dart';
+import 'redesign/system_bars.dart';
 import 'strings.dart';
 
 /// Where the scanner's bottom furniture goes, shared by everything that draws
@@ -102,10 +103,10 @@ class QrReader extends StatelessWidget {
   Widget build(BuildContext context) {
     // The reader wraps its buttons in a SafeArea of its own. On iOS that lifts
     // them 34px off the bottom, over the home indicator and straight into the
-    // caption above them; on Android it lifts them by nothing, which is why
-    // only iOS shows the collision. Strip the padding so the control row lands
-    // exactly where controlsPadding says on both platforms, and let the caller
-    // add the inset back through QrOverlay.
+    // caption above them; Android 15 and later, which always draw edge to
+    // edge, do the same with the navigation bar. Strip the padding so the
+    // control row lands exactly where controlsPadding says on both
+    // platforms, and let the caller add the inset back through QrOverlay.
     return MediaQuery.removePadding(
       context: context,
       removeTop: true,
@@ -186,6 +187,9 @@ class _QrScanScreenState extends State<QrScanScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         foregroundColor: Colors.white,
+        // The only styled region on this route, so it speaks for the
+        // navigation bar too, which sits over the camera.
+        systemOverlayStyle: hipBars(darkTop: true, bottom: Colors.black),
         elevation: 0,
         title: const Text(S.e7Title),
       ),
