@@ -32,12 +32,26 @@ class LinkedDevice {
   /// Last time the device asked for credentials, or null when it never has.
   final DateTime? lastSeenAt;
 
+  /// The kind exactly as the backend sent it, so a kind [kind] does not
+  /// know yet (a TV, a tablet) can still be told apart. Empty when absent.
+  final String kindName;
+
+  /// Whether the device may manage the account, or null from a backend that
+  /// does not say (pairing before v2).
+  final bool? manage;
+
+  /// The backend marked this row as the device that asked for the list.
+  final bool current;
+
   const LinkedDevice({
     required this.id,
     required this.kind,
     required this.name,
     this.createdAt,
     this.lastSeenAt,
+    this.kindName = '',
+    this.manage,
+    this.current = false,
   });
 
   /// Parses one `devices[]` entry. Returns null when the row carries no id,
@@ -46,6 +60,8 @@ class LinkedDevice {
     final id = (json['id'] as Object?)?.toString().trim() ?? '';
     if (id.isEmpty) return null;
     final name = (json['name'] as Object?)?.toString().trim() ?? '';
+    final permissions = json['permissions'];
+    final manage = permissions is Map ? permissions['manage'] : null;
     return LinkedDevice(
       id: id,
       kind: kindOf(json['kind'] as Object?),
@@ -53,6 +69,9 @@ class LinkedDevice {
       name: name.isEmpty ? 'Unnamed device' : name,
       createdAt: _epochSeconds(json['created_at']),
       lastSeenAt: _epochSeconds(json['last_seen_at']),
+      kindName: (json['kind'] as Object?)?.toString().trim().toLowerCase() ?? '',
+      manage: manage is bool ? manage : null,
+      current: json['current'] == true,
     );
   }
 
@@ -66,8 +85,15 @@ class LinkedDevice {
         _ => LinkedDeviceKind.unknown,
       };
 
-  /// Human label for the kind, used as the row subtitle prefix.
-  String get kindLabel => switch (kind) {
+  /// Human label for the kind, used as the row subtitle prefix. A TV stays
+  /// a TV and a tablet a tablet, although [kind] has no value for either.
+  String get kindLabel => switch (kindName) {
+        'tv' => 'TV',
+        'tablet' => 'Tablet',
+        _ => _enumLabel,
+      };
+
+  String get _enumLabel => switch (kind) {
         LinkedDeviceKind.extension => 'Browser',
         LinkedDeviceKind.desktop => 'Desktop',
         LinkedDeviceKind.phone => 'Phone',

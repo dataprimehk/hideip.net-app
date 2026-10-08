@@ -111,6 +111,12 @@ class AccountStatus {
   /// of the store. Moves on with every renewal the server hears about.
   final DateTime? storeExpires;
 
+  /// Whether the device that asked may manage the account, or null from a
+  /// server that does not say. A device that may not is sent an empty
+  /// device list, which then says nothing about whether it is still on the
+  /// account.
+  final bool? manage;
+
   const AccountStatus(
     this.result, {
     this.active = false,
@@ -121,6 +127,7 @@ class AccountStatus {
     this.storeLinked,
     this.storePlatform,
     this.storeExpires,
+    this.manage,
   });
 }
 
@@ -305,6 +312,8 @@ class AccountService {
       }
       final body = _json(resp.body);
       if (body == null) return null;
+      final permissions = body['permissions'];
+      final manage = permissions is Map ? permissions['manage'] : null;
       return AccountStatus(
         AccountResult.ok,
         active: body['active'] == true,
@@ -317,6 +326,7 @@ class AccountService {
             : null,
         storePlatform: _text(body['store_platform']),
         storeExpires: _ms(body['store_expires_ms']),
+        manage: manage is bool ? manage : null,
       );
     } catch (_) {
       return null;
