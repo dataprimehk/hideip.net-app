@@ -148,7 +148,7 @@ void main() {
     expect(state.restores, 1);
   });
 
-  testWidgets('the Account number row is there with no store behind it', (
+  testWidgets('the Account row is there with no store behind it', (
     tester,
   ) async {
     final went = <HipScreen>[];
@@ -162,14 +162,14 @@ void main() {
     expect(find.text(S.tPremium), findsNothing);
 
     if (!kAccountSignIn) {
-      expect(find.text(S.accountNumberTitle), findsNothing);
+      expect(find.text(S.accountTitle), findsNothing);
       expect(find.text(S.setAccountNumberSub), findsNothing);
       return;
     }
 
     // The section and its one row show all the same.
     expect(find.text(S.setAccount.toUpperCase()), findsOneWidget);
-    expect(find.text(S.accountNumberTitle), findsOneWidget);
+    expect(find.text(S.accountTitle), findsOneWidget);
     expect(find.text(S.setAccountNumberSub), findsOneWidget);
     final header = tester.widget<SettingsSectionHeader>(
       find.ancestor(
@@ -179,7 +179,7 @@ void main() {
     );
     expect(header.icon, Icons.person_outline);
 
-    await tester.tap(find.text(S.accountNumberTitle));
+    await tester.tap(find.text(S.accountTitle));
     expect(went, [HipScreen.account]);
   });
 
@@ -204,7 +204,7 @@ void main() {
 
     // One story: the number, its time and its devices live behind the one
     // row, so neither a second number row nor Linked devices shows.
-    expect(find.text(S.accountNumberTitle), findsNothing);
+    expect(find.text(S.accountTitle), findsNothing);
     expect(find.text(S.setLinkedDevices), findsNothing);
     await tester.tap(find.text(S.tPremium));
     expect(went, [HipScreen.account]);

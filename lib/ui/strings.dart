@@ -871,7 +871,8 @@ abstract final class S {
   // from; the screen is a sign-in and only that.
   // ---------------------------------------------------------------------
 
-  /// The screen title, and the Settings row that leads to it.
+  /// The number's own section on the Account screen, and its row on the
+  /// Premium page. The screen itself is titled [accountTitle].
   static const accountNumberTitle = 'Account number';
 
   /// The quiet link under the paywall offer.
@@ -910,7 +911,6 @@ abstract final class S {
 
   /// The devices on the account.
   static const accountThisDevice = 'This device';
-  static const accountDevices = 'Signed-in devices';
   static String accountRemoveDevice(String name) => 'Remove $name?';
 
   /// The number itself, masked until asked for.
@@ -951,11 +951,6 @@ abstract final class S {
   /// The Settings row.
   static const setAccountNumberSub = 'Sign in or manage your account number';
   static const setAccountNumberSignedIn = 'Signed in';
-
-  /// The number was replaced on another device; this device still works.
-  static const accountNumberReplaced =
-      'This account number was changed on another device. Sign out, then '
-      'sign in with the new number.';
 
   /// This device was taken off the account from another one. The number is
   /// kept, so signing back in is one tap.
@@ -1013,13 +1008,6 @@ abstract final class S {
       'billing until you cancel it in $store.';
   static const accountDeleted = 'Account number deleted';
 
-  /// Signed in through a purchase restored here, with no number on this
-  /// device to show.
-  static const accountNoNumberTitle =
-      "Your account number isn't on this device";
-  static String accountNoNumberBody(String store) =>
-      'Premium is on through your $store subscription. Enter your account '
-      'number to see it here and use it on your other devices.';
   static String accountLinkedElsewhere(String store) =>
       'This $store subscription already adds time to a different account '
       'number.';
@@ -1044,7 +1032,196 @@ abstract final class S {
   static const accountSubscribeSub =
       'Adds time to this number and renews on its own.';
 
-  /// Linking another device from the account.
-  static const accountLinkDevice = 'Link a device';
+  /// The 1.2.0 way of linking, offered while the server has nothing newer.
   static const accountLinkCode = 'Show a code instead';
+
+  // ---------------------------------------------------------------------
+  // Account (1.2.1). The screen laid out by the questions people ask: does
+  // it work and until when, how another device gets it, how it is paid.
+  // Then pairing a new device from the code it shows.
+  // ---------------------------------------------------------------------
+
+  // --- Screen ---------------------------------------------------------------
+
+  /// The screen title, and the Settings row that leads to it.
+  static const accountTitle = 'Account';
+
+  // --- Status card: does it work, and until when ---------------------------
+
+  static const accountStatusOn = 'Premium is on';
+  static const accountStatusOff = 'Premium is off';
+  static const accountStatusReplaced = 'Number changed';
+  static const accountStatusSignedOut = 'Signed out';
+  static const accountStatusRevoked = 'Number no longer valid';
+
+  /// Under "Active until {date}": who keeps it going.
+  static String accountStatusRenewsThrough(String store) => 'Renews through $store.';
+  static const accountStatusEndsUnlessAdded =
+      'Ends on that date unless time is added to the number.';
+
+  static const accountStatusReplacedLine =
+      'This account number was changed on another device.';
+
+  /// Only said while Premium really is on here.
+  static const accountStatusReplacedStillOn = 'Premium still works on this device.';
+  static const accountStatusSignedOutLine =
+      'This device was signed out from another device.';
+  static const accountStatusSignedOutKept =
+      'The number is still kept here, so signing back in takes one tap.';
+
+  static const accountCtaSignInNewNumber = 'Sign in with the new number';
+  static const accountCtaSignInAnotherNumber = 'Sign in with another number';
+
+  // --- Devices: how do I put it on another device --------------------------
+
+  static const accountDevicesTitle = 'Devices';
+
+  /// "3 of 5", in mono, beside the section label.
+  static String accountDevicesCount(int used, int limit) => '$used of $limit';
+  static const accountDevicesEmpty = 'No devices are on this account yet.';
+  static const accountDevicesFailed = 'The devices could not be loaded.';
+
+  static const accountAddDevice = 'Add a device';
+  static const accountAddDeviceSub = 'Phone, tablet, TV, browser or computer';
+  static const accountAddDeviceOff =
+      'New devices can be added once Premium is on again.';
+
+  /// What a device is, in its row and on the confirmation.
+  static const accountKindPhone = 'Phone';
+  static const accountKindTablet = 'Tablet';
+  static const accountKindTv = 'TV';
+  static const accountKindBrowser = 'Browser';
+  static const accountKindDesktop = 'Desktop';
+  static const accountKindDevice = 'Device';
+  static const accountDeviceUnnamed = 'Unnamed device';
+
+  /// The platform a new device reports, by its own name. Null for one this
+  /// build does not know, which is then left out rather than shown raw.
+  static String? accountPlatform(String? wire) => switch (wire) {
+    'android' => 'Android',
+    'ios' => 'iOS',
+    'macos' => 'macOS',
+    'windows' => 'Windows',
+    'linux' => 'Linux',
+    'chrome' => 'Chrome',
+    _ => null,
+  };
+
+  // --- Account number ------------------------------------------------------
+
+  static const accountNumberShow = 'Show';
+  static const accountNumberNote =
+      'The number signs hideip.net in on another device. Anyone with it can '
+      'use this Premium, and it cannot be recovered.';
+  static const accountNumberNotHere = 'Not on this device';
+  static const accountNumberNotHereNote =
+      'Entering the number shows it here and lets the other devices use this '
+      'Premium.';
+
+  // --- Payment: how do I pay -----------------------------------------------
+
+  static const accountPaymentTitle = 'Payment';
+
+  // --- More options --------------------------------------------------------
+
+  static const accountMoreOptions = 'More options';
+  static const accountRotateSub =
+      'Time and devices stay. The old number stops working.';
+
+  // --- Add a device sheet --------------------------------------------------
+
+  static String accountAddShare(int limit) =>
+      'Up to $limit devices share this Premium.';
+  static String accountAddInUse(int used, int limit) => '$used of $limit are in use.';
+
+  /// The new pairing: the new device shows both, this phone reads either.
+  static const accountAddHowV2 =
+      'hideip.net on the new device shows a QR code and a short code.';
+
+  /// The 1.2.0 pairing, while the server has nothing newer.
+  static const accountAddHowLegacy =
+      'A browser or computer shows a QR code that this phone scans.';
+  static const accountScanQr = 'Scan QR code';
+  static const accountScanQrSub = 'The new device is shown here before it is added.';
+  static const accountEnterCode = 'Enter code';
+  static const accountEnterCodeSub = 'For a TV or computer across the room.';
+  static const accountOrSignIn = 'Or sign in on the new device';
+  static const accountSignInNote =
+      'The account number signs in any device. Anyone with it can use this '
+      'Premium.';
+
+  // --- Entering the code the new device shows -------------------------------
+
+  static const accountCodeBody =
+      'The code is on the screen of the new device, next to its QR code.';
+  static const accountCodeHint = 'XXXX-XXXX';
+  static const accountCodeBadChars =
+      'This code has a character that hideip.net codes never use. The code '
+      'on the new device is worth checking again.';
+  static const accountCameraOff =
+      'The camera is turned off for hideip.net in system settings. The code '
+      'works the same way.';
+
+  // --- Confirming the new device -------------------------------------------
+
+  static const accountConfirmTitle = 'Add this device?';
+  static const accountConfirmCodeLabel = 'Request code';
+  static const accountConfirmCodeNote =
+      'The same code is on the screen of the new device.';
+  static const accountGrantManage = 'Can manage this account';
+  static const accountGrantManageSub =
+      'It can add and remove devices and change the account number.';
+  static const accountUseOnly =
+      'This device uses Premium. It cannot manage the '
+      'account.';
+  static String accountExpiresIn(String time) => 'Expires in $time';
+  static const accountApprove = 'Add device';
+  static const accountApproving = 'Adding…';
+  static const accountDoneTitle = 'Device added';
+  static String accountDoneBody(String name) => '$name uses this Premium now.';
+  static String accountDoneManage(String name) =>
+      '$name can also manage this account.';
+  static const accountDone = 'Done';
+
+  // --- No place left -------------------------------------------------------
+
+  static String accountLimitTitle(int limit) => 'All $limit places are in use';
+  static const accountLimitBody =
+      'Removing a device makes room. This request stays open while it is '
+      'valid.';
+
+  // --- Why a pairing step did not go through --------------------------------
+
+  static const accountErrUnknownCode =
+      'No request matches this code. The code on the new device is worth '
+      'checking, or the new device can show a new one.';
+  static const accountErrUnknownLink =
+      'This request is no longer open. The new device can show a new QR code.';
+  static const accountErrBadCode = 'That is not a hideip.net code.';
+  static const accountErrExpired =
+      'This request has expired. The new device can show a new code.';
+  static const accountErrCancelled = 'The new device cancelled this request.';
+  static const accountErrInactive =
+      'Premium is off on this account, so no device can be added right now.';
+  static const accountErrNotPermitted =
+      'This device cannot add or change devices on the account. A device '
+      'that manages the account can, and so can the account number.';
+  static const accountErrUnauthorized =
+      'This device is no longer signed in to the account.';
+  static const accountErrUnsupported = 'Adding devices this way is not available yet.';
+  static const accountErrSelf = 'A device cannot change its own permissions.';
+
+  // --- The last device that manages the account ----------------------------
+
+  static const accountLastManagerTitle = 'Last device that manages the account';
+  static const accountLastManagerBody =
+      'After this, no device can manage the account. The account number '
+      'still can, so it is worth keeping somewhere safe.';
+
+  // --- One device, opened from the list ------------------------------------
+
+  static String accountDeviceAdded(String date) => 'Added $date';
+  static String accountDeviceSeen(String date) => 'Last used $date';
+  static const accountDeviceNeverUsed = 'Not used yet';
+  static const accountDeviceManages = 'Manages the account';
 }

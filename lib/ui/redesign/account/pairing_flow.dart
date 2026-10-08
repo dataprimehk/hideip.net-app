@@ -19,7 +19,6 @@ import '../hip.dart';
 import '../hip_sheet.dart';
 import 'account_device.dart';
 import 'account_widgets.dart' show SheetScroll;
-import 'account_strings.dart';
 import 'pairing_port.dart';
 
 /// Opens a sheet with these children and returns what it was closed with.
@@ -38,18 +37,18 @@ Future<String?> scanWithCamera(BuildContext context) => Navigator.of(
 String pairingErrorText(PairingError error, {bool byCode = false}) =>
     switch (error) {
       PairingError.unknownLink =>
-        byCode ? SA.errUnknownCode : SA.errUnknownLink,
-      PairingError.badCode => SA.errBadCode,
-      PairingError.linkExpired => SA.errExpired,
-      PairingError.linkCancelled => SA.errCancelled,
-      PairingError.subscriptionInactive => SA.errInactive,
-      PairingError.notPermitted => SA.errNotPermitted,
+        byCode ? S.accountErrUnknownCode : S.accountErrUnknownLink,
+      PairingError.badCode => S.accountErrBadCode,
+      PairingError.linkExpired => S.accountErrExpired,
+      PairingError.linkCancelled => S.accountErrCancelled,
+      PairingError.subscriptionInactive => S.accountErrInactive,
+      PairingError.notPermitted => S.accountErrNotPermitted,
       PairingError.accountRevoked => S.accountErrRevoked,
-      PairingError.unauthorized => SA.errUnauthorized,
+      PairingError.unauthorized => S.accountErrUnauthorized,
       PairingError.tooManyAttempts => S.accountErrTooMany,
-      PairingError.unsupported => SA.errUnsupported,
-      PairingError.notAllowedForKind => SA.useOnly,
-      PairingError.self => SA.errSelf,
+      PairingError.unsupported => S.accountErrUnsupported,
+      PairingError.notAllowedForKind => S.accountUseOnly,
+      PairingError.self => S.accountErrSelf,
       // Both have their own screens; reaching here means a retry failed.
       PairingError.deviceLimitReached ||
       PairingError.lastManager ||
@@ -65,8 +64,8 @@ Future<DeviceChangeResult> withLastManagerCheck(
   final first = await change(false);
   if (first.error != PairingError.lastManager) return first;
   final go = await showSheet<bool>([
-    const HipSheetTitle(SA.lastManagerTitle),
-    const HipSheetBody(SA.lastManagerBody),
+    const HipSheetTitle(S.accountLastManagerTitle),
+    const HipSheetBody(S.accountLastManagerBody),
     HipSheetActions(
       children: [
         Builder(
@@ -105,7 +104,7 @@ Future<bool> pairByScan(
       port: port,
       showSheet: showSheet,
       caps: caps,
-      note: SA.cameraOff,
+      note: S.accountCameraOff,
     );
   }
   if (!context.mounted) return false;
@@ -211,7 +210,7 @@ class _PairingFlowState extends State<PairingFlow> {
     _code.addListener(_onEdit);
     if (widget.notALink) {
       _phase = _Phase.failed;
-      _error = SA.errBadCode;
+      _error = S.accountErrBadCode;
     } else if (widget.linkId != null) {
       _phase = _Phase.reading;
       _read(linkId: widget.linkId);
@@ -267,7 +266,7 @@ class _PairingFlowState extends State<PairingFlow> {
     _startCountdown(request.expiresIn);
     setState(() {
       _phase = _Phase.confirm;
-      _error = request.accountActive ? null : SA.errInactive;
+      _error = request.accountActive ? null : S.accountErrInactive;
     });
   }
 
@@ -441,13 +440,13 @@ class _PairingFlowState extends State<PairingFlow> {
   );
 
   List<Widget> _codeView() {
-    final local = _complete && !_charsOk ? SA.codeBadChars : null;
+    final local = _complete && !_charsOk ? S.accountCodeBadChars : null;
     final error = local ?? _error;
     final ready = _complete && _charsOk;
     return [
-      const HipSheetTitle(SA.enterCode),
+      const HipSheetTitle(S.accountEnterCode),
       if (widget.note != null) HipSheetBody(widget.note!),
-      const HipSheetBody(SA.codeBody),
+      const HipSheetBody(S.accountCodeBody),
       const SizedBox(height: 16),
       HipCard(
         padding: const EdgeInsets.fromLTRB(18, 12, 10, 12),
@@ -470,7 +469,7 @@ class _PairingFlowState extends State<PairingFlow> {
           decoration: InputDecoration(
             isDense: true,
             border: InputBorder.none,
-            hintText: SA.codeHint,
+            hintText: S.accountCodeHint,
             hintStyle: Hip.mono(
               600,
               24,
@@ -494,7 +493,7 @@ class _PairingFlowState extends State<PairingFlow> {
   }
 
   List<Widget> _readingView() => [
-    HipSheetTitle(_byCode ? SA.enterCode : SA.scanQr),
+    HipSheetTitle(_byCode ? S.accountEnterCode : S.accountScanQr),
     const Padding(
       padding: EdgeInsets.symmetric(vertical: 30),
       child: Center(
@@ -518,10 +517,10 @@ class _PairingFlowState extends State<PairingFlow> {
     final request = _request!;
     final device = request.device;
     final working = _phase == _Phase.approving;
-    final name = device.name.isEmpty ? SA.deviceUnnamed : device.name;
+    final name = device.name.isEmpty ? S.accountDeviceUnnamed : device.name;
     final blocked = !request.accountActive || _expired;
     return [
-      const HipSheetTitle(SA.confirmTitle),
+      const HipSheetTitle(S.accountConfirmTitle),
       const SizedBox(height: 16),
       _TargetCard(device: device, name: name),
       const SizedBox(height: 12),
@@ -535,7 +534,7 @@ class _PairingFlowState extends State<PairingFlow> {
           ),
         )
       else
-        const HipSheetBody(SA.useOnly),
+        const HipSheetBody(S.accountUseOnly),
       Padding(
         padding: const EdgeInsets.only(top: 10),
         child: Wrap(
@@ -543,11 +542,11 @@ class _PairingFlowState extends State<PairingFlow> {
           runSpacing: 4,
           children: [
             Text(
-              SA.addInUse(request.devicesUsed, request.deviceLimit),
+              S.accountAddInUse(request.devicesUsed, request.deviceLimit),
               style: Hip.sans(500, 13, color: Hip.muted, height: 1.45),
             ),
             Text(
-              _expired ? SA.errExpired : SA.expiresIn(_countdown),
+              _expired ? S.accountErrExpired : S.accountExpiresIn(_countdown),
               style: _expired
                   ? Hip.sans(500, 13, color: Hip.muted, height: 1.45)
                   : Hip.mono(600, 12.5, color: Hip.muted, height: 1.45),
@@ -559,7 +558,7 @@ class _PairingFlowState extends State<PairingFlow> {
       HipSheetActions(
         children: [
           HipCta(
-            working ? SA.approving : SA.approve,
+            working ? S.accountApproving : S.accountApprove,
             onTap: working || blocked ? null : _approve,
           ),
           Builder(
@@ -575,8 +574,8 @@ class _PairingFlowState extends State<PairingFlow> {
   }
 
   List<Widget> _limitView() => [
-    HipSheetTitle(SA.limitTitle(_limit)),
-    const HipSheetBody(SA.limitBody),
+    HipSheetTitle(S.accountLimitTitle(_limit)),
+    const HipSheetBody(S.accountLimitBody),
     const SizedBox(height: 14),
     HipListGroup(
       children: [
@@ -613,7 +612,8 @@ class _PairingFlowState extends State<PairingFlow> {
   ];
 
   List<Widget> _doneView() {
-    final name = _added?.name ?? _request?.device.name ?? SA.deviceUnnamed;
+    final name =
+        _added?.name ?? _request?.device.name ?? S.accountDeviceUnnamed;
     return [
       Center(
         child: Container(
@@ -628,13 +628,13 @@ class _PairingFlowState extends State<PairingFlow> {
       ),
       const SizedBox(height: 16),
       Text(
-        SA.doneTitle,
+        S.accountDoneTitle,
         textAlign: TextAlign.center,
         style: Hip.sans(700, 20, color: Hip.ink, letterSpacing: -.4),
       ),
       const SizedBox(height: 8),
       Text(
-        _addedManage ? SA.doneManage(name) : SA.doneBody(name),
+        _addedManage ? S.accountDoneManage(name) : S.accountDoneBody(name),
         textAlign: TextAlign.center,
         style: Hip.sans(400, 14, color: Hip.muted, height: 1.5),
       ),
@@ -642,7 +642,7 @@ class _PairingFlowState extends State<PairingFlow> {
         children: [
           Builder(
             builder: (c) =>
-                HipCta(SA.done, onTap: () => Navigator.of(c).pop(true)),
+                HipCta(S.accountDone, onTap: () => Navigator.of(c).pop(true)),
           ),
         ],
       ),
@@ -650,7 +650,7 @@ class _PairingFlowState extends State<PairingFlow> {
   }
 
   List<Widget> _failedView() => [
-    HipSheetTitle(_byCode ? SA.enterCode : SA.scanQr),
+    HipSheetTitle(_byCode ? S.accountEnterCode : S.accountScanQr),
     if (_error != null) _errorBox(_error!),
     HipSheetActions(
       children: [
@@ -671,7 +671,7 @@ class _TargetCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final platform = SA.platform(device.platform);
+    final platform = S.accountPlatform(device.platform);
     return HipCard(
       padding: const EdgeInsets.all(14),
       child: Row(
@@ -723,7 +723,7 @@ class _CodeCompare extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            SA.confirmCodeLabel.toUpperCase(),
+            S.accountConfirmCodeLabel.toUpperCase(),
             style: Hip.sans(650, 11.5, color: Hip.muted2, letterSpacing: .8),
           ),
           const SizedBox(height: 4),
@@ -737,7 +737,7 @@ class _CodeCompare extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            SA.confirmCodeNote,
+            S.accountConfirmCodeNote,
             style: Hip.sans(400, 12.5, color: Hip.muted, height: 1.4),
           ),
         ],
@@ -761,12 +761,12 @@ class _ManageSwitch extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  SA.grantManage,
+                  S.accountGrantManage,
                   style: Hip.sans(650, 15, color: Hip.ink, height: 1.3),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  SA.grantManageSub,
+                  S.accountGrantManageSub,
                   style: Hip.sans(400, 12.5, color: Hip.muted, height: 1.4),
                 ),
               ],
@@ -914,11 +914,16 @@ class _DeviceSheetState extends State<DeviceSheet> {
           const SizedBox(height: 12),
           Text(d.kindLabel, style: words),
           if (created != null)
-            _dated(SA.deviceAdded, formatPremiumDate(created), words, nums),
+            _dated(
+              S.accountDeviceAdded,
+              formatPremiumDate(created),
+              words,
+              nums,
+            ),
           if (seen != null)
-            _dated(SA.deviceSeen, formatPremiumDate(seen), words, nums)
+            _dated(S.accountDeviceSeen, formatPremiumDate(seen), words, nums)
           else
-            Text(SA.deviceNeverUsed, style: words),
+            Text(S.accountDeviceNeverUsed, style: words),
           const SizedBox(height: 14),
           if (canChange)
             _ManageSwitch(
@@ -926,9 +931,9 @@ class _DeviceSheetState extends State<DeviceSheet> {
               onChanged: _working ? null : _setManage,
             )
           else if (!kindCanManage(d.kind))
-            Text(SA.useOnly, style: words)
+            Text(S.accountUseOnly, style: words)
           else if (d.manage == true)
-            Text(SA.deviceManages, style: words),
+            Text(S.accountDeviceManages, style: words),
           if (_error != null) _errorBoxOf(_error!),
           HipSheetActions(
             children: [

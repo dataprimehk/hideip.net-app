@@ -4,7 +4,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hideip_vpn/core/account_service.dart';
 import 'package:hideip_vpn/state/app_state.dart';
 import 'package:hideip_vpn/ui/redesign/account/account_port.dart';
-import 'package:hideip_vpn/ui/redesign/account/account_strings.dart';
 import 'package:hideip_vpn/ui/redesign/account/account_widgets.dart';
 import 'package:hideip_vpn/ui/redesign/account/pairing_port.dart';
 import 'package:hideip_vpn/ui/redesign/account_screen.dart';
@@ -186,25 +185,31 @@ void main() {
         await tester.pumpWidget(_host(a, FakePairingPort(), look: look));
         await _settle(tester);
 
-        expect(find.text(SA.title), findsOneWidget);
-        expect(find.text(SA.statusOn), findsOneWidget);
+        expect(find.text(S.accountTitle), findsOneWidget);
+        expect(find.text(S.accountStatusOn), findsOneWidget);
         expect(find.textContaining('Active until'), findsOneWidget);
-        expect(find.text(SA.statusRenewsThrough('App Store')), findsOneWidget);
-        expect(await _seek(tester, SA.devicesCount(3, 5)), findsOneWidget);
+        expect(
+          find.text(S.accountStatusRenewsThrough('App Store')),
+          findsOneWidget,
+        );
+        expect(
+          await _seek(tester, S.accountDevicesCount(3, 5)),
+          findsOneWidget,
+        );
         expect(await _seek(tester, 'MacBook Air'), findsOneWidget);
-        expect(await _seek(tester, SA.addDevice), findsOneWidget);
+        expect(await _seek(tester, S.accountAddDevice), findsOneWidget);
         expect(await _seek(tester, '•••• •••• •••• 0319'), findsOneWidget);
         expect(find.text('8236 3877 8895 0319'), findsNothing);
-        expect(await _seek(tester, SA.numberNote), findsOneWidget);
+        expect(await _seek(tester, S.accountNumberNote), findsOneWidget);
         expect(
-          await _seek(tester, SA.paymentTitle.toUpperCase()),
+          await _seek(tester, S.accountPaymentTitle.toUpperCase()),
           findsOneWidget,
         );
         expect(
           find.textContaining('App Store subscription · renews'),
           findsOneWidget,
         );
-        expect(await _seek(tester, SA.moreOptions), findsOneWidget);
+        expect(await _seek(tester, S.accountMoreOptions), findsOneWidget);
         // The rare actions are folded on the way in.
         expect(find.text(S.accountRotate), findsNothing);
         expect(find.text(S.accountDelete), findsNothing);
@@ -220,9 +225,12 @@ void main() {
         await tester.pumpWidget(_host(a, FakePairingPort(), look: look));
         await _settle(tester);
 
-        expect(find.text(SA.statusOn), findsOneWidget);
-        expect(find.text(SA.statusEndsUnlessAdded), findsOneWidget);
-        expect(await _seek(tester, SA.devicesCount(2, 5)), findsOneWidget);
+        expect(find.text(S.accountStatusOn), findsOneWidget);
+        expect(find.text(S.accountStatusEndsUnlessAdded), findsOneWidget);
+        expect(
+          await _seek(tester, S.accountDevicesCount(2, 5)),
+          findsOneWidget,
+        );
         expect(
           await _seek(tester, S.accountSubscribeStore('Google Play')),
           findsOneWidget,
@@ -248,20 +256,20 @@ void main() {
         );
         await _settle(tester);
 
-        await tester.tap(await _seek(tester, SA.addDevice));
+        await tester.tap(await _seek(tester, S.accountAddDevice));
         await _settle(tester);
         expect(find.byType(HipSheet), findsOneWidget);
-        expect(find.text(SA.scanQr), findsOneWidget);
-        expect(find.text(SA.enterCode), findsOneWidget);
-        expect(find.textContaining(SA.addInUse(2, 5)), findsOneWidget);
-        expect(find.textContaining(SA.addHowV2), findsOneWidget);
-        expect(find.text(SA.orSignIn.toUpperCase()), findsOneWidget);
+        expect(find.text(S.accountScanQr), findsOneWidget);
+        expect(find.text(S.accountEnterCode), findsOneWidget);
+        expect(find.textContaining(S.accountAddInUse(2, 5)), findsOneWidget);
+        expect(find.textContaining(S.accountAddHowV2), findsOneWidget);
+        expect(find.text(S.accountOrSignIn.toUpperCase()), findsOneWidget);
         // Masked and large in the sheet too, with Show and Copy.
         expect(find.text('•••• •••• •••• 0319'), findsNWidgets(2));
         expect(
           find.descendant(
             of: find.byType(HipSheet),
-            matching: find.text(SA.numberShow),
+            matching: find.text(S.accountNumberShow),
           ),
           findsOneWidget,
         );
@@ -284,10 +292,10 @@ void main() {
         await tester.pumpWidget(_host(a, FakePairingPort(), look: look));
         await _settle(tester);
 
-        await tester.tap(await _seek(tester, SA.moreOptions));
+        await tester.tap(await _seek(tester, S.accountMoreOptions));
         await tester.pump();
         expect(await _seek(tester, S.accountRotate), findsOneWidget);
-        expect(await _seek(tester, SA.rotateSub), findsOneWidget);
+        expect(await _seek(tester, S.accountRotateSub), findsOneWidget);
         expect(await _seek(tester, S.accountSignOut), findsOneWidget);
         final delete = await _seek(tester, S.accountDelete);
         expect(tester.widget<Text>(delete).style?.color, Hip.danger);
@@ -310,7 +318,7 @@ void main() {
         );
         await _settle(tester);
 
-        expect(find.text(SA.statusOff), findsOneWidget);
+        expect(find.text(S.accountStatusOff), findsOneWidget);
         expect(find.textContaining('Ended on'), findsOneWidget);
         expect(find.text(S.accountOutOfTimeNote), findsOneWidget);
         final plans = tester.widget<AccountCta>(
@@ -326,10 +334,10 @@ void main() {
 
         // Devices stay; adding waits for Premium, and says so.
         expect(await _seek(tester, 'Chrome'), findsOneWidget);
-        expect(await _seek(tester, SA.addDeviceOff), findsOneWidget);
+        expect(await _seek(tester, S.accountAddDeviceOff), findsOneWidget);
         // No second way to the same paywall.
         expect(find.textContaining('Subscribe with'), findsNothing);
-        expect(find.text(SA.paymentTitle.toUpperCase()), findsNothing);
+        expect(find.text(S.accountPaymentTitle.toUpperCase()), findsNothing);
         _expectCleanCopy(tester);
       });
 
@@ -342,11 +350,11 @@ void main() {
         await tester.pumpWidget(_host(a, FakePairingPort(), look: look));
         await _settle(tester);
 
-        expect(find.text(SA.statusOn), findsOneWidget);
-        expect(await _seek(tester, SA.numberNotHere), findsOneWidget);
-        expect(find.text(SA.numberNotHereNote), findsOneWidget);
+        expect(find.text(S.accountStatusOn), findsOneWidget);
+        expect(await _seek(tester, S.accountNumberNotHere), findsOneWidget);
+        expect(find.text(S.accountNumberNotHereNote), findsOneWidget);
         expect(find.textContaining('0319'), findsNothing);
-        expect(find.text(SA.numberShow), findsNothing);
+        expect(find.text(S.accountNumberShow), findsNothing);
         expect(await _seek(tester, S.accountEnterNumber), findsOneWidget);
         _expectCleanCopy(tester);
       });
@@ -360,16 +368,16 @@ void main() {
         await tester.pumpWidget(_host(a, FakePairingPort(), look: look));
         await _settle(tester);
 
-        expect(find.text(SA.statusReplaced), findsOneWidget);
-        expect(find.text(SA.statusReplacedLine), findsOneWidget);
-        expect(find.text(SA.statusReplacedStillOn), findsOneWidget);
+        expect(find.text(S.accountStatusReplaced), findsOneWidget);
+        expect(find.text(S.accountStatusReplacedLine), findsOneWidget);
+        expect(find.text(S.accountStatusReplacedStillOn), findsOneWidget);
         expect(
-          find.widgetWithText(AccountCta, SA.ctaSignInNewNumber),
+          find.widgetWithText(AccountCta, S.accountCtaSignInNewNumber),
           findsOneWidget,
         );
-        expect(find.text(SA.devicesTitle.toUpperCase()), findsNothing);
+        expect(find.text(S.accountDevicesTitle.toUpperCase()), findsNothing);
         expect(await _seek(tester, S.accountSignOut), findsOneWidget);
-        expect(find.text(SA.moreOptions), findsNothing);
+        expect(find.text(S.accountMoreOptions), findsNothing);
         expect(find.text(S.accountRotate), findsNothing);
         expect(find.text(S.accountDelete), findsNothing);
         _expectCleanCopy(tester);
@@ -384,17 +392,17 @@ void main() {
         await tester.pumpWidget(_host(a, FakePairingPort(), look: look));
         await _settle(tester);
 
-        expect(find.text(SA.statusRevoked), findsOneWidget);
+        expect(find.text(S.accountStatusRevoked), findsOneWidget);
         expect(find.text(S.accountErrRevoked), findsOneWidget);
         expect(
-          find.widgetWithText(AccountCta, SA.ctaSignInAnotherNumber),
+          find.widgetWithText(AccountCta, S.accountCtaSignInAnotherNumber),
           findsOneWidget,
         );
         // Nothing claims Premium works for a number that does not.
-        expect(find.text(SA.statusReplacedStillOn), findsNothing);
-        expect(find.text(SA.statusOn), findsNothing);
-        expect(find.text(SA.devicesTitle.toUpperCase()), findsNothing);
-        expect(find.text(SA.moreOptions), findsNothing);
+        expect(find.text(S.accountStatusReplacedStillOn), findsNothing);
+        expect(find.text(S.accountStatusOn), findsNothing);
+        expect(find.text(S.accountDevicesTitle.toUpperCase()), findsNothing);
+        expect(find.text(S.accountMoreOptions), findsNothing);
         expect(await _seek(tester, S.accountSignOut), findsOneWidget);
         _expectCleanCopy(tester);
       });
@@ -408,9 +416,9 @@ void main() {
         await tester.pumpWidget(_host(a, FakePairingPort(), look: look));
         await _settle(tester);
 
-        expect(find.text(SA.statusSignedOut), findsOneWidget);
-        expect(find.text(SA.statusSignedOutLine), findsOneWidget);
-        expect(find.text(SA.statusSignedOutKept), findsOneWidget);
+        expect(find.text(S.accountStatusSignedOut), findsOneWidget);
+        expect(find.text(S.accountStatusSignedOutLine), findsOneWidget);
+        expect(find.text(S.accountStatusSignedOutKept), findsOneWidget);
         // The success page after it is 1.2.0's own; its large-text pass is
         // not this test's business.
         if (look != Look.largeSmall) {
@@ -428,7 +436,7 @@ void main() {
         await tester.pumpWidget(_host(a, FakePairingPort(), look: look));
         await _settle(tester);
 
-        expect(find.text(SA.title), findsOneWidget);
+        expect(find.text(S.accountTitle), findsOneWidget);
         expect(find.text(S.accountHelp), findsOneWidget);
         expect(find.byType(TextField), findsOneWidget);
         expect(find.widgetWithText(HipCta, S.accountCtaSignIn), findsOneWidget);
@@ -451,7 +459,9 @@ void main() {
       );
       await _settle(tester);
 
-      await tester.tap(find.widgetWithText(AccountCta, SA.ctaSignInNewNumber));
+      await tester.tap(
+        find.widgetWithText(AccountCta, S.accountCtaSignInNewNumber),
+      );
       await _settle(tester);
       expect(find.text(S.accountSignOutBody), findsOneWidget);
       await tester.tap(find.widgetWithText(AccountCta, S.accountSignOut));
@@ -489,7 +499,7 @@ void main() {
         _host(a, FakePairingPort(), look: Look.light, sheets: sheets),
       );
       await _settle(tester);
-      await tester.tap(await _seek(tester, SA.addDevice));
+      await tester.tap(await _seek(tester, S.accountAddDevice));
       await _settle(tester);
       await tester.tap(
         find.descendant(
@@ -514,10 +524,14 @@ void main() {
         );
       await tester.pumpWidget(_host(a, FakePairingPort(), look: Look.light));
       await _settle(tester);
-      expect(await _seek(tester, SA.devicesCount(4, 8)), findsOneWidget);
+      expect(await _seek(tester, S.accountDevicesCount(4, 8)), findsOneWidget);
       expect(await _seek(tester, 'Living room TV'), findsOneWidget);
-      expect(find.text(SA.kindTv), findsNothing, reason: 'kind is in a span');
-      expect(find.textContaining(SA.kindTv), findsWidgets);
+      expect(
+        find.text(S.accountKindTv),
+        findsNothing,
+        reason: 'kind is in a span',
+      );
+      expect(find.textContaining(S.accountKindTv), findsWidgets);
     });
 
     testWidgets('devices that could not be loaded say so and retry', (
@@ -535,7 +549,7 @@ void main() {
       );
       await tester.tap(find.text(S.accountErrNetwork));
       await _settle(tester);
-      expect(await _seek(tester, SA.devicesCount(2, 5)), findsOneWidget);
+      expect(await _seek(tester, S.accountDevicesCount(2, 5)), findsOneWidget);
     });
 
     testWidgets('an empty device list says so instead of a blank card', (
@@ -550,7 +564,7 @@ void main() {
         );
       await tester.pumpWidget(_host(a, FakePairingPort(), look: Look.light));
       await _settle(tester);
-      expect(await _seek(tester, SA.devicesEmpty), findsOneWidget);
+      expect(await _seek(tester, S.accountDevicesEmpty), findsOneWidget);
     });
 
     testWidgets('without plans on offer, Check again is the one button', (
@@ -582,8 +596,8 @@ void main() {
       a.premiumOn = false;
       await tester.pumpWidget(_host(a, FakePairingPort(), look: Look.light));
       await _settle(tester);
-      expect(find.text(SA.statusReplaced), findsOneWidget);
-      expect(find.text(SA.statusReplacedStillOn), findsNothing);
+      expect(find.text(S.accountStatusReplaced), findsOneWidget);
+      expect(find.text(S.accountStatusReplacedStillOn), findsNothing);
     });
 
     testWidgets('a pairing port that throws leaves the 1.2.0 rows', (
@@ -600,11 +614,11 @@ void main() {
         ),
       );
       await _settle(tester);
-      await tester.tap(await _seek(tester, SA.addDevice));
+      await tester.tap(await _seek(tester, S.accountAddDevice));
       await _settle(tester);
-      expect(find.text(SA.scanQr), findsOneWidget);
+      expect(find.text(S.accountScanQr), findsOneWidget);
       expect(find.text(S.accountLinkCode), findsOneWidget);
-      expect(find.text(SA.enterCode), findsNothing);
+      expect(find.text(S.accountEnterCode), findsNothing);
     });
   });
 }

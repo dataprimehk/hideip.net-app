@@ -8,7 +8,6 @@ import 'package:hideip_vpn/core/account_store.dart';
 import 'package:hideip_vpn/core/provisioning.dart';
 import 'package:hideip_vpn/core/secret_prefs.dart';
 import 'package:hideip_vpn/state/app_state.dart';
-import 'package:hideip_vpn/ui/redesign/account/account_strings.dart';
 import 'package:hideip_vpn/ui/redesign/account/account_widgets.dart';
 import 'package:hideip_vpn/ui/redesign/account_screen.dart';
 import 'package:hideip_vpn/ui/redesign/hip.dart';
@@ -232,8 +231,8 @@ Future<void> _dialog(WidgetTester tester) async {
 
 /// Unfolds More options, where the rare actions live.
 Future<void> _openMore(WidgetTester tester) async {
-  await tester.ensureVisible(find.text(SA.moreOptions));
-  await tester.tap(find.text(SA.moreOptions));
+  await tester.ensureVisible(find.text(S.accountMoreOptions));
+  await tester.tap(find.text(S.accountMoreOptions));
   await tester.pump();
 }
 
@@ -287,7 +286,7 @@ void main() {
   ) async {
     await tester.pumpWidget(_host(_state(backend)));
 
-    expect(find.text(SA.title), findsOneWidget);
+    expect(find.text(S.accountTitle), findsOneWidget);
     expect(find.text(S.accountHelp), findsOneWidget);
     expect(_signInButton(tester).onTap, isNull);
 
@@ -370,7 +369,7 @@ void main() {
     expect(find.text(S.accountSignOut), findsOneWidget);
     _expectNoForbiddenWords();
 
-    await tester.tap(find.text(SA.numberShow));
+    await tester.tap(find.text(S.accountNumberShow));
     await _dialog(tester);
     expect(find.byType(HipSheet), findsOneWidget);
     expect(
@@ -383,7 +382,7 @@ void main() {
     await _dialog(tester);
     expect(find.text('8236 3877 8895 0319'), findsNothing);
 
-    await tester.tap(find.text(SA.numberShow));
+    await tester.tap(find.text(S.accountNumberShow));
     await _dialog(tester);
     await tester.tap(find.widgetWithText(AccountCta, S.accountReveal));
     await _dialog(tester);
@@ -408,7 +407,7 @@ void main() {
     await _settle(tester);
 
     expect(find.text('•••• •••• •••• 0319'), findsOneWidget);
-    expect(find.text(SA.statusOff), findsOneWidget);
+    expect(find.text(S.accountStatusOff), findsOneWidget);
     expect(find.textContaining('Ended on'), findsOneWidget);
   });
 
@@ -492,8 +491,8 @@ void main() {
     await _settle(tester);
 
     expect(find.text('•••• •••• •••• 0319'), findsOneWidget);
-    expect(find.text(SA.statusSignedOut), findsOneWidget);
-    expect(find.text(SA.statusSignedOutLine), findsOneWidget);
+    expect(find.text(S.accountStatusSignedOut), findsOneWidget);
+    expect(find.text(S.accountStatusSignedOutLine), findsOneWidget);
     expect(state.accountNumber, _number);
 
     backend.devices = ['dev_abc', 'dev_two'];
@@ -516,18 +515,18 @@ void main() {
     await tester.pumpWidget(_host(state));
     await _settle(tester);
 
-    expect(find.text(SA.statusSignedOut), findsOneWidget);
+    expect(find.text(S.accountStatusSignedOut), findsOneWidget);
     expect(state.accountCanManage, isFalse);
     // The number, the reason, the way back in and the way out; nothing else.
     expect(find.text('•••• •••• •••• 0319'), findsOneWidget);
     expect(find.widgetWithText(AccountCta, S.accountCtaSignIn), findsOneWidget);
     expect(find.text(S.accountSignOut), findsOneWidget);
-    expect(find.text(SA.devicesTitle.toUpperCase()), findsNothing);
+    expect(find.text(S.accountDevicesTitle.toUpperCase()), findsNothing);
     expect(find.text('Desktop'), findsNothing);
     expect(find.byIcon(Icons.link_off), findsNothing);
-    expect(find.text(SA.moreOptions), findsNothing);
+    expect(find.text(S.accountMoreOptions), findsNothing);
     expect(find.text(S.accountRotate), findsNothing);
-    expect(find.text(SA.addDevice), findsNothing);
+    expect(find.text(S.accountAddDevice), findsNothing);
     expect(find.text(S.accountDelete), findsNothing);
   });
 
@@ -539,8 +538,8 @@ void main() {
     await tester.pumpWidget(_host(state));
     await _settle(tester);
 
-    expect(find.text(SA.statusOn), findsOneWidget);
-    expect(find.text(SA.statusEndsUnlessAdded), findsOneWidget);
+    expect(find.text(S.accountStatusOn), findsOneWidget);
+    expect(find.text(S.accountStatusEndsUnlessAdded), findsOneWidget);
     // Nothing pays for this number from here yet: a store subscription is
     // offered, and nothing else under Payment.
     expect(
@@ -549,8 +548,8 @@ void main() {
     );
     expect(find.textContaining('subscription · renews'), findsNothing);
     expect(find.text('Desktop'), findsOneWidget);
-    expect(find.text(SA.devicesCount(2, 5)), findsOneWidget);
-    expect(find.text(SA.addDevice), findsOneWidget);
+    expect(find.text(S.accountDevicesCount(2, 5)), findsOneWidget);
+    expect(find.text(S.accountAddDevice), findsOneWidget);
     await _openMore(tester);
     expect(find.text(S.accountRotate), findsOneWidget);
     expect(find.text(S.accountDelete), findsOneWidget);
@@ -569,10 +568,13 @@ void main() {
     await tester.pumpWidget(_host(state));
     await _settle(tester);
 
-    expect(find.text(SA.statusRenewsThrough('App Store')), findsOneWidget);
-    expect(find.text(SA.statusEndsUnlessAdded), findsNothing);
+    expect(
+      find.text(S.accountStatusRenewsThrough('App Store')),
+      findsOneWidget,
+    );
+    expect(find.text(S.accountStatusEndsUnlessAdded), findsNothing);
     expect(find.text(S.accountSubscribeStore('App Store')), findsNothing);
-    expect(find.text(SA.paymentTitle.toUpperCase()), findsOneWidget);
+    expect(find.text(S.accountPaymentTitle.toUpperCase()), findsOneWidget);
     expect(
       find.textContaining('App Store subscription · renews'),
       findsOneWidget,
@@ -615,19 +617,19 @@ void main() {
     await tester.pumpWidget(_host(state));
     await _settle(tester);
 
-    expect(find.text(SA.numberNotHere), findsOneWidget);
-    expect(find.text(SA.numberNotHereNote), findsOneWidget);
+    expect(find.text(S.accountNumberNotHere), findsOneWidget);
+    expect(find.text(S.accountNumberNotHereNote), findsOneWidget);
     expect(find.textContaining('0319'), findsNothing);
     // Premium is the first thing said, the missing number a quiet card.
-    expect(find.text(SA.statusOn), findsOneWidget);
+    expect(find.text(S.accountStatusOn), findsOneWidget);
     // The number can still be put in here, to see it again.
     expect(find.byType(TextField), findsNothing);
     await tester.tap(find.text(S.accountEnterNumber));
     await tester.pump();
     expect(find.byType(TextField), findsOneWidget);
-    expect(find.text(SA.numberShow), findsNothing);
+    expect(find.text(S.accountNumberShow), findsNothing);
     expect(find.text(S.accountCopy), findsNothing);
-    expect(find.text(SA.numberNote), findsNothing);
+    expect(find.text(S.accountNumberNote), findsNothing);
     // Getting a new number is the way to one.
     await _openMore(tester);
     expect(find.text(S.accountRotate), findsOneWidget);

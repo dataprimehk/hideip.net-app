@@ -13,7 +13,6 @@ import '../brand.dart';
 import '../strings.dart';
 import 'account/account_device.dart';
 import 'account/account_port.dart';
-import 'account/account_strings.dart';
 import 'account/account_widgets.dart';
 import 'account/pairing_flow.dart';
 import 'account/pairing_port.dart';
@@ -705,7 +704,7 @@ class _AccountScreenState extends State<AccountScreen> {
           child: Column(
             children: [
               HipNavHead(
-                title: SA.title,
+                title: S.accountTitle,
                 onBack: widget.nav.back,
                 trailing: signedIn && _loading
                     ? const Padding(
@@ -840,11 +839,11 @@ class _AccountScreenState extends State<AccountScreen> {
     if (issue == AccountIssue.revoked) {
       return AccountStatusCard(
         tone: StatusTone.bad,
-        title: SA.statusRevoked,
+        title: S.accountStatusRevoked,
         line: S.accountErrRevoked,
         actions: [
           AccountCta(
-            SA.ctaSignInAnotherNumber,
+            S.accountCtaSignInAnotherNumber,
             connect: true,
             onTap: _busy ? null : _signOut,
           ),
@@ -854,13 +853,13 @@ class _AccountScreenState extends State<AccountScreen> {
     if (issue == AccountIssue.numberReplaced) {
       return AccountStatusCard(
         tone: StatusTone.off,
-        title: SA.statusReplaced,
-        line: SA.statusReplacedLine,
+        title: S.accountStatusReplaced,
+        line: S.accountStatusReplacedLine,
         // Only said while it is true here and now.
-        fine: _port.premiumOn ? SA.statusReplacedStillOn : null,
+        fine: _port.premiumOn ? S.accountStatusReplacedStillOn : null,
         actions: [
           AccountCta(
-            SA.ctaSignInNewNumber,
+            S.accountCtaSignInNewNumber,
             connect: true,
             onTap: _busy ? null : _signOut,
           ),
@@ -872,9 +871,9 @@ class _AccountScreenState extends State<AccountScreen> {
       final number = _port.number;
       return AccountStatusCard(
         tone: StatusTone.off,
-        title: SA.statusSignedOut,
-        line: SA.statusSignedOutLine,
-        fine: known ? SA.statusSignedOutKept : null,
+        title: S.accountStatusSignedOut,
+        line: S.accountStatusSignedOutLine,
+        fine: known ? S.accountStatusSignedOutKept : null,
         actions: [
           if (known && number != null)
             AccountCta(
@@ -892,20 +891,20 @@ class _AccountScreenState extends State<AccountScreen> {
       final linked = _port.storeLinked && _port.storeName != null;
       return AccountStatusCard(
         tone: StatusTone.on,
-        title: SA.statusOn,
+        title: S.accountStatusOn,
         line: expires == null ? null : S.accountActiveUntil(date),
         lineMono: date,
         fine: linked
-            ? SA.statusRenewsThrough(_store)
+            ? S.accountStatusRenewsThrough(_store)
             : expires == null
             ? null
-            : SA.statusEndsUnlessAdded,
+            : S.accountStatusEndsUnlessAdded,
       );
     }
     final plans = _port.plansOffered;
     return AccountStatusCard(
       tone: StatusTone.off,
-      title: SA.statusOff,
+      title: S.accountStatusOff,
       line: expires == null ? null : S.accountEndedOn(date),
       lineMono: date,
       fine: S.accountOutOfTimeNote,
@@ -948,7 +947,7 @@ class _AccountScreenState extends State<AccountScreen> {
           ),
         ),
       if (manage) ..._devicesSection(),
-      CountedSectionLabel(SA.numberSection),
+      CountedSectionLabel(S.accountNumberTitle),
       if (known) ...[
         HipCard(
           child: AccountNumberBlock(
@@ -958,19 +957,19 @@ class _AccountScreenState extends State<AccountScreen> {
             onCopy: () => _copy(number),
           ),
         ),
-        const AccountNote(SA.numberNote),
+        const AccountNote(S.accountNumberNote),
       ] else
         HipCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                SA.numberNotHere,
+                S.accountNumberNotHere,
                 style: Hip.sans(650, 15.5, color: Hip.ink, height: 1.35),
               ),
               const SizedBox(height: 6),
               Text(
-                SA.numberNotHereNote,
+                S.accountNumberNotHereNote,
                 style: Hip.sans(400, 13.5, color: Hip.muted, height: 1.45),
               ),
               if (!_enterNumber) ...[
@@ -991,7 +990,7 @@ class _AccountScreenState extends State<AccountScreen> {
       if (_port.storeLinkedElsewhere)
         AccountNote(S.accountLinkedElsewhere(_store)),
       if (live && linked) ...[
-        const CountedSectionLabel(SA.paymentTitle),
+        const CountedSectionLabel(S.accountPaymentTitle),
         HipListGroup(
           children: [
             _BillingRow(
@@ -1011,7 +1010,7 @@ class _AccountScreenState extends State<AccountScreen> {
           manage &&
           !_port.hasStoreEntitlement &&
           _port.plansOffered) ...[
-        const CountedSectionLabel(SA.paymentTitle),
+        const CountedSectionLabel(S.accountPaymentTitle),
         HipListGroup(
           children: [
             AccountRow(
@@ -1045,8 +1044,10 @@ class _AccountScreenState extends State<AccountScreen> {
     final permissions = _caps.permissions;
     return [
       CountedSectionLabel(
-        SA.devicesTitle,
-        count: devices == null ? null : SA.devicesCount(devices.length, limit),
+        S.accountDevicesTitle,
+        count: devices == null
+            ? null
+            : S.accountDevicesCount(devices.length, limit),
       ),
       if (devices != null) ...[
         DeviceMeter(used: devices.length, limit: limit),
@@ -1056,13 +1057,13 @@ class _AccountScreenState extends State<AccountScreen> {
         children: [
           if (_statusFailed)
             HipListRow(
-              title: _statusError ?? SA.devicesFailed,
+              title: _statusError ?? S.accountDevicesFailed,
               titleMaxLines: 3,
               trailing: Icon(Icons.refresh, size: 17, color: Hip.muted2),
               onTap: _loadStatus,
             )
           else if (devices != null && devices.isEmpty)
-            HipListRow(title: SA.devicesEmpty, titleMaxLines: 2)
+            HipListRow(title: S.accountDevicesEmpty, titleMaxLines: 2)
           else if (devices == null && _loading)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 16),
@@ -1088,17 +1089,17 @@ class _AccountScreenState extends State<AccountScreen> {
               opacity: .5,
               child: AccountRow(
                 leading: const AccountTile(Icons.add),
-                title: SA.addDevice,
-                subtitle: SA.addDeviceOff,
+                title: S.accountAddDevice,
+                subtitle: S.accountAddDeviceOff,
                 chevron: false,
               ),
             )
           else if (canAdd)
             AccountRow(
               leading: const AccountTile(Icons.add, blue: true),
-              title: SA.addDevice,
+              title: S.accountAddDevice,
               titleColor: Hip.blue,
-              subtitle: SA.addDeviceSub,
+              subtitle: S.accountAddDeviceSub,
               onTap: _busy ? null : _addDevice,
             ),
         ],
@@ -1126,7 +1127,7 @@ class _AccountScreenState extends State<AccountScreen> {
           AccountRow(
             leading: const AccountTile(Icons.autorenew),
             title: S.accountRotate,
-            subtitle: SA.rotateSub,
+            subtitle: S.accountRotateSub,
             onTap: _busy ? null : _rotate,
           ),
           _signOutRow(),

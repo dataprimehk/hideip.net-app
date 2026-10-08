@@ -12,7 +12,6 @@ import '../qr_scan_screen.dart';
 import '../strings.dart';
 import 'account/account_device.dart';
 import 'account/account_port.dart';
-import 'account/account_strings.dart';
 import 'account/pairing_flow.dart';
 import 'account/pairing_port.dart';
 import 'hip.dart';
@@ -243,7 +242,7 @@ class _LinkedDevicesScreenState extends State<LinkedDevicesScreen> {
                       const SizedBox(height: 6),
                       Text(
                         _caps.v2
-                            ? SA.addHowV2
+                            ? S.accountAddHowV2
                             : 'Scan the code a browser or desktop app shows '
                                 'and it gets access to your premium servers. '
                                 'No sign-in, nothing to remember.',
@@ -253,14 +252,14 @@ class _LinkedDevicesScreenState extends State<LinkedDevicesScreen> {
                     ]),
               ),
               const SizedBox(height: 14),
-              HipCta(_caps.v2 ? SA.scanQr : 'Link a device',
+              HipCta(_caps.v2 ? S.accountScanQr : 'Link a device',
                   leading: const Icon(Icons.qr_code_scanner_outlined),
                   onTap: _scanToLink),
               const SizedBox(height: 10),
               // With pairing v2 the code comes from the new device and is
               // typed here; before it, this phone shows one.
               if (_caps.v2)
-                HipCta(SA.enterCode,
+                HipCta(S.accountEnterCode,
                     ghost: true, quiet: true, onTap: _enterCode)
               else
                 HipCta('Show a code instead',

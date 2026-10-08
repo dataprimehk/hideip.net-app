@@ -11,7 +11,6 @@ import '../../brand.dart';
 import '../../strings.dart';
 import '../hip.dart';
 import '../hip_sheet.dart';
-import 'account_strings.dart';
 
 /// A sentence with [mono] set in the number face and the rest in [words].
 /// A date inside a line is a number, wherever a translation moves it.
@@ -284,7 +283,7 @@ class DeviceMeter extends StatelessWidget {
     final cap = limit <= 0 ? 1 : limit;
     final filled = used.clamp(0, cap);
     return Semantics(
-      label: SA.devicesCount(used, limit),
+      label: S.accountDevicesCount(used, limit),
       excludeSemantics: true,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -502,7 +501,7 @@ class AccountNumberBlock extends StatelessWidget {
               icon: revealed
                   ? Icons.visibility_off_outlined
                   : Icons.visibility_outlined,
-              label: revealed ? S.accountHide : SA.numberShow,
+              label: revealed ? S.accountHide : S.accountNumberShow,
               onTap: onToggle,
             ),
             MiniAction(
@@ -551,7 +550,7 @@ class MoreOptionsHeader extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  SA.moreOptions,
+                  S.accountMoreOptions,
                   style: Hip.sans(600, 14.5, color: Hip.muted),
                 ),
               ),
@@ -634,9 +633,9 @@ class _AddDeviceSheetState extends State<AddDeviceSheet> {
   Widget build(BuildContext context) {
     final used = widget.used;
     final body = [
-      SA.addShare(widget.limit),
-      if (used != null) SA.addInUse(used, widget.limit),
-      if (widget.canPair) widget.v2 ? SA.addHowV2 : SA.addHowLegacy,
+      S.accountAddShare(widget.limit),
+      if (used != null) S.accountAddInUse(used, widget.limit),
+      if (widget.canPair) widget.v2 ? S.accountAddHowV2 : S.accountAddHowLegacy,
     ].join(' ');
     final number = widget.number;
     return SheetScroll(
@@ -644,7 +643,7 @@ class _AddDeviceSheetState extends State<AddDeviceSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const HipSheetTitle(SA.addDevice),
+          const HipSheetTitle(S.accountAddDevice),
           HipSheetBody(body),
           if (widget.canPair) ...[
             const SizedBox(height: 16),
@@ -656,17 +655,19 @@ class _AddDeviceSheetState extends State<AddDeviceSheet> {
                       Icons.qr_code_scanner_outlined,
                       blue: true,
                     ),
-                    title: SA.scanQr,
+                    title: S.accountScanQr,
                     titleColor: Hip.blue,
-                    subtitle: widget.v2 ? SA.scanQrSub : S.setLinkedDevicesSub,
+                    subtitle: widget.v2
+                        ? S.accountScanQrSub
+                        : S.setLinkedDevicesSub,
                     onTap: () => Navigator.of(c).pop(AddDeviceChoice.scan),
                   ),
                 ),
                 Builder(
                   builder: (c) => AccountRow(
                     leading: const AccountTile(Icons.pin_outlined),
-                    title: widget.v2 ? SA.enterCode : S.accountLinkCode,
-                    subtitle: widget.v2 ? SA.enterCodeSub : null,
+                    title: widget.v2 ? S.accountEnterCode : S.accountLinkCode,
+                    subtitle: widget.v2 ? S.accountEnterCodeSub : null,
                     onTap: () => Navigator.of(c).pop(
                       widget.v2
                           ? AddDeviceChoice.code
@@ -678,7 +679,7 @@ class _AddDeviceSheetState extends State<AddDeviceSheet> {
             ),
           ],
           if (number != null) ...[
-            const CountedSectionLabel(SA.orSignIn),
+            const CountedSectionLabel(S.accountOrSignIn),
             HipCard(
               padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
               child: Column(
@@ -693,7 +694,7 @@ class _AddDeviceSheetState extends State<AddDeviceSheet> {
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    SA.signInNote,
+                    S.accountSignInNote,
                     style: Hip.sans(400, 12.5, color: Hip.muted, height: 1.4),
                   ),
                 ],

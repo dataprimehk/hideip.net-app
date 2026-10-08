@@ -593,7 +593,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       if (kAccountSignIn && !accountHome)
         HipListRow(
           leading: _grayTile(Icons.pin_outlined),
-          title: S.accountNumberTitle,
+          title: S.accountTitle,
           subtitleSpan: _accountNumberSubtitle(state),
           trailing: _chevron(),
           onTap: () => nav.go(HipScreen.account),

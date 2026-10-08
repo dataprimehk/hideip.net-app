@@ -9,15 +9,15 @@ export '../../../core/pairing.dart'
 import 'package:flutter/material.dart' show IconData, Icons;
 
 import '../../../core/pairing.dart';
-import 'account_strings.dart';
+import '../../strings.dart';
 
 String deviceKindLabel(DeviceKind kind) => switch (kind) {
-  DeviceKind.phone => SA.kindPhone,
-  DeviceKind.tablet => SA.kindTablet,
-  DeviceKind.desktop => SA.kindDesktop,
-  DeviceKind.tv => SA.kindTv,
-  DeviceKind.extension => SA.kindBrowser,
-  DeviceKind.unknown => SA.kindDevice,
+  DeviceKind.phone => S.accountKindPhone,
+  DeviceKind.tablet => S.accountKindTablet,
+  DeviceKind.desktop => S.accountKindDesktop,
+  DeviceKind.tv => S.accountKindTv,
+  DeviceKind.extension => S.accountKindBrowser,
+  DeviceKind.unknown => S.accountKindDevice,
 };
 
 IconData deviceKindIcon(DeviceKind kind) => switch (kind) {
@@ -28,4 +28,3 @@ IconData deviceKindIcon(DeviceKind kind) => switch (kind) {
   DeviceKind.extension => Icons.language_outlined,
   DeviceKind.unknown => Icons.devices_other_outlined,
 };
-

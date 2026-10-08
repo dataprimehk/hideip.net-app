@@ -9,7 +9,6 @@ import 'package:hideip_vpn/state/app_pairing.dart';
 import 'package:hideip_vpn/state/app_state.dart';
 import 'package:hideip_vpn/ui/redesign/account/account_device.dart';
 import 'package:hideip_vpn/ui/redesign/account/account_port.dart';
-import 'package:hideip_vpn/ui/redesign/account/account_strings.dart';
 import 'package:hideip_vpn/ui/redesign/account/account_widgets.dart';
 import 'package:hideip_vpn/ui/redesign/account/pairing_flow.dart';
 import 'package:hideip_vpn/ui/redesign/account/pairing_port.dart';
@@ -62,7 +61,7 @@ Finder _inSheet(Finder f) =>
 
 /// Opens Add a device and picks [row] in it.
 Future<void> _addVia(WidgetTester tester, String row) async {
-  await tester.tap(find.text(SA.addDevice));
+  await tester.tap(find.text(S.accountAddDevice));
   await _settle(tester);
   await tester.tap(_inSheet(find.text(row)));
   await _settle(tester);
@@ -99,15 +98,15 @@ void main() {
           ),
         );
         await _settle(tester);
-        await tester.tap(find.text(SA.addDevice));
+        await tester.tap(find.text(S.accountAddDevice));
         await _settle(tester);
 
-        expect(_inSheet(find.text(SA.scanQr)), findsOneWidget);
+        expect(_inSheet(find.text(S.accountScanQr)), findsOneWidget);
         expect(_inSheet(find.text(S.setLinkedDevicesSub)), findsOneWidget);
         expect(_inSheet(find.text(S.accountLinkCode)), findsOneWidget);
-        expect(_inSheet(find.text(SA.enterCode)), findsNothing);
-        expect(find.textContaining(SA.addHowV2), findsNothing);
-        expect(find.textContaining(SA.addHowLegacy), findsOneWidget);
+        expect(_inSheet(find.text(S.accountEnterCode)), findsNothing);
+        expect(find.textContaining(S.accountAddHowV2), findsNothing);
+        expect(find.textContaining(S.accountAddHowLegacy), findsOneWidget);
       });
     }
 
@@ -144,10 +143,10 @@ void main() {
         ),
       );
       await _settle(tester);
-      await tester.tap(find.text(SA.addDevice));
+      await tester.tap(find.text(S.accountAddDevice));
       await _settle(tester);
-      expect(_inSheet(find.text(SA.scanQr)), findsNothing);
-      expect(_inSheet(find.text(SA.enterCode)), findsNothing);
+      expect(_inSheet(find.text(S.accountScanQr)), findsNothing);
+      expect(_inSheet(find.text(S.accountEnterCode)), findsNothing);
       expect(_inSheet(find.text('•••• •••• •••• 0319')), findsOneWidget);
     });
 
@@ -165,7 +164,7 @@ void main() {
         ),
       );
       await _settle(tester);
-      expect(find.text(SA.addDevice), findsNothing);
+      expect(find.text(S.accountAddDevice), findsNothing);
     });
 
     testWidgets('Show in the sheet asks before the number appears', (
@@ -177,9 +176,9 @@ void main() {
         _account(FakeAccountPort(), FakePairingPort(), sheets: sheets),
       );
       await _settle(tester);
-      await tester.tap(find.text(SA.addDevice));
+      await tester.tap(find.text(S.accountAddDevice));
       await _settle(tester);
-      await tester.tap(_inSheet(find.text(SA.numberShow)));
+      await tester.tap(_inSheet(find.text(S.accountNumberShow)));
       await _settle(tester);
       expect(find.text(S.accountKeepSafe), findsOneWidget);
       expect(find.text('8236 3877 8895 0319'), findsNothing);
@@ -200,9 +199,9 @@ void main() {
         _account(FakeAccountPort(), pairing, sheets: sheets),
       );
       await _settle(tester);
-      await _addVia(tester, SA.enterCode);
+      await _addVia(tester, S.accountEnterCode);
 
-      expect(find.text(SA.codeBody), findsOneWidget);
+      expect(find.text(S.accountCodeBody), findsOneWidget);
       HipCta next() =>
           tester.widget<HipCta>(find.widgetWithText(HipCta, S.aContinue));
       await _typeCode(tester, '7kqm 3x');
@@ -215,7 +214,7 @@ void main() {
       await tester.tap(find.widgetWithText(HipCta, S.aContinue));
       await _settle(tester);
       expect(pairing.previews.single, (linkId: null, code: '7KQM3XHP'));
-      expect(find.text(SA.confirmTitle), findsOneWidget);
+      expect(find.text(S.accountConfirmTitle), findsOneWidget);
     });
 
     testWidgets('a character no code has is pointed out, nothing is sent', (
@@ -228,10 +227,10 @@ void main() {
         _account(FakeAccountPort(), pairing, sheets: sheets),
       );
       await _settle(tester);
-      await _addVia(tester, SA.enterCode);
+      await _addVia(tester, S.accountEnterCode);
 
       await _typeCode(tester, '7KQM-3XH0');
-      expect(find.text(SA.codeBadChars), findsOneWidget);
+      expect(find.text(S.accountCodeBadChars), findsOneWidget);
       expect(
         tester.widget<HipCta>(find.widgetWithText(HipCta, S.aContinue)).onTap,
         isNull,
@@ -252,16 +251,16 @@ void main() {
         _account(FakeAccountPort(), pairing, sheets: sheets),
       );
       await _settle(tester);
-      await _addVia(tester, SA.enterCode);
+      await _addVia(tester, S.accountEnterCode);
       await _typeCode(tester, '7KQM3XHP');
       await tester.tap(find.widgetWithText(HipCta, S.aContinue));
       await _settle(tester);
 
-      expect(find.text(SA.errUnknownCode), findsOneWidget);
+      expect(find.text(S.accountErrUnknownCode), findsOneWidget);
       expect(find.byKey(const ValueKey('pairing-code')), findsOneWidget);
       // Typing again clears the old answer.
       await _typeCode(tester, '7KQM3XHQ');
-      expect(find.text(SA.errUnknownCode), findsNothing);
+      expect(find.text(S.accountErrUnknownCode), findsNothing);
     });
 
     testWidgets('too many attempts is said calmly', (tester) async {
@@ -275,7 +274,7 @@ void main() {
         _account(FakeAccountPort(), pairing, sheets: sheets),
       );
       await _settle(tester);
-      await _addVia(tester, SA.enterCode);
+      await _addVia(tester, S.accountEnterCode);
       await _typeCode(tester, '7KQM3XHP');
       await tester.tap(find.widgetWithText(HipCta, S.aContinue));
       await _settle(tester);
@@ -301,9 +300,9 @@ void main() {
         ),
       );
       await _settle(tester);
-      await _addVia(tester, SA.scanQr);
+      await _addVia(tester, S.accountScanQr);
       expect(scans, 0);
-      expect(find.text(SA.cameraOff), findsOneWidget);
+      expect(find.text(S.accountCameraOff), findsOneWidget);
       expect(find.byKey(const ValueKey('pairing-code')), findsOneWidget);
     });
   });
@@ -326,31 +325,31 @@ void main() {
       );
       await _settle(tester);
       final before = account.refreshes;
-      await _addVia(tester, SA.scanQr);
+      await _addVia(tester, S.accountScanQr);
 
       expect(pairing.previews.single, (linkId: 'link_abc', code: null));
       expect(pairing.approvals, isEmpty, reason: 'reading approves nothing');
-      expect(find.text(SA.confirmTitle), findsOneWidget);
+      expect(find.text(S.accountConfirmTitle), findsOneWidget);
       expect(find.text('Living room TV'), findsWidgets);
-      expect(find.textContaining(SA.kindTv), findsWidgets);
-      expect(find.text('${SA.kindTv}  ·  Android'), findsOneWidget);
+      expect(find.textContaining(S.accountKindTv), findsWidgets);
+      expect(find.text('${S.accountKindTv}  ·  Android'), findsOneWidget);
       expect(find.text('7KQM-3XHP'), findsOneWidget);
-      expect(find.text(SA.confirmCodeNote), findsOneWidget);
+      expect(find.text(S.accountConfirmCodeNote), findsOneWidget);
       // A TV only uses Premium: nothing to grant.
-      expect(find.text(SA.grantManage), findsNothing);
-      expect(find.text(SA.useOnly), findsOneWidget);
-      expect(find.text(SA.addInUse(3, 5)), findsOneWidget);
-      expect(find.text(SA.expiresIn('06:52')), findsOneWidget);
+      expect(find.text(S.accountGrantManage), findsNothing);
+      expect(find.text(S.accountUseOnly), findsOneWidget);
+      expect(find.text(S.accountAddInUse(3, 5)), findsOneWidget);
+      expect(find.text(S.accountExpiresIn('06:52')), findsOneWidget);
 
-      await tester.tap(find.widgetWithText(HipCta, SA.approve));
+      await tester.tap(find.widgetWithText(HipCta, S.accountApprove));
       await _settle(tester);
       expect(pairing.approvals.single, (
         linkId: 'link_abc',
         grantManage: false,
       ));
-      expect(find.text(SA.doneTitle), findsOneWidget);
-      expect(find.text(SA.doneBody('Living room TV')), findsOneWidget);
-      await tester.tap(find.widgetWithText(HipCta, SA.done));
+      expect(find.text(S.accountDoneTitle), findsOneWidget);
+      expect(find.text(S.accountDoneBody('Living room TV')), findsOneWidget);
+      await tester.tap(find.widgetWithText(HipCta, S.accountDone));
       await _settle(tester);
       expect(account.refreshes, greaterThan(before));
     });
@@ -368,20 +367,20 @@ void main() {
         _account(FakeAccountPort(), pairing, sheets: sheets),
       );
       await _settle(tester);
-      await _addVia(tester, SA.enterCode);
+      await _addVia(tester, S.accountEnterCode);
       await _typeCode(tester, '7KQM3XHP');
       await tester.tap(find.widgetWithText(HipCta, S.aContinue));
       await _settle(tester);
 
-      expect(find.text(SA.grantManage), findsOneWidget);
+      expect(find.text(S.accountGrantManage), findsOneWidget);
       final toggle = tester.widget<Switch>(find.byType(Switch));
       expect(toggle.value, isFalse, reason: 'use only, unless granted');
       await tester.tap(find.byType(Switch));
       await tester.pump();
-      await tester.tap(find.widgetWithText(HipCta, SA.approve));
+      await tester.tap(find.widgetWithText(HipCta, S.accountApprove));
       await _settle(tester);
       expect(pairing.approvals.single.grantManage, isTrue);
-      expect(find.text(SA.doneManage('Living room TV')), findsOneWidget);
+      expect(find.text(S.accountDoneManage('Living room TV')), findsOneWidget);
     });
 
     testWidgets('an approval that was already made is a success, once', (
@@ -409,10 +408,10 @@ void main() {
         ),
       );
       await _settle(tester);
-      await _addVia(tester, SA.scanQr);
-      await tester.tap(find.widgetWithText(HipCta, SA.approve));
+      await _addVia(tester, S.accountScanQr);
+      await tester.tap(find.widgetWithText(HipCta, S.accountApprove));
       await _settle(tester);
-      expect(find.text(SA.doneTitle), findsOneWidget);
+      expect(find.text(S.accountDoneTitle), findsOneWidget);
       expect(pairing.approvals, hasLength(1));
     });
 
@@ -432,10 +431,12 @@ void main() {
         ),
       );
       await _settle(tester);
-      await _addVia(tester, SA.scanQr);
-      expect(find.text(SA.errInactive), findsOneWidget);
+      await _addVia(tester, S.accountScanQr);
+      expect(find.text(S.accountErrInactive), findsOneWidget);
       expect(
-        tester.widget<HipCta>(find.widgetWithText(HipCta, SA.approve)).onTap,
+        tester
+            .widget<HipCta>(find.widgetWithText(HipCta, S.accountApprove))
+            .onTap,
         isNull,
       );
     });
@@ -458,11 +459,13 @@ void main() {
         ),
       );
       await _settle(tester);
-      await _addVia(tester, SA.scanQr);
+      await _addVia(tester, S.accountScanQr);
       await tester.pump(const Duration(seconds: 3));
-      expect(find.text(SA.errExpired), findsOneWidget);
+      expect(find.text(S.accountErrExpired), findsOneWidget);
       expect(
-        tester.widget<HipCta>(find.widgetWithText(HipCta, SA.approve)).onTap,
+        tester
+            .widget<HipCta>(find.widgetWithText(HipCta, S.accountApprove))
+            .onTap,
         isNull,
       );
     });
@@ -485,11 +488,11 @@ void main() {
         ),
       );
       await _settle(tester);
-      await _addVia(tester, SA.scanQr);
-      await tester.tap(find.widgetWithText(HipCta, SA.approve));
+      await _addVia(tester, S.accountScanQr);
+      await tester.tap(find.widgetWithText(HipCta, S.accountApprove));
       await _settle(tester);
-      expect(find.text(SA.errCancelled), findsOneWidget);
-      expect(find.widgetWithText(HipCta, SA.approve), findsNothing);
+      expect(find.text(S.accountErrCancelled), findsOneWidget);
+      expect(find.widgetWithText(HipCta, S.accountApprove), findsNothing);
       expect(find.widgetWithText(HipCta, S.aClose), findsOneWidget);
     });
 
@@ -508,8 +511,8 @@ void main() {
         ),
       );
       await _settle(tester);
-      await _addVia(tester, SA.scanQr);
-      expect(find.text(SA.errBadCode), findsOneWidget);
+      await _addVia(tester, S.accountScanQr);
+      expect(find.text(S.accountErrBadCode), findsOneWidget);
       expect(pairing.previews, isEmpty);
     });
   });
@@ -536,12 +539,12 @@ void main() {
         ),
       );
       await _settle(tester);
-      await _addVia(tester, SA.scanQr);
-      await tester.tap(find.widgetWithText(HipCta, SA.approve));
+      await _addVia(tester, S.accountScanQr);
+      await tester.tap(find.widgetWithText(HipCta, S.accountApprove));
       await _settle(tester);
 
-      expect(find.text(SA.limitTitle(5)), findsOneWidget);
-      expect(find.text(SA.limitBody), findsOneWidget);
+      expect(find.text(S.accountLimitTitle(5)), findsOneWidget);
+      expect(find.text(S.accountLimitBody), findsOneWidget);
       expect(_inSheet(find.text('iPad')), findsOneWidget);
       // This device cannot be taken off from here.
       final removable = _inSheet(find.byIcon(Icons.link_off));
@@ -556,7 +559,7 @@ void main() {
       expect(pairing.revokes.single, (id: 'dev_tab', confirm: false));
       expect(pairing.approvals, hasLength(2));
       expect(pairing.approvals.last.linkId, 'link_abc');
-      expect(find.text(SA.doneTitle), findsOneWidget);
+      expect(find.text(S.accountDoneTitle), findsOneWidget);
     });
 
     testWidgets('the last manager is asked about before it goes', (
@@ -583,23 +586,23 @@ void main() {
         ),
       );
       await _settle(tester);
-      await _addVia(tester, SA.scanQr);
-      await tester.tap(find.widgetWithText(HipCta, SA.approve));
+      await _addVia(tester, S.accountScanQr);
+      await tester.tap(find.widgetWithText(HipCta, S.accountApprove));
       await _settle(tester);
       await tester.tap(_inSheet(find.byIcon(Icons.link_off)));
       await _settle(tester);
       await tester.tap(find.widgetWithText(HipCta, S.aRemove));
       await _settle(tester);
 
-      expect(find.text(SA.lastManagerTitle), findsOneWidget);
-      expect(find.text(SA.lastManagerBody), findsOneWidget);
+      expect(find.text(S.accountLastManagerTitle), findsOneWidget);
+      expect(find.text(S.accountLastManagerBody), findsOneWidget);
       await tester.tap(find.widgetWithText(HipCta, S.aContinue));
       await _settle(tester);
       expect(pairing.revokes, [
         (id: 'dev_chrome', confirm: false),
         (id: 'dev_chrome', confirm: true),
       ]);
-      expect(find.text(SA.doneTitle), findsOneWidget);
+      expect(find.text(S.accountDoneTitle), findsOneWidget);
     });
   });
 
@@ -622,13 +625,13 @@ void main() {
 
       await tester.tap(find.text('MacBook Air'));
       await _settle(tester);
-      expect(_inSheet(find.text(SA.grantManage)), findsOneWidget);
+      expect(_inSheet(find.text(S.accountGrantManage)), findsOneWidget);
       expect(_inSheet(find.textContaining('Added')), findsOneWidget);
-      expect(_inSheet(find.text(SA.deviceNeverUsed)), findsOneWidget);
+      expect(_inSheet(find.text(S.accountDeviceNeverUsed)), findsOneWidget);
       await tester.tap(_inSheet(find.byType(Switch)));
       await _settle(tester);
       // Not really the last one here, but the server said so: asked first.
-      expect(find.text(SA.lastManagerTitle), findsOneWidget);
+      expect(find.text(S.accountLastManagerTitle), findsOneWidget);
       await tester.tap(find.widgetWithText(HipCta, S.aContinue));
       await _settle(tester);
       expect(pairing.manages, [
@@ -657,7 +660,7 @@ void main() {
       await tester.tap(find.text('Chrome'));
       await _settle(tester);
       expect(_inSheet(find.byType(Switch)), findsNothing);
-      expect(_inSheet(find.text(SA.useOnly)), findsOneWidget);
+      expect(_inSheet(find.text(S.accountUseOnly)), findsOneWidget);
     });
 
     testWidgets('with v2, removal goes through pairing; without, the account', (
@@ -718,9 +721,9 @@ void main() {
       _tall(tester);
       await tester.pumpWidget(host(FakePairingPort(caps: FakePairingPort.v2)));
       await _settle(tester);
-      expect(find.widgetWithText(HipCta, SA.enterCode), findsOneWidget);
+      expect(find.widgetWithText(HipCta, S.accountEnterCode), findsOneWidget);
       expect(find.text('Show a code instead'), findsNothing);
-      expect(find.text(SA.addHowV2), findsOneWidget);
+      expect(find.text(S.accountAddHowV2), findsOneWidget);
     });
 
     testWidgets('before v2 the 1.2.0 buttons stay', (tester) async {
@@ -731,7 +734,7 @@ void main() {
         find.widgetWithText(HipCta, 'Show a code instead'),
         findsOneWidget,
       );
-      expect(find.widgetWithText(HipCta, SA.enterCode), findsNothing);
+      expect(find.widgetWithText(HipCta, S.accountEnterCode), findsNothing);
     });
   });
 
@@ -758,7 +761,7 @@ void main() {
       await tester.tap(find.text('open'));
       await _settle(tester);
       expect(pairing.previews.single.linkId, 'link_abc');
-      expect(find.text(SA.confirmTitle), findsOneWidget);
+      expect(find.text(S.accountConfirmTitle), findsOneWidget);
       expect(find.text('Link this device?'), findsNothing);
     });
   });
@@ -775,7 +778,7 @@ void main() {
         'current': true,
       })!;
       expect(d.kind, DeviceKind.tv);
-      expect(d.name, SA.deviceUnnamed);
+      expect(d.name, S.accountDeviceUnnamed);
       expect(d.manage, isFalse);
       expect(d.current, isTrue);
       expect(d.lastSeenAt, isNotNull);
@@ -879,6 +882,8 @@ void main() {
       ).listSync().whereType<File>().map((f) => f.path),
       'lib/ui/redesign/account_screen.dart',
       'lib/ui/redesign/linked_devices_screen.dart',
+      // The account copy itself lives here since 1.2.1.
+      'lib/ui/strings.dart',
     ];
     for (final path in files) {
       final text = File(path).readAsStringSync();
