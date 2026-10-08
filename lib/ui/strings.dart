@@ -760,9 +760,8 @@ abstract final class S {
   /// Onboarding beat two while the free location is on offer: the beat no
   /// longer says that no free servers are built in.
   static const obB2BodyFree =
-      "Websites see the server's address, not yours. One slower free "
-      'location is built in: add your own link, or use hideip.net Premium '
-      'locations.';
+      "Websites see the server's address, not yours. One free location is "
+      'built in: add your own link, or use hideip.net Premium locations.';
 
   static const obB3Title = 'Works where\nVPNs get blocked.';
   static const obB3Body =
