@@ -24,7 +24,7 @@ const _phones = [
   _Phone('iPhone 14', Size(390, 844), 3, top: 47, bottom: 34),
 ];
 
-Widget _paywall(PremiumPlan plan, {String? city}) => MaterialApp(
+Widget _paywall(PremiumPlan plan, {String? city, int? freeMbps}) => MaterialApp(
       home: Scaffold(
           backgroundColor: Hip.dark,
           body: PaywallLayout(
@@ -42,6 +42,7 @@ Widget _paywall(PremiumPlan plan, {String? city}) => MaterialApp(
               onRestore: () {},
               onTerms: () {},
               onPrivacy: () {},
+              freeMbps: freeMbps,
             ),
           )),
     );
@@ -124,6 +125,19 @@ void main() {
         expect(tester.takeException(), isNull);
         expect(_scrollableBy(tester), 0);
         _expectOnScreen(tester, find.text(S.pwCtaBuy), phone);
+      });
+
+      testWidgets('the free line under the title does not push it off',
+          (tester) async {
+        _use(tester, phone);
+        await tester.pumpWidget(
+            _paywall(PremiumPlan.yearly, city: 'Amsterdam', freeMbps: 10));
+
+        expect(find.text(S.pwSubFree(10)), findsOneWidget);
+        expect(find.text(S.pwSub), findsNothing);
+        expect(tester.takeException(), isNull);
+        expect(_scrollableBy(tester), 0);
+        _expectOnScreen(tester, find.text(S.pwCtaTrial), phone);
       });
 
       testWidgets('a city headline does not push the button off',

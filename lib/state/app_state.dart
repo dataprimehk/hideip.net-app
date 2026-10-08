@@ -379,24 +379,45 @@ class AppState extends ChangeNotifier implements AccountUiHost {
   }
 
   /// The location the tunnel would use right now. In auto mode this is the
-  /// lowest-latency probed server (falling back to the persisted selection).
+  /// lowest-latency probed server among [autoCandidates] (falling back to
+  /// the persisted selection).
   Location? get activeLocation {
     final all = locations;
     if (all.isEmpty) return null;
     if (_prefs.autoSelect) {
-      Location? best;
-      int? bestMs;
-      for (final l in all) {
-        final ping = pingFor(l.profile);
-        if (ping is PingOk && (bestMs == null || ping.ms < bestMs)) {
-          bestMs = ping.ms;
-          best = l;
-        }
-      }
+      final best = autoPick;
       if (best != null) return best;
     }
     if (_selected >= 0 && _selected < all.length) return all[_selected];
     return all.first;
+  }
+
+  /// What Auto chooses among: every server, except that the free location
+  /// is only a fallback. It is slow on purpose, so a lower ping must not
+  /// pull Auto off the user's own servers or Premium onto it; with nothing
+  /// else on the device it is the choice.
+  List<Location> get autoCandidates {
+    final all = locations;
+    final paidOrOwn = [
+      for (final l in all)
+        if (!l.profile.free) l,
+    ];
+    return paidOrOwn.isEmpty ? all : paidOrOwn;
+  }
+
+  /// The server Auto would pick right now: the lowest probed latency among
+  /// [autoCandidates], or null while none has been measured.
+  Location? get autoPick {
+    Location? best;
+    int? bestMs;
+    for (final l in autoCandidates) {
+      final ping = pingFor(l.profile);
+      if (ping is PingOk && (bestMs == null || ping.ms < bestMs)) {
+        bestMs = ping.ms;
+        best = l;
+      }
+    }
+    return best;
   }
 
   /// Signal level 0-4 for the ping bars.
@@ -2280,8 +2301,23 @@ class AppState extends ChangeNotifier implements AccountUiHost {
   FreeInfo get freeInfo => _freeInfo;
 
   /// Whether the free location is offered on this device right now: the
-  /// server has it on, and Premium is not (Premium has better servers).
-  bool get freeOffered => !premium.isOn && _freeInfo.enabled;
+  /// server has it on, Premium is not (Premium has better servers), and no
+  /// account number is signed in here. A purchase or a sign-in ends the
+  /// free key (C8); an account that ran out of time is offered its plans
+  /// again, not the free location.
+  bool get freeOffered =>
+      !premium.isOn && _account == null && _freeInfo.enabled;
+
+  /// The free location's servers this install holds, while they are its
+  /// to use. They stay on show when the server's switch is read as off or
+  /// cannot be read: the key keeps working until the server lets it lapse,
+  /// and a failed read must not take a working server out of the list.
+  List<Location> get freeHeldLocations => premium.isOn || _account != null
+      ? const []
+      : [
+          for (final l in locations)
+            if (l.profile.free) l,
+        ];
 
   /// Whether this install holds the free servers already.
   bool get freeHeld => _profiles.any((p) => p.free);
@@ -2349,7 +2385,7 @@ class AppState extends ChangeNotifier implements AccountUiHost {
   /// new one asked for now. Called on the tap that wants the free location,
   /// never before. Never throws and never shows anything by itself.
   Future<FreeAccessResult> ensureFreeAccess() => _freeGate.run(() async {
-        if (premium.isOn) return FreeAccessResult.premium;
+        if (premium.isOn || _account != null) return FreeAccessResult.premium;
         if (freeHeld) return FreeAccessResult.ok;
         final url = await _freeStore.subUrl();
         if (url != null) {
@@ -2410,11 +2446,20 @@ class AppState extends ChangeNotifier implements AccountUiHost {
     return FreeAccessResult.ok;
   }
 
-  /// Connects to the free location: [at] when it names one of its servers,
-  /// otherwise the free server with the best latency. Asks for the key
-  /// first when this install has none. A failure says so in a toast and
-  /// leaves everything else as it was. True when a connect was started.
-  Future<bool> connectFree({Location? at}) async {
+  /// Puts the free location in place as the chosen server, asking for the
+  /// key first when this install has none: [at] when it names one of its
+  /// servers, otherwise the free server with the best latency. Nothing is
+  /// connected; the screen that asked does that, the way any server is
+  /// connected. A failure says so in a toast and leaves the selection as it
+  /// was. True when a free server is selected.
+  Future<bool> selectFree({Location? at}) async {
+    final pick = await _pickFree(at);
+    if (pick == null) return false;
+    await selectLocation(pick);
+    return true;
+  }
+
+  Future<Location?> _pickFree(Location? at) async {
     final result = await ensureFreeAccess();
     if (result != FreeAccessResult.ok) {
       if (result != FreeAccessResult.premium) {
@@ -2424,31 +2469,39 @@ class AppState extends ChangeNotifier implements AccountUiHost {
               : S.toastFreeUnavailable,
         );
       }
-      return false;
+      return null;
     }
     final free = [
       for (final l in locations)
         if (l.profile.free) l,
     ];
-    if (free.isEmpty) return false;
+    if (free.isEmpty) return null;
     final host = at?.profile.server;
-    Location? pick;
     if (host != null) {
       for (final l in free) {
-        if (l.profile.server == host) pick = l;
+        if (l.profile.server == host) return l;
       }
     }
-    if (pick == null) {
-      int? best;
-      for (final l in free) {
-        final ping = pingFor(l.profile);
-        if (ping is PingOk && (best == null || ping.ms < best)) {
-          best = ping.ms;
-          pick = l;
-        }
+    Location? best;
+    int? bestMs;
+    for (final l in free) {
+      final ping = pingFor(l.profile);
+      if (ping is PingOk && (bestMs == null || ping.ms < bestMs)) {
+        bestMs = ping.ms;
+        best = l;
       }
     }
-    await selectLocation(pick ?? free.first);
+    return best ?? free.first;
+  }
+
+  /// Connects to the free location: [at] when it names one of its servers,
+  /// otherwise the free server with the best latency. Asks for the key
+  /// first when this install has none. A failure says so in a toast and
+  /// leaves everything else as it was. True when a connect was started.
+  Future<bool> connectFree({Location? at}) async {
+    final pick = await _pickFree(at);
+    if (pick == null) return false;
+    await selectLocation(pick);
     await connect();
     return true;
   }

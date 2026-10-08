@@ -253,7 +253,9 @@ class _DetailScreenState extends State<DetailScreen> {
   Widget build(BuildContext context) {
     final loc = _loc;
     final advanced = widget.state.prefs.advanced;
-    final managed = loc.premium;
+    // The free location is run by hideip.net too: nothing on it to rename,
+    // refresh or remove.
+    final managed = loc.premium || loc.profile.free;
     final name = serverLabel(loc);
     final subUrl = loc.profile.subUrl;
     const encoder = JsonEncoder.withIndent('  ');
@@ -562,7 +564,7 @@ class _HeaderCard extends StatelessWidget {
         : '$name, ${location.country}';
     final line = advanced
         ? S.tunnelChain(location.protoLabel, location.host)
-        : location.premium
+        : location.premium || location.profile.free
             ? S.gManagedBy(proto)
             : S.gFromProvider(proto, location.provider ?? S.gYourProvider);
 

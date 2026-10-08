@@ -600,6 +600,12 @@ abstract final class S {
   static const pwSub = 'One subscription covers the whole hideip.net network, '
       'on up to five devices.';
 
+  /// The paywall's line while the free location is on offer: what stays
+  /// free, and what Premium adds.
+  static String pwSubFree(int mbps) =>
+      'The free location runs at up to $mbps Mbit/s. Premium covers the '
+      'whole hideip.net network, on up to five devices.';
+
   /// The first benefit carries the live number of locations. Without a
   /// catalog to count there is no number, and the row says so plainly rather
   /// than inventing one.
@@ -750,6 +756,13 @@ abstract final class S {
   static const obB2TechKey = 'SEEN AS';
   static const obB2TechIp = '198.51.100.24';
   static const obB2TechPlace = 'Frankfurt, DE';
+
+  /// Onboarding beat two while the free location is on offer: the beat no
+  /// longer says that no free servers are built in.
+  static const obB2BodyFree =
+      "Websites see the server's address, not yours. One slower free "
+      'location is built in: add your own link, or use hideip.net Premium '
+      'locations.';
 
   static const obB3Title = 'Works where\nVPNs get blocked.';
   static const obB3Body =
@@ -1267,4 +1280,27 @@ abstract final class S {
 
   /// Under the code: the account number as the other way in.
   static const accountNewDeviceOrNumber = 'Or sign in with the account number';
+
+  // ---------------------------------------------------------------------
+  // Free location (1.2.1). One slower hideip.net location for anyone, with
+  // no account: an open row marked Free, never a locked premium row. Its
+  // speed comes from the server and arrives as a parameter.
+  // ---------------------------------------------------------------------
+
+  /// The badge on a free row, and the label over the free rows.
+  static const freeTag = 'Free';
+
+  /// The one row offered before the catalog names a free server.
+  static const freeLocation = 'Free location';
+  static String freeSpeed(int mbps) => 'Up to $mbps Mbit/s';
+  static const freeNoAccount = 'No account needed';
+
+  /// A free server's row: where it is, then how fast it may go. Without a
+  /// limit the place stands alone.
+  static String freeSub(String place, int mbps) =>
+      mbps > 0 ? '$place · Up to $mbps Mbit/s' : place;
+
+  /// While the free key is asked for. The proof the server asks for takes
+  /// a few seconds on a phone.
+  static const freeGetting = 'Getting the free location ready…';
 }

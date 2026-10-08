@@ -284,6 +284,11 @@ class PaywallOffer extends StatelessWidget {
   final VoidCallback onTerms;
   final VoidCallback onPrivacy;
 
+  /// The free location's speed while it is on offer to this install, so
+  /// the line under the title says what stays free and what Premium adds.
+  /// Null without a free location, or without a speed limit to compare.
+  final int? freeMbps;
+
   const PaywallOffer({
     super.key,
     required this.yearly,
@@ -296,6 +301,7 @@ class PaywallOffer extends StatelessWidget {
     required this.onRestore,
     required this.onTerms,
     required this.onPrivacy,
+    this.freeMbps,
     this.city,
     this.locationCount,
     this.failed = false,
@@ -412,7 +418,7 @@ class PaywallOffer extends StatelessWidget {
         Padding(
           padding: EdgeInsets.symmetric(horizontal: side),
           child: Text(
-            S.pwSub,
+            freeMbps == null ? S.pwSub : S.pwSubFree(freeMbps!),
             textAlign: TextAlign.center,
             style: Hip.sans(
               400,
@@ -946,6 +952,16 @@ class _PaywallScreenState extends State<PaywallScreen> {
     return null;
   }
 
+  /// The free location's speed limit while it is offered or held here.
+  int? get _freeMbps {
+    final state = widget.state;
+    final mbps = state.freeInfo.speedMbps;
+    if (mbps <= 0) return null;
+    return state.freeOffered || state.freeHeldLocations.isNotEmpty
+        ? mbps
+        : null;
+  }
+
   /// How many hideip.net locations the plan covers right now, or null while
   /// the catalog has not answered and there is nothing true to count.
   int? get _locationCount {
@@ -982,6 +998,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
                   onRestore: _restore,
                   onTerms: () => _openUrl(_termsUrl),
                   onPrivacy: () => _openUrl(_privacyUrl),
+                  freeMbps: _freeMbps,
                 ),
               ),
               if (kAccountSignIn)

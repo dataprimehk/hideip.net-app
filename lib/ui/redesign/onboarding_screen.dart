@@ -303,7 +303,11 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                       child: Text(
                         switch (idx) {
                           0 => S.obB1Body,
-                          1 => S.obB2Body,
+                          // With the free location on offer, beat two
+                          // cannot say that no free servers are built in.
+                          1 => widget.state.freeOffered
+                              ? S.obB2BodyFree
+                              : S.obB2Body,
                           _ => S.obB3Body,
                         },
                         style: Hip.sans(400, 15.5,

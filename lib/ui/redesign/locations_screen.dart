@@ -11,6 +11,7 @@ import '../../state/app_state.dart';
 import '../brand.dart';
 import '../strings.dart';
 import 'detail_screen.dart';
+import 'free_rows.dart';
 import 'hip.dart';
 import 'hip_sheet.dart';
 import 'hero_scroll_edge.dart';
@@ -73,7 +74,7 @@ class _LocationsScreenState extends State<LocationsScreen> {
     final prefs = state.prefs;
     _peek = prefs.swipePeeks < UiPrefs.maxSwipePeeks &&
         state.mix != Mix.hip &&
-        state.locations.any((l) => !l.premium);
+        state.locations.any((l) => !l.premium && !l.profile.free);
     if (_peek) {
       state.updatePrefs(prefs.copyWith(swipePeeks: prefs.swipePeeks + 1));
     }
@@ -102,6 +103,14 @@ class _LocationsScreenState extends State<LocationsScreen> {
       await widget.state.disconnect();
       await widget.state.connect();
     }
+  }
+
+  /// A free row offered before the key: the key is asked for on this tap,
+  /// then the free server is chosen like any other.
+  Future<void> _selectFree(Location? at) async {
+    final state = widget.state;
+    if (!await state.selectFree(at: at) || !mounted) return;
+    await _select(state.activeLocation);
   }
 
   int? _ping(Location l) {
@@ -160,8 +169,14 @@ class _LocationsScreenState extends State<LocationsScreen> {
     final nav = widget.nav;
     final subscribed = state.premium.isOn;
     final all = state.locations;
-    final userLocs = [for (final l in all) if (!l.premium) l];
+    // The free location has its own group; it is neither the user's own
+    // nor the paid fleet.
+    final userLocs = [
+      for (final l in all)
+        if (!l.premium && !l.profile.free) l,
+    ];
     final managedLocs = [for (final l in all) if (l.premium) l];
+    final free = FreeOffer.of(state);
 
     // Locked catalog rows carry a real measurement, so the comparison the
     // paywall rests on is an honest one. Cheapest latency first, unmeasured
@@ -187,13 +202,8 @@ class _LocationsScreenState extends State<LocationsScreen> {
     }
 
     // Auto names the server it would pick, and where it comes from when there
-    // is a mix to tell apart.
-    Location? fastest;
-    for (final l in all) {
-      final ms = _ping(l);
-      if (ms == null) continue;
-      if (fastest == null || ms < _ping(fastest)!) fastest = l;
-    }
+    // is a mix to tell apart. The free location is its fallback only.
+    final fastest = state.autoPick;
 
     // The card for a location this install voted for. It stands until the
     // user acts on it or connects there.
@@ -222,6 +232,8 @@ class _LocationsScreenState extends State<LocationsScreen> {
       managed: managedLocs,
       locked: locked,
       userLocations: userLocs,
+      free: free,
+      onFreeOffer: _selectFree,
       allLockedShown: _allLocked,
       winner: winner,
       selectedId: state.prefs.autoSelect || selected.isEmpty
@@ -285,6 +297,13 @@ class LocationsBody extends StatelessWidget {
 
   final List<Location> userLocations;
 
+  /// The free location: its servers once held, or the rows offered before
+  /// the key. Its own group, between Auto and the paid fleet.
+  final FreeOffer free;
+
+  /// A free row offered before the key was tapped; null names no server.
+  final void Function(Location? at)? onFreeOffer;
+
   /// Whether the locked group is expanded past its first three rows.
   final bool allLockedShown;
 
@@ -336,6 +355,8 @@ class LocationsBody extends StatelessWidget {
     this.managed = const [],
     this.locked = const [],
     this.userLocations = const [],
+    this.free = FreeOffer.none,
+    this.onFreeOffer,
     this.allLockedShown = false,
     this.winner,
     this.selectedId,
@@ -375,7 +396,9 @@ class LocationsBody extends StatelessWidget {
     // The chevron into manage: always for the user's own servers, only in
     // Advanced view for the ones hideip.net runs (there is nothing on those
     // to rename, refresh or remove).
-    final manageable = !l.premium || advanced;
+    final isFree = l.profile.free;
+    final manageable = !(l.premium || isFree) || advanced;
+    final place = ms == null ? rowPlace(l) : S.lockedSub(rowPlace(l), ms);
     final row = HipListRow(
       leading: HipFlag(cc: l.cc),
       title: nameOf(l),
@@ -384,14 +407,16 @@ class LocationsBody extends StatelessWidget {
       // sees an untagged list.
       titleBadge: l.won
           ? const _WonBadge()
-          : l.premium
-              ? (mix == Mix.hip ? null : const HipBrandTag())
-              : (l.provider != null ? HipBadge.blue(l.provider!) : null),
+          : isFree
+              ? freeBadge()
+              : l.premium
+                  ? (mix == Mix.hip ? null : const HipBrandTag())
+                  : (l.provider != null ? HipBadge.blue(l.provider!) : null),
       subtitle: advanced
           ? S.tunnelChain(l.protoLabel, l.host)
-          : ms == null
-              ? rowPlace(l)
-              : S.lockedSub(rowPlace(l), ms),
+          : isFree
+              ? S.freeSub(place, free.speedMbps)
+              : place,
       subtitleMono: advanced,
       trailing: Row(mainAxisSize: MainAxisSize.min, children: [
         // Speed mode only ever applies to the hideip.net fleet, and only a
@@ -416,10 +441,10 @@ class LocationsBody extends StatelessWidget {
       ]),
       onTap: () => onSelect(l),
     );
-    // Only the user's own servers slide: a managed row has nothing on it to
-    // edit or delete, so it does not move.
+    // Only the user's own servers slide: a managed row (paid or free) has
+    // nothing on it to edit or delete, so it does not move.
     final edit = onEdit, delete = onDelete;
-    if (l.premium || edit == null || delete == null) return row;
+    if (l.premium || isFree || edit == null || delete == null) return row;
     return HipSwipeRow(
       onEdit: () => edit(l),
       onDelete: () => delete(l),
@@ -556,6 +581,25 @@ class LocationsBody extends StatelessWidget {
                     onTap: () => onSelect(null),
                   ),
                 ]),
+                if (free.any) ...[
+                  const HipSectionLabel(S.freeTag),
+                  HipListGroup(children: [
+                    for (final l in free.held) _serverRow(l),
+                    for (final l in free.offered)
+                      FreeOfferRow(
+                        location: l,
+                        speedMbps: free.speedMbps,
+                        busy: free.busy,
+                        onTap: () => onFreeOffer?.call(l),
+                      ),
+                    if (free.plain)
+                      FreeOfferRow(
+                        speedMbps: free.speedMbps,
+                        busy: free.busy,
+                        onTap: () => onFreeOffer?.call(null),
+                      ),
+                  ]),
+                ],
                 if (showManagedSection) ...[
                   // The brand header and the tint are relational: they exist
                   // only while there is something to tell apart.

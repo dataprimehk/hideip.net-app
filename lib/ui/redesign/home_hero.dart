@@ -15,6 +15,7 @@ import '../strings.dart';
 import 'ascii/hero_ascii.dart';
 import 'ascii/hero_glow.dart';
 import 'detail_screen.dart' show removalFallsBackToAuto, rowPlace, serverLabel;
+import 'free_rows.dart';
 import 'hero_compact.dart';
 import 'hero_ip_sheet.dart';
 import 'hero_scroll_edge.dart';
@@ -1074,15 +1075,21 @@ class _HomeList extends StatelessWidget {
     final advanced = state.prefs.advanced;
     final ms = _ms(l);
     final chosen = !auto && active?.id == l.id;
+    final isFree = l.profile.free;
+    final place = ms == null ? rowPlace(l) : S.homeRowSub(rowPlace(l), ms);
     final row = HipListRow(
       leading: HipFlag(cc: l.cc),
       title: serverLabel(l),
-      titleBadge: l.premium && state.mix == Mix.mixed
-          ? const HipBrandTag()
-          : (l.provider != null ? HipBadge.blue(l.provider!) : null),
+      titleBadge: isFree
+          ? freeBadge()
+          : l.premium && state.mix == Mix.mixed
+              ? const HipBrandTag()
+              : (l.provider != null ? HipBadge.blue(l.provider!) : null),
       subtitle: advanced
           ? S.tunnelChain(l.protoLabel, l.host)
-          : (ms == null ? rowPlace(l) : S.homeRowSub(rowPlace(l), ms)),
+          : isFree
+              ? S.freeSub(place, state.freeInfo.speedMbps)
+              : place,
       subtitleMono: advanced,
       selected: chosen,
       live: chosen && on,
@@ -1098,9 +1105,10 @@ class _HomeList extends StatelessWidget {
         onResultTap?.call();
       },
     );
-    // Only the user's own servers slide, as on Locations: a managed row has
-    // nothing on it to edit or delete, so it does not move.
-    if (l.premium) return row;
+    // Only the user's own servers slide, as on Locations: a managed row
+    // (paid or free) has nothing on it to edit or delete, so it does not
+    // move.
+    if (l.premium || isFree) return row;
     return HipSwipeRow(
       onEdit: () => _edit(l),
       onDelete: () => _confirmDelete(context, l),
@@ -1171,11 +1179,38 @@ class _HomeList extends StatelessWidget {
 
     // --- B0, nothing imported and nothing subscribed ----------------------
     if (open.isEmpty) {
-      return HomeEmptyBlock(
+      final empty = HomeEmptyBlock(
         onSignIn: kAccountSignIn && !state.accountSignedIn
             ? () => nav.go(HipScreen.account)
             : null,
       );
+      // The free location, while on offer, sits right under it: one tap
+      // asks for its key and makes it the chosen server.
+      final free = FreeOffer.of(state);
+      if (!free.beforeKey) return empty;
+      Future<void> pick(Location? at) async {
+        if (await state.selectFree(at: at)) onResultTap?.call();
+      }
+
+      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        empty,
+        const HipSectionLabel(S.freeTag),
+        HipListGroup(children: [
+          for (final l in free.offered)
+            FreeOfferRow(
+              location: l,
+              speedMbps: free.speedMbps,
+              busy: free.busy,
+              onTap: () => pick(l),
+            ),
+          if (free.plain)
+            FreeOfferRow(
+              speedMbps: free.speedMbps,
+              busy: free.busy,
+              onTap: () => pick(null),
+            ),
+        ]),
+      ]);
     }
 
     // Fastest first; unprobed servers keep their list order at the back.
@@ -1184,7 +1219,6 @@ class _HomeList extends StatelessWidget {
         final mb = _ms(b) ?? 1 << 30;
         return ma.compareTo(mb);
       });
-    final fastest = sorted.first;
     // Recently used servers lead the list, newest first; the fastest fill the
     // rest of the five. A remembered id whose server is gone is skipped, so a
     // removed import cannot leave a hole in the list.
@@ -1210,11 +1244,13 @@ class _HomeList extends StatelessWidget {
       onRowOrder([for (final l in fresh) l.id]);
     }
 
-    final fastestMs = _ms(fastest);
-    final autoSub = fastestMs == null
+    // Auto names what it would pick; the free location is its fallback only.
+    final pick = state.autoPick;
+    final pickMs = pick == null ? null : _ms(pick);
+    final autoSub = pick == null || pickMs == null
         ? S.autoSubUnknown
-        : S.autoSub(serverLabel(fastest), fastestMs,
-            managed: state.mix == Mix.mixed && fastest.premium);
+        : S.autoSub(serverLabel(pick), pickMs,
+            managed: state.mix == Mix.mixed && pick.premium);
 
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       if (on) ...[
