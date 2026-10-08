@@ -105,6 +105,42 @@ Full contract, aliases (`install-config`, `import`), pairing links, and
 store URLs: [docs/url-scheme.md](docs/url-scheme.md). Links only prefill the
 import screen; nothing is imported until the user confirms.
 
+## Device limits (HWID)
+
+Many providers sell a subscription for a set number of devices, and their
+panels (Remnawave, 3x-ui, PasarGuard and others) enforce that limit with an
+`x-hwid` header on the subscription request. Once a provider switches the
+limit on, a client that does not send the header is turned away: the panel
+answers with an empty list, an error, or a placeholder server named "App not
+supported". So the app sends it, or it could not work with those providers
+at all.
+
+How hideip.net does it:
+
+- The value is 32 random hex characters, made on the device the first time a
+  subscription address is fetched, one value per subscription address. It is
+  not derived from the hardware, the advertising ID or anything else about
+  the device, and it is stored encrypted with the rest of the app's data.
+- It is sent only to the address of that subscription, on import and on
+  every refresh. If the provider redirects to a different origin, the header
+  is left out. Two subscriptions get two different values, so two providers
+  cannot tell that they are on the same device.
+- It never goes to hideip.net or any of its subdomains: not for a
+  subscription hosted there, not for Premium and not for the location
+  catalog.
+- Besides `x-hwid`, the request carries only the app's usual user agent,
+  `hideip/<version>`. The app does not send the platform, the OS version or
+  the device model (`x-device-os`, `x-ver-os`, `x-device-model`); the panels
+  above do not need them to count devices.
+- Removing the last server that came from a subscription deletes its value.
+  Reinstalling the app makes a new one, which the provider counts as a new
+  device.
+
+If a provider answers that the device limit is reached, or sends a
+placeholder instead of servers, the app keeps the servers it already has and
+says what happened. A device can then be freed in the provider's bot or
+panel.
+
 ## Build
 
 You need the Flutter SDK (Dart 3.12+) and the Android SDK.
