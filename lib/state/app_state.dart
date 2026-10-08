@@ -610,6 +610,9 @@ class AppState extends ChangeNotifier implements AccountUiHost {
   /// the store's environment to answer. Without one, or when the server
   /// does not take it, the store is asked as for any restore.
   Future<void> restoreStoreHere() async {
+    // Restoring is this device asking for its purchase back: an open
+    // request for another account's access goes first.
+    await _withdrawLinkRequest();
     final proof = await PremiumSub.proof();
     if (proof != null && _storeLink.paused) {
       var back = false;
@@ -630,6 +633,7 @@ class AppState extends ChangeNotifier implements AccountUiHost {
 
   /// Re-check the store for an existing subscription.
   Future<void> restorePurchases() async {
+    await _withdrawLinkRequest();
     final bool restored;
     _storeAsked++;
     try {
@@ -1351,10 +1355,18 @@ class AppState extends ChangeNotifier implements AccountUiHost {
   /// A store entitlement from the purchase stream. It is always recorded;
   /// it goes into force unless an account number that lasts longer already
   /// is.
-  Future<void> _onStorePremium(Premium p, PurchasePayload? proof) {
+  Future<void> _onStorePremium(Premium p, PurchasePayload? proof) async {
     // Read now, not when the gate opens: by then the Buy or the Restore the
     // entitlement answers may already have returned.
     final asked = _storeAsked > 0;
+    // A purchase or restore puts Premium in force here: an open request for
+    // access goes first, outside the premium gate (a request being put in
+    // force holds the link gate and then waits for that one). A renewal
+    // arriving on its own leaves a request the user confirmed alone.
+    final pending = _pendingLink;
+    if (p.isOn && pending != null && (asked || !pending.switching)) {
+      await _withdrawLinkRequest();
+    }
     return _premiumRefreshGate.run(
       () => _applyStorePremiumLocked(p, proof, asked: asked),
     );
@@ -1476,6 +1488,13 @@ class AppState extends ChangeNotifier implements AccountUiHost {
     final kept = unnamed &&
         held.deviceId != null &&
         result.deviceId == held.deviceId;
+    // A request for access this device still has open would move it again
+    // once approved elsewhere: the number just entered wins, and the request
+    // is withdrawn before the number goes into force.
+    if (result.result == AccountResult.ok ||
+        result.result == AccountResult.inactive) {
+      await _withdrawLinkRequest();
+    }
     switch (result.result) {
       case AccountResult.ok:
         await _premiumRefreshGate.run(() async {
@@ -1513,14 +1532,6 @@ class AppState extends ChangeNotifier implements AccountUiHost {
       default:
         break;
     }
-    // A request for access this device still has open would move it again
-    // once approved elsewhere: the number just entered wins, and the
-    // request is withdrawn.
-    if ((result.result == AccountResult.ok ||
-            result.result == AccountResult.inactive) &&
-        _pendingLink != null) {
-      unawaited(cancelLinkRequest());
-    }
     return result;
   }
 
@@ -1531,6 +1542,9 @@ class AppState extends ChangeNotifier implements AccountUiHost {
     await _accountStore.save(creds);
     _account = creds;
     _accountIssue = null;
+    // Any account on the device ends the free key (C8), whether or not its
+    // time outlasts what is in force.
+    await _dropFreeAccess();
     final candidate = _accountPremium(creds.kind, creds.expires, active: true);
     if (!_outlasts(candidate)) {
       // A store subscription that runs longer stays in force; the number is
@@ -1550,6 +1564,8 @@ class AppState extends ChangeNotifier implements AccountUiHost {
     await _accountStore.save(creds);
     _account = creds;
     _accountIssue = null;
+    // Signed in, even with no time left: the free key goes (C8).
+    await _dropFreeAccess();
     if (_premium.source != PremiumSource.account && premium.isOn) {
       notifyListeners();
       return;
@@ -1619,10 +1635,16 @@ class AppState extends ChangeNotifier implements AccountUiHost {
             checked: l.checked,
           ));
         }
-        await _premiumRefreshGate.run(() => _applyAccountStanding(status));
-      case AccountResult.revoked:
-        _accountIssue = AccountIssue.revoked;
         await _premiumRefreshGate.run(() async {
+          // Another account may have gone into force while the gate was
+          // held; the answer is about the one that was asked about.
+          if (!_sameAccount(_account, held)) return;
+          await _applyAccountStanding(status);
+        });
+      case AccountResult.revoked:
+        await _premiumRefreshGate.run(() async {
+          if (!_sameAccount(_account, held)) return;
+          _accountIssue = AccountIssue.revoked;
           await _leaveStoreLink();
           final creds = held.withStanding(active: false);
           _account = creds;
@@ -1643,6 +1665,7 @@ class AppState extends ChangeNotifier implements AccountUiHost {
         // number there is nothing to sign back in with; a restore of the
         // store purchase is what brings it back.
         await _premiumRefreshGate.run(() async {
+          if (!_sameAccount(_account, held)) return;
           await _leaveStoreLink();
           await _forgetAccount();
         });
@@ -1982,6 +2005,9 @@ class AppState extends ChangeNotifier implements AccountUiHost {
   LinkRequestPhase _linkPhase = LinkRequestPhase.idle;
   Timer? _linkTimer;
 
+  /// A poll the timer started is still under way; the next tick waits.
+  bool _linkTimerPolling = false;
+
   /// Where this device's own request for access stands.
   LinkRequestPhase get linkPhase => _linkPhase;
 
@@ -2012,7 +2038,17 @@ class AppState extends ChangeNotifier implements AccountUiHost {
         if (switching && !confirmSwitch) {
           return _setLinkPhase(LinkRequestPhase.needsConfirm);
         }
-        final caps = await _pairing.capabilities();
+        // A retry after a failed attempt asks the server again rather than
+        // reading the failure back from the cache.
+        final caps = await _pairing.capabilities(
+          fresh: _linkPhase == LinkRequestPhase.failed,
+        );
+        // No answer is not an old server: it is said as a failure with a
+        // way to try again. Only a server that answered without pairing v2
+        // gets the 1.2.0 sign-in alone (K1).
+        if (caps.pairing == 0) {
+          return _setLinkPhase(LinkRequestPhase.failed);
+        }
         if (!caps.request) {
           return _setLinkPhase(LinkRequestPhase.unsupported);
         }
@@ -2111,6 +2147,14 @@ class AppState extends ChangeNotifier implements AccountUiHost {
   /// is moving off another account moves only on a confirmation.
   Future<LinkRequestPhase> _finishLinkLocked(PendingLink staged) async {
     final handoff = staged.handoff!;
+    final adopted = _account?.deviceToken == handoff.deviceToken;
+    // The request was opened on a device that ran on nothing. If it took a
+    // number, a purchase or a restore since, the approval no longer has its
+    // owner's yes to move it (K10): it is withdrawn, not put in force.
+    if (!staged.switching && !adopted && (_account != null || premium.isOn)) {
+      await _withdrawPendingLocked(staged);
+      return _endLink(LinkRequestPhase.cancelled);
+    }
     final ack = await _pairing.ack(staged.ticket);
     switch (ack) {
       case LinkCloseResult.ok:
@@ -2132,8 +2176,60 @@ class AppState extends ChangeNotifier implements AccountUiHost {
         if (staged.switching) return _endLink(LinkRequestPhase.expired);
         await _adoptLinkedAccount(handoff, switching: false);
         return _endLink(LinkRequestPhase.done);
+      case LinkCloseResult.expired:
+      case LinkCloseResult.cancelled:
+      case LinkCloseResult.revoked:
+      case LinkCloseResult.inactive:
+        // The server ended the request (410): asking again changes nothing.
+        final ended = switch (ack) {
+          LinkCloseResult.cancelled => LinkRequestPhase.cancelled,
+          LinkCloseResult.revoked => LinkRequestPhase.revoked,
+          LinkCloseResult.inactive => LinkRequestPhase.inactive,
+          _ => LinkRequestPhase.expired,
+        };
+        if (!adopted) return _endLink(ended);
+        // Already in force here (a confirmation that kept failing): the
+        // device's own standing decides. Removed, it lets the account go;
+        // still on it, the request simply counts as delivered.
+        final again = await _pairing.refresh(handoff.deviceToken);
+        if (again.active == false && again.reason == 'revoked') {
+          await _premiumRefreshGate.run(() async {
+            if (_account?.deviceToken != handoff.deviceToken) return;
+            await _leaveStoreLink();
+            await _forgetAccount();
+          });
+          return _endLink(ended);
+        }
+        return _endLink(LinkRequestPhase.done);
     }
   }
+
+  /// Takes [pending] back on the server. A cancel that comes after the
+  /// answer was delivered (409) signs the device it made out instead (K6),
+  /// so its place is not left taken. Never throws; the server's own sweep
+  /// is the backstop.
+  Future<void> _withdrawPendingLocked(PendingLink pending) async {
+    final closed = await _pairing.cancel(pending.ticket);
+    final token = pending.handoff?.deviceToken;
+    if (closed == LinkCloseResult.alreadyDelivered && token != null) {
+      await _pairing.signout(token);
+    }
+  }
+
+  /// Withdraws this device's open request before something else puts an
+  /// account or Premium in force here: a number, a purchase, a restore.
+  /// The local record goes before this returns, so a poll can no longer
+  /// put the request's account in force; the server is told in the
+  /// background. A request whose account is already in force is left as
+  /// it ended.
+  Future<void> _withdrawLinkRequest() => _linkGate.run(() async {
+        final pending = _pendingLink;
+        if (pending == null) return;
+        final adopted = pending.handoff != null &&
+            _account?.deviceToken == pending.handoff!.deviceToken;
+        if (!adopted) unawaited(_withdrawPendingLocked(pending));
+        await _endLink(adopted ? LinkRequestPhase.done : LinkRequestPhase.idle);
+      });
 
   /// Withdraws this device's open request. An approval not yet confirmed
   /// goes with it on the server. A device that already runs on the new
@@ -2146,7 +2242,7 @@ class AppState extends ChangeNotifier implements AccountUiHost {
         }
         final adopted = pending.handoff != null &&
             _account?.deviceToken == pending.handoff!.deviceToken;
-        if (!adopted) unawaited(_pairing.cancel(pending.ticket));
+        if (!adopted) unawaited(_withdrawPendingLocked(pending));
         await _endLink(adopted ? LinkRequestPhase.done : LinkRequestPhase.idle);
       });
 
@@ -2262,7 +2358,12 @@ class AppState extends ChangeNotifier implements AccountUiHost {
         _linkTimer = null;
         return;
       }
-      unawaited(pollLinkRequest());
+      // A poll still on its way (a slow network) is not queued behind.
+      if (_linkTimerPolling) return;
+      _linkTimerPolling = true;
+      unawaited(
+        pollLinkRequest().whenComplete(() => _linkTimerPolling = false),
+      );
     });
   }
 
@@ -2351,9 +2452,9 @@ class AppState extends ChangeNotifier implements AccountUiHost {
 
   Future<void> _startFree() async {
     final url = await _freeStore.subUrl();
-    if (premium.isOn) {
-      // Premium arrived while this install held a free key (a purchase
-      // that landed while the app was closed, for one).
+    if (premium.isOn || _account != null) {
+      // Premium or an account arrived while this install held a free key
+      // (a purchase that landed while the app was closed, for one).
       if (url != null || freeHeld) await _freeGate.run(_dropFreeLocked);
       return;
     }
@@ -2366,7 +2467,7 @@ class AppState extends ChangeNotifier implements AccountUiHost {
   /// more, quietly, at most once per run.
   Future<FreeAccessResult> _refreshFreeLocked(String url) async {
     final got = await _free.profiles(url);
-    if (premium.isOn) return FreeAccessResult.premium;
+    if (premium.isOn || _account != null) return FreeAccessResult.premium;
     if (got.gone) {
       await _forgetFreeLocked();
       if (_freeReissued || !_freeInfo.enabled) return FreeAccessResult.network;
@@ -2404,6 +2505,8 @@ class AppState extends ChangeNotifier implements AccountUiHost {
       });
 
   Future<FreeAccessResult> _registerFreeLocked() async {
+    // No key for a device on an account, signed in with time or without.
+    if (premium.isOn || _account != null) return FreeAccessResult.premium;
     _freeBusy = true;
     notifyListeners();
     final FreeRegistration reg;
@@ -2413,7 +2516,7 @@ class AppState extends ChangeNotifier implements AccountUiHost {
       _freeBusy = false;
       notifyListeners();
     }
-    if (premium.isOn) return FreeAccessResult.premium;
+    if (premium.isOn || _account != null) return FreeAccessResult.premium;
     final url = reg.subUrl;
     if (!reg.ok || url == null) {
       if (reg.status == FreeRegisterStatus.disabled) {

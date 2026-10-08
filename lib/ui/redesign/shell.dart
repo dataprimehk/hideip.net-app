@@ -11,6 +11,7 @@ import '../../core/import_payload.dart';
 import '../../core/location.dart';
 import '../../core/ui_prefs.dart';
 import '../../state/app_state.dart';
+import '../strings.dart';
 import 'account_screen.dart';
 import 'detail_screen.dart';
 import 'hip.dart';
@@ -310,12 +311,26 @@ class _HipShellState extends State<HipShell>
     _openImportWith(parsed.text, name: parsed.name);
   }
 
-  /// Shows the approval sheet for [pairing]. A phone with no live subscription
-  /// has nothing to hand out, so it is told that instead of being walked into
-  /// a call that can only fail.
+  /// Shows the approval for [pairing]. With pairing v2 that is the preview
+  /// and approve flow (the code compared on both screens, a device never
+  /// approving its own request, room made when every place is taken), open
+  /// to any device that manages the account. Before v2, a phone with no
+  /// live subscription has nothing to hand out, so it is told that instead
+  /// of being walked into a call that can only fail.
   Future<void> _askApproval(DeepLinkPairing pairing) async {
     final state = widget.state;
-    if (!state.canLinkDevices) {
+    final caps = await state.pairingCapabilities();
+    if (!mounted) return;
+    if (caps.v2) {
+      if (state.pairingAuth == null) {
+        state.showToast(
+          state.accountSignedIn
+              ? S.accountErrNotPermitted
+              : 'Premium is needed to link another device',
+        );
+        return;
+      }
+    } else if (!state.canLinkDevices) {
       state.showToast('Premium is needed to link another device');
       return;
     }

@@ -69,14 +69,18 @@ class AppStateNewDevicePort implements NewDevicePort {
   Future<void> restore() => _state.restoreStoreHere();
 }
 
-/// Called as the screen showing the code goes away: a code nobody approved
-/// does not stay up behind the user's back. An approval already on its way
-/// is carried through by the state. Asked after the frame, since the screen
-/// is being torn down while this runs.
+/// Called as the screen showing the code goes away: a request still open
+/// does not stay up behind the user's back, neither one nobody approved
+/// nor one whose approval is still being confirmed. An account already in
+/// force here stays (the state decides that). Asked after the frame, since
+/// the screen is being torn down while this runs.
 void withdrawNewDeviceRequest(NewDevicePort port) {
-  if (port.phase != LinkRequestPhase.waiting) return;
+  bool open() =>
+      port.phase == LinkRequestPhase.waiting ||
+      port.phase == LinkRequestPhase.storing;
+  if (!open()) return;
   scheduleMicrotask(() {
-    if (port.phase == LinkRequestPhase.waiting) unawaited(port.cancel());
+    if (open()) unawaited(port.cancel());
   });
 }
 
@@ -196,6 +200,11 @@ class _NewDeviceCardState extends State<NewDeviceCard> {
     });
   }
 
+  Future<void> _withdraw() async {
+    if (_asking) return;
+    await _ask(_port.cancel);
+  }
+
   static String _clock(Duration left) {
     final m = left.inMinutes.toString().padLeft(2, '0');
     final s = (left.inSeconds % 60).toString().padLeft(2, '0');
@@ -263,9 +272,13 @@ class _NewDeviceCardState extends State<NewDeviceCard> {
           ),
         ],
         const SizedBox(height: 8),
-        if (storing)
-          _statusLine(S.accountNewDeviceStoring, spinner: true)
-        else if (lapsed) ...[
+        if (storing) ...[
+          _statusLine(S.accountNewDeviceStoring, spinner: true),
+          const SizedBox(height: 8),
+          // A confirmation the server keeps refusing must not hold the
+          // screen: this is the way out.
+          AccountCta(S.aCancel, quiet: true, onTap: _withdraw),
+        ] else if (lapsed) ...[
           _statusLine(S.accountNewDeviceExpired),
           const SizedBox(height: 12),
           AccountCta(S.accountNewDeviceNewCode, ghost: true, onTap: _renew),
@@ -299,7 +312,15 @@ class _NewDeviceCardState extends State<NewDeviceCard> {
           style: Hip.sans(500, 13.5, color: Hip.muted, height: 1.45),
         ),
         const SizedBox(height: 12),
-        AccountCta(S.accountNewDeviceNewCode, ghost: true, onTap: _renew),
+        AccountCta(
+          // No answer from the server is tried again; anything it decided
+          // gets a new code.
+          phase == LinkRequestPhase.failed
+              ? S.aTryAgain
+              : S.accountNewDeviceNewCode,
+          ghost: true,
+          onTap: _renew,
+        ),
       ],
     );
   }

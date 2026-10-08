@@ -38,6 +38,12 @@ class _Backend {
   String? pollError; // a 410/404 detail to answer the poll with
   int ackFailures = 0;
   int ackStatus = 200;
+  String ackDetail = 'unknown_link';
+  bool revokedB = false;
+  bool capsDown = false;
+  Duration pollDelay = Duration.zero;
+  int pollsInFlight = 0;
+  int maxPollsInFlight = 0;
   bool loseNextApprovedPoll = false;
   int devicesMade = 0;
   bool ackSawStoredAnswer = false;
@@ -75,6 +81,7 @@ class _Backend {
     }
     switch (req.url.path) {
       case '/v1/link/capabilities':
+        if (capsDown) throw http.ClientException('no route to host');
         if (capsStatus != 200) return http.Response('', capsStatus);
         return _json({
           'pairing': 2,
@@ -94,6 +101,13 @@ class _Backend {
           'v': 2,
         });
       case '/v1/link/poll':
+        pollsInFlight++;
+        if (pollsInFlight > maxPollsInFlight) maxPollsInFlight = pollsInFlight;
+        try {
+          if (pollDelay > Duration.zero) await Future<void>.delayed(pollDelay);
+        } finally {
+          pollsInFlight--;
+        }
         final b = body(req);
         if (b['poll_secret'] != 'secret-1') {
           return _json({'detail': 'unknown_link'}, 404);
@@ -125,14 +139,20 @@ class _Backend {
           return http.Response('', 502);
         }
         if (ackStatus != 200) {
-          return _json({'detail': 'unknown_link'}, ackStatus);
+          return _json({'detail': ackDetail}, ackStatus);
         }
         linkState = 'delivered';
         return _json({'ok': true});
       case '/v1/link/cancel':
+        if (linkState == 'delivered') {
+          return _json({'detail': 'already_delivered'}, 409);
+        }
         linkState = 'cancelled';
         return _json({'ok': true});
+      case '/v1/link/signout':
+        return _json({'ok': true});
       case '/v1/link/refresh':
+        if (revokedB) return _json({'active': false, 'reason': 'revoked'});
         if (body(req)['device_token'] != 'tok-b' || !activeB) {
           return _json({'active': false, 'reason': 'subscription_inactive'});
         }
@@ -570,7 +590,7 @@ void main() {
   });
 
   group('approving from this device', () {
-    test('preview and approve go with this device token and v2', () async {
+    test('preview and approve go with the kept number and v2', () async {
       final state = fresh();
       await state.signInWithAccountNumber(_numberA);
       await pumpEventQueue();
@@ -581,7 +601,10 @@ void main() {
       expect(preview.request!.device.kind, DeviceKind.tv);
       final sent = backend.body(backend.to('/v1/link/preview').single);
       expect(sent['v'], 2);
-      expect(sent['token'], 'tok-a');
+      // The number always manages the account (K7), so it goes when kept;
+      // the device token is not sent beside it.
+      expect(sent['account_number'], _numberA);
+      expect(sent.containsKey('token'), isFalse);
       expect(sent['code'], '7KQM3XHP');
 
       final statusBefore = backend.to('/v1/account/status').length;
@@ -592,10 +615,9 @@ void main() {
       await pumpEventQueue();
       expect(approved.ok, isTrue);
       expect(approved.device!.kind, DeviceKind.tv);
-      expect(
-        backend.body(backend.to('/v1/link/approve').single)['link_id'],
-        'L9',
-      );
+      final approve = backend.body(backend.to('/v1/link/approve').single);
+      expect(approve['link_id'], 'L9');
+      expect(approve['account_number'], _numberA);
       // The device count is read again.
       expect(
         backend.to('/v1/account/status').length,
@@ -701,6 +723,184 @@ void main() {
         PairingError.unauthorized,
       );
       expect(backend.to('/v1/link/approve'), isEmpty);
+    });
+  });
+
+  group('R1: requests that end, and what else comes in meanwhile', () {
+    test('an ack the server ends with 410 ends the request (N1)', () async {
+      final state = fresh();
+      await state.startLinkRequest();
+      backend.approve();
+      backend.ackStatus = 410;
+      backend.ackDetail = 'link_expired';
+
+      expect(await state.pollLinkRequest(), LinkRequestPhase.expired);
+      expect(state.accountSignedIn, isFalse);
+      expect(await const PendingLinkStore().load(), isNull);
+      // Nothing is asked again: the request is over.
+      final acks = backend.to('/v1/link/ack').length;
+      await state.pollLinkRequest();
+      expect(backend.to('/v1/link/ack'), hasLength(acks));
+    });
+
+    test('each 410 on the ack names its own end (N1)', () async {
+      for (final end in {
+        'link_cancelled': LinkRequestPhase.cancelled,
+        'device_revoked': LinkRequestPhase.revoked,
+        'subscription_inactive': LinkRequestPhase.inactive,
+      }.entries) {
+        await const PendingLinkStore().clear();
+        backend = _Backend();
+        final state = fresh();
+        await state.startLinkRequest();
+        backend.approve();
+        backend.ackStatus = 410;
+        backend.ackDetail = end.key;
+        expect(await state.pollLinkRequest(), end.value, reason: end.key);
+        expect(state.accountSignedIn, isFalse, reason: end.key);
+      }
+    });
+
+    test(
+      'in force already, then removed: it lets the account go (N1)',
+      () async {
+        final state = fresh();
+        await state.startLinkRequest();
+        backend.approve();
+        backend.ackFailures = 1;
+        expect(await state.pollLinkRequest(), LinkRequestPhase.storing);
+        await pumpEventQueue();
+        expect(state.accountSignedIn, isTrue, reason: 'nothing to lose here');
+
+        backend.ackStatus = 410;
+        backend.ackDetail = 'device_revoked';
+        backend.revokedB = true;
+        expect(await state.pollLinkRequest(), LinkRequestPhase.revoked);
+        await pumpEventQueue();
+        expect(state.accountSignedIn, isFalse);
+        expect(state.premium.isOn, isFalse);
+        expect(await const PendingLinkStore().load(), isNull);
+      },
+    );
+
+    test(
+      'in force already, and still on the account: it is done (N1)',
+      () async {
+        final state = fresh();
+        await state.startLinkRequest();
+        backend.approve();
+        backend.ackFailures = 1;
+        await state.pollLinkRequest();
+        await pumpEventQueue();
+
+        backend.ackStatus = 410;
+        backend.ackDetail = 'link_expired';
+        expect(await state.pollLinkRequest(), LinkRequestPhase.done);
+        expect(state.accountSignedIn, isTrue);
+      },
+    );
+
+    test('a number signed in while the code is up wins over a later '
+        'approval (N2)', () async {
+      final state = fresh();
+      await state.startLinkRequest();
+      final signedIn = state.signInWithAccountNumber(_numberA);
+      backend.approve();
+      expect((await signedIn).result, AccountResult.ok);
+      await state.pollLinkRequest();
+      await pumpEventQueue();
+
+      expect(state.accountNumber, _numberA);
+      expect(await PremiumSub.url(), _subA);
+      expect(state.linkPhase, LinkRequestPhase.idle);
+      expect(backend.to('/v1/link/ack'), isEmpty);
+      expect(backend.to('/v1/link/cancel'), hasLength(1));
+    });
+
+    test(
+      'a purchase while the code is up withdraws the request (N2)',
+      () async {
+        final state = fresh();
+        await state.startLinkRequest();
+        await state.storeAnswerForTesting(
+          Premium(
+            status: PremiumStatus.active,
+            plan: PremiumPlan.yearly,
+            renews: DateTime.now().add(const Duration(days: 300)),
+            source: PremiumSource.store,
+          ),
+          const PurchasePayload(
+            platform: 'android',
+            productId: 'yearly',
+            purchaseToken: 'purchase-token',
+          ),
+        );
+        await pumpEventQueue();
+        expect(state.linkPhase, LinkRequestPhase.idle);
+        expect(await const PendingLinkStore().load(), isNull);
+
+        backend.approve();
+        await state.pollLinkRequest();
+        expect(backend.to('/v1/link/ack'), isEmpty);
+        expect(state.accountSignedIn, isFalse);
+      },
+    );
+
+    test('no answer about capabilities is a failure to retry, a 404 an old '
+        'server (N4)', () async {
+      final state = fresh();
+      backend.capsDown = true;
+      expect(await state.startLinkRequest(), LinkRequestPhase.failed);
+      backend.capsDown = false;
+      expect(await state.startLinkRequest(), LinkRequestPhase.waiting);
+
+      await const PendingLinkStore().clear();
+      final old = fresh();
+      backend.capsStatus = 404;
+      expect(await old.startLinkRequest(), LinkRequestPhase.unsupported);
+    });
+
+    test('a cancel after delivery signs the device out (N9)', () async {
+      final state = fresh();
+      await state.signInWithAccountNumber(_numberA);
+      await pumpEventQueue();
+      await state.startLinkRequest(confirmSwitch: true);
+      backend.approve();
+      backend.ackFailures = 5;
+      expect(await state.pollLinkRequest(), LinkRequestPhase.storing);
+      backend.linkState = 'delivered';
+
+      await state.cancelLinkRequest();
+      await pumpEventQueue();
+      final out = backend.to('/v1/link/signout').single;
+      expect(backend.body(out)['device_token'], 'tok-b');
+      expect(state.accountNumber, _numberA);
+    });
+
+    test('the timer never stacks a poll on one still under way (N8)', () async {
+      backend.pollDelay = const Duration(milliseconds: 60);
+      final state = AppState(
+        accounts: AccountService(client: backend.client),
+        provisioning: ProvisioningService(
+          client: backend.client,
+          catalogSources: [_catalog],
+        ),
+        pairing: PairingClient(client: backend.client),
+        linkPollInterval: const Duration(milliseconds: 5),
+        tablet: false,
+      );
+      await state.startLinkRequest();
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      // Ticks every 5 ms against polls of 60 ms: queued, a withdrawal would
+      // wait behind dozens of them.
+      final clock = Stopwatch()..start();
+      await state.cancelLinkRequest();
+      clock.stop();
+      expect(clock.elapsedMilliseconds, lessThan(300));
+      final polls = backend.to('/v1/link/poll').length;
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      expect(backend.to('/v1/link/poll'), hasLength(polls));
+      expect(polls, lessThanOrEqualTo(10));
     });
   });
 }

@@ -237,6 +237,45 @@ void main() {
     });
   });
 
+  group('R1: an account ends the free key (N3)', () {
+    test(
+      'a number signed in with no time left drops the key it held',
+      () async {
+        final state = _fresh();
+        await state.refreshFreeInfo();
+        expect(await state.ensureFreeAccess(), FreeAccessResult.ok);
+        expect(state.freeHeld, isTrue);
+
+        final signed = await state.signInWithAccountNumber(_number);
+        expect(signed.result, AccountResult.inactive);
+        await pumpEventQueue();
+        expect(state.freeHeld, isFalse);
+        expect(await const FreeStore().subUrl(), isNull);
+        expect(state.locations.where((l) => l.profile.free), isEmpty);
+      },
+    );
+
+    test(
+      'a launch with an account keeps no free key and asks for none',
+      () async {
+        final first = _fresh();
+        await first.refreshFreeInfo();
+        await first.ensureFreeAccess();
+        await first.signInWithAccountNumber(_number);
+        await pumpEventQueue();
+        // A key left behind by an older build, for one.
+        await const FreeStore().save(_freeSub(1));
+
+        final again = _fresh();
+        await again.loadAccountForTesting();
+        await again.startFreeForTesting();
+        expect(await const FreeStore().subUrl(), isNull);
+        expect(again.freeOffered, isFalse);
+        expect(_backend.to('/v1/free/register'), hasLength(1));
+      },
+    );
+  });
+
   group('Locations', () {
     testWidgets('on: an open Free row with its speed, not a locked one', (
       tester,

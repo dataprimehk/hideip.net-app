@@ -173,7 +173,15 @@ void main() {
       await _settle(tester);
       expect(find.text(end.value), findsOneWidget, reason: end.key.name);
       expect(find.byType(PairingQr), findsNothing, reason: end.key.name);
-      await tester.tap(find.text(S.accountNewDeviceNewCode));
+      // No answer is tried again; anything the server decided gets a new
+      // code.
+      await tester.tap(
+        find.text(
+          end.key == LinkRequestPhase.failed
+              ? S.aTryAgain
+              : S.accountNewDeviceNewCode,
+        ),
+      );
       await _settle(tester);
       expect(device.starts, [false, false], reason: end.key.name);
       expect(find.byType(PairingQr), findsOneWidget, reason: end.key.name);
@@ -242,9 +250,7 @@ void main() {
     expect(device.clears, 1);
   });
 
-  testWidgets('leaving withdraws a code nobody approved, and only that', (
-    tester,
-  ) async {
+  testWidgets('leaving withdraws a request that is still open', (tester) async {
     _phone(tester);
     final waiting = FakeNewDevicePort.v2();
     await tester.pumpWidget(_host(waiting));
@@ -260,7 +266,36 @@ void main() {
     storing.ticket = sampleTicket();
     await tester.pumpWidget(const SizedBox());
     await tester.pump();
-    expect(storing.cancels, 0, reason: 'an approval on its way is kept');
+    // An approval still being confirmed goes too (the state keeps an
+    // account already in force); a finished one is left alone.
+    expect(storing.cancels, 1);
+
+    final done = FakeNewDevicePort.v2();
+    await tester.pumpWidget(_host(done));
+    await _settle(tester);
+    done.land(LinkRequestPhase.expired);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+    expect(done.cancels, 0);
+  });
+
+  testWidgets('a confirmation that keeps failing has a way out', (
+    tester,
+  ) async {
+    _phone(tester);
+    final device = FakeNewDevicePort.v2();
+    await tester.pumpWidget(_host(device));
+    await _settle(tester);
+    device.land(LinkRequestPhase.storing);
+    device.ticket = sampleTicket();
+    device.notifyListeners();
+    await _settle(tester);
+
+    expect(find.text(S.accountNewDeviceStoring), findsOneWidget);
+    await tester.tap(find.text(S.aCancel));
+    await _settle(tester);
+    expect(device.cancels, 1);
+    expect(find.text(S.accountNewDeviceShow), findsOneWidget);
   });
 
   testWidgets('scrolling the code away keeps the same request', (tester) async {

@@ -446,11 +446,13 @@ class PairingAuth {
 
   bool get usable => token != null || accountNumber != null;
 
+  /// The number when it is kept here: it always manages the account (K7),
+  /// whatever this device's own token was granted. The token otherwise.
   Map<String, dynamic> get body {
-    final t = token;
-    if (t != null) return {'token': t};
     final digits = normalizeAccountNumber(accountNumber ?? '');
-    return isValidAccountNumber(digits) ? {'account_number': digits} : {};
+    if (isValidAccountNumber(digits)) return {'account_number': digits};
+    final t = token;
+    return t != null ? {'token': t} : {};
   }
 }
 
@@ -692,6 +694,15 @@ enum LinkCloseResult {
 
   /// Ack before anyone approved the request (409 `not_approved`).
   notApproved,
+
+  /// 410: the delivery window passed (`link_expired`), the request was
+  /// cancelled (`link_cancelled`), the device it made was removed
+  /// (`device_revoked`) or the account ran out of time
+  /// (`subscription_inactive`). Nothing more comes of it.
+  expired,
+  cancelled,
+  revoked,
+  inactive,
   network,
 }
 
@@ -772,8 +783,10 @@ class PairingClient {
   DateTime? _capsAt;
   Future<PairingCapabilities>? _capsInFlight;
 
-  /// What the server speaks. Cached; 404, no answer or an unreadable body
-  /// all read as [PairingCapabilities.unknown].
+  /// What the server speaks. Cached. A 404 is [PairingCapabilities.legacy];
+  /// no answer, another status or an unreadable body is
+  /// [PairingCapabilities.unknown], asked again after
+  /// [capabilitiesRetry] or with [fresh].
   Future<PairingCapabilities> capabilities({bool fresh = false}) {
     final held = _caps;
     final at = _capsAt;
@@ -793,9 +806,12 @@ class PairingClient {
       final resp = await _client
           .get(_uri('/v1/link/capabilities'))
           .timeout(timeout);
-      caps = resp.statusCode == 200
-          ? PairingCapabilities.fromJson(_json(resp.body))
-          : PairingCapabilities.unknown;
+      caps = switch (resp.statusCode) {
+        200 => PairingCapabilities.fromJson(_json(resp.body)),
+        // No such route: a server from before pairing v2.
+        404 => PairingCapabilities.legacy,
+        _ => PairingCapabilities.unknown,
+      };
     } catch (_) {
       caps = PairingCapabilities.unknown;
     }
@@ -1045,10 +1061,28 @@ class PairingClient {
         (404, _) => LinkCloseResult.unknown,
         (409, 'not_approved') => LinkCloseResult.notApproved,
         (409, _) => LinkCloseResult.alreadyDelivered,
+        (410, 'link_cancelled') => LinkCloseResult.cancelled,
+        (410, 'device_revoked') => LinkCloseResult.revoked,
+        (410, 'subscription_inactive') => LinkCloseResult.inactive,
+        (410, _) => LinkCloseResult.expired,
         _ => LinkCloseResult.network,
       };
     } catch (_) {
       return LinkCloseResult.network;
+    }
+  }
+
+  /// Takes the device [deviceToken] belongs to off its account (K6). Used
+  /// when a cancel comes too late: the answer was delivered already.
+  /// Idempotent; true when the server said so.
+  Future<bool> signout(String deviceToken) async {
+    try {
+      final resp = await _post('/v1/link/signout', {
+        'device_token': deviceToken,
+      });
+      return resp.statusCode == 200;
+    } catch (_) {
+      return false;
     }
   }
 
