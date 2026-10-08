@@ -6,36 +6,66 @@ import 'package:flutter/material.dart';
 import '../../core/deep_link.dart';
 import '../../core/device_link.dart';
 import '../../core/haptics.dart';
-import '../../core/premium.dart';
 import '../../core/sensitive_clipboard.dart';
 import '../../state/app_state.dart';
 import '../qr_scan_screen.dart';
 import '../strings.dart';
+import 'account/account_device.dart';
+import 'account/account_port.dart';
+import 'account/account_strings.dart';
+import 'account/pairing_flow.dart';
+import 'account/pairing_port.dart';
 import 'hip.dart';
 import 'hip_sheet.dart';
 import 'shell.dart';
 
 /// Settings → Linked devices: what else is using this subscription, and the
-/// way to add one more. Linking is a scan away; nothing is typed and no
-/// account exists to sign into on the other side.
+/// way to add one more. With pairing v2 the new device shows a QR code and a
+/// short code, and this phone scans the one or types the other; before it,
+/// linking is a scan, or a code this phone shows.
 class LinkedDevicesScreen extends StatefulWidget {
   final AppState state;
   final HipNav nav;
-  const LinkedDevicesScreen({super.key, required this.state, required this.nav});
+
+  /// The pairing the screen talks to; the 1.2.0 one by default.
+  final PairingPort? pairing;
+  const LinkedDevicesScreen({
+    super.key,
+    required this.state,
+    required this.nav,
+    this.pairing,
+  });
 
   @override
   State<LinkedDevicesScreen> createState() => _LinkedDevicesScreenState();
 }
 
 class _LinkedDevicesScreenState extends State<LinkedDevicesScreen> {
-  List<LinkedDevice>? _devices;
+  late final PairingPort _pairing =
+      widget.pairing ?? pairingPortOf(widget.state);
+  PairingCapabilities _caps = PairingCapabilities.unknown;
+  List<AccountDevice>? _devices;
   bool _loading = true;
   bool _failed = false;
 
   @override
   void initState() {
     super.initState();
+    _askCapabilities();
     _load();
+  }
+
+  Future<T?> _sheet<T>(List<Widget> children) =>
+      showHipSheet<T>(context, children: children);
+
+  Future<void> _askCapabilities() async {
+    PairingCapabilities caps;
+    try {
+      caps = await _pairing.capabilities();
+    } catch (_) {
+      caps = PairingCapabilities.unknown;
+    }
+    if (mounted) setState(() => _caps = caps);
   }
 
   Future<void> _load() async {
@@ -48,7 +78,12 @@ class _LinkedDevicesScreenState extends State<LinkedDevicesScreen> {
       _loading = true;
       _failed = false;
     });
-    final list = await widget.state.deviceLinks.devices(token);
+    List<AccountDevice>? list;
+    try {
+      list = await _pairing.devices();
+    } catch (_) {
+      list = null;
+    }
     if (!mounted) return;
     setState(() {
       _loading = false;
@@ -58,8 +93,25 @@ class _LinkedDevicesScreenState extends State<LinkedDevicesScreen> {
   }
 
   Future<void> _scanToLink() async {
-    final approved = await scanToLinkDevice(context, state: widget.state);
+    final approved = _caps.v2
+        ? await pairByScan(
+            context,
+            port: _pairing,
+            showSheet: _sheet,
+            caps: _caps,
+          )
+        : await scanToLinkDevice(context, state: widget.state);
     if (approved && mounted) await _load();
+  }
+
+  Future<void> _enterCode() async {
+    Haptics.tap();
+    final added = await pairByCode(
+      port: _pairing,
+      showSheet: _sheet,
+      caps: _caps,
+    );
+    if (added && mounted) await _load();
   }
 
   Future<void> _showCode() async {
@@ -70,16 +122,31 @@ class _LinkedDevicesScreenState extends State<LinkedDevicesScreen> {
     if (mounted) await _load();
   }
 
-  /// This phone's own entry when it is on the list through an account
-  /// number. It leaves by signing out, never from here.
-  String? get _ownId =>
-      widget.state.premium.source == PremiumSource.account
-          ? widget.state.accountDeviceId
-          : null;
+  /// One device, opened from its row: its dates, whether it manages the
+  /// account, and the way to take it off.
+  Future<void> _open(AccountDevice device) async {
+    final remove = await _sheet<bool>([
+      DeviceSheet(
+        device: device,
+        port: _pairing,
+        showSheet: _sheet,
+        permissions: _caps.permissions,
+        onChanged: (changed) {
+          if (!mounted) return;
+          setState(
+            () => _devices = _devices
+                ?.map((d) => d.id == changed.id ? changed : d)
+                .toList(growable: false),
+          );
+        },
+      ),
+    ]);
+    if (remove == true && mounted) await _confirmRevoke(device);
+  }
 
-  Future<void> _confirmRevoke(LinkedDevice device) async {
+  Future<void> _confirmRevoke(AccountDevice device) async {
     final token = widget.state.subToken;
-    if (token == null || device.id == _ownId) return;
+    if (token == null || device.current) return;
     final yes = await showDialog<bool>(
       context: context,
       builder: (ctx) => Dialog(
@@ -123,10 +190,17 @@ class _LinkedDevicesScreenState extends State<LinkedDevicesScreen> {
       ),
     );
     if (yes != true || !mounted) return;
-    final ok = await widget.state.deviceLinks
-        .revoke(subToken: token, deviceId: device.id);
-    if (!mounted) return;
-    if (ok) {
+    DeviceChangeResult result;
+    try {
+      result = await withLastManagerCheck(
+        _sheet,
+        (confirm) => _pairing.revoke(device.id, confirmLastManager: confirm),
+      );
+    } catch (_) {
+      result = const DeviceChangeResult.failed(PairingError.network);
+    }
+    if (!mounted || result.error == PairingError.lastManager) return;
+    if (result.ok) {
       Haptics.success();
       setState(() => _devices =
           _devices?.where((d) => d.id != device.id).toList(growable: false));
@@ -139,7 +213,7 @@ class _LinkedDevicesScreenState extends State<LinkedDevicesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final devices = _devices ?? const <LinkedDevice>[];
+    final devices = _devices ?? const <AccountDevice>[];
     return SafeArea(
       child: Column(children: [
         HipNavHead(
@@ -168,21 +242,29 @@ class _LinkedDevicesScreenState extends State<LinkedDevicesScreen> {
                               color: Hip.ink, letterSpacing: -.15)),
                       const SizedBox(height: 6),
                       Text(
-                        'Scan the code a browser or desktop app shows and it '
-                        'gets access to your premium servers. No sign-in, '
-                        'nothing to remember.',
+                        _caps.v2
+                            ? SA.addHowV2
+                            : 'Scan the code a browser or desktop app shows '
+                                'and it gets access to your premium servers. '
+                                'No sign-in, nothing to remember.',
                         style:
                             Hip.sans(550, 13, color: Hip.muted, height: 1.45),
                       ),
                     ]),
               ),
               const SizedBox(height: 14),
-              HipCta('Link a device',
+              HipCta(_caps.v2 ? SA.scanQr : 'Link a device',
                   leading: const Icon(Icons.qr_code_scanner_outlined),
                   onTap: _scanToLink),
               const SizedBox(height: 10),
-              HipCta('Show a code instead',
-                  ghost: true, quiet: true, onTap: _showCode),
+              // With pairing v2 the code comes from the new device and is
+              // typed here; before it, this phone shows one.
+              if (_caps.v2)
+                HipCta(SA.enterCode,
+                    ghost: true, quiet: true, onTap: _enterCode)
+              else
+                HipCta('Show a code instead',
+                    ghost: true, quiet: true, onTap: _showCode),
               if (_failed) ...[
                 const HipSectionLabel('Devices'),
                 HipListGroup(children: [
@@ -200,7 +282,8 @@ class _LinkedDevicesScreenState extends State<LinkedDevicesScreen> {
                   for (final d in devices)
                     _DeviceRow(
                         device: d,
-                        own: d.id == _ownId,
+                        own: d.current,
+                        onTap: _caps.permissions ? () => _open(d) : null,
                         onRevoke: () => _confirmRevoke(d)),
                 ]),
                 const HipSubnote(
@@ -227,24 +310,23 @@ class _LinkedDevicesScreenState extends State<LinkedDevicesScreen> {
 /// One linked device: kind icon, name, and the dates in mono. Swiping it left
 /// asks the same question the trailing button does.
 class _DeviceRow extends StatelessWidget {
-  final LinkedDevice device;
+  final AccountDevice device;
   final VoidCallback onRevoke;
+
+  /// Opens the device, where pairing v2 lets its permissions change.
+  final VoidCallback? onTap;
 
   /// This phone: marked, and without a way to remove it.
   final bool own;
   const _DeviceRow(
-      {required this.device, required this.onRevoke, this.own = false});
-
-  static IconData iconFor(LinkedDeviceKind kind) => switch (kind) {
-        LinkedDeviceKind.extension => Icons.language_outlined,
-        LinkedDeviceKind.desktop => Icons.desktop_windows_outlined,
-        LinkedDeviceKind.phone => Icons.smartphone_outlined,
-        LinkedDeviceKind.unknown => Icons.devices_other_outlined,
-      };
+      {required this.device,
+      required this.onRevoke,
+      this.onTap,
+      this.own = false});
 
   @override
   Widget build(BuildContext context) {
-    final row = Container(
+    Widget row = Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Row(children: [
         Container(
@@ -254,7 +336,8 @@ class _DeviceRow extends StatelessWidget {
             color: Hip.line2,
             borderRadius: BorderRadius.circular(12),
           ),
-          child: Icon(iconFor(device.kind), size: 19, color: Hip.inkSoft),
+          child: Icon(deviceKindIcon(device.kind),
+              size: 19, color: Hip.inkSoft),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -286,6 +369,11 @@ class _DeviceRow extends StatelessWidget {
           ),
       ]),
     );
+    final tap = onTap;
+    if (tap != null) {
+      row = InkWell(
+          onTap: tap, borderRadius: HipRowSlot.cornersOf(context), child: row);
+    }
     if (own) return row;
     return Dismissible(
       key: ValueKey('linked-device:${device.id}'),
@@ -361,11 +449,32 @@ Future<bool> scanToLinkDevice(
 
 /// The approval sheet: what is being linked, and the two ways out. Returns
 /// true when the device was linked.
+///
+/// With pairing v2 the same link opens the preview of the device first
+/// (which device, which code) and the approval after it; before it, the
+/// 1.2.0 sheet asks.
 Future<bool?> showLinkApprovalSheet(
   BuildContext context, {
   required AppState state,
   required DeepLinkPairing pairing,
-}) {
+  PairingPort? port,
+}) async {
+  final p = port ?? pairingPortOf(state);
+  PairingCapabilities caps;
+  try {
+    caps = await p.capabilities();
+  } catch (_) {
+    caps = PairingCapabilities.unknown;
+  }
+  if (!context.mounted) return false;
+  if (caps.v2) {
+    return pairByLink(
+      port: p,
+      showSheet: <T>(children) => showHipSheet<T>(context, children: children),
+      caps: caps,
+      linkId: pairing.linkId,
+    );
+  }
   return showHipSheet<bool>(context, children: [
     _LinkApprovalSheet(state: state, pairing: pairing),
   ]);

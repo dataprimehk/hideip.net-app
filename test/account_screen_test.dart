@@ -8,6 +8,8 @@ import 'package:hideip_vpn/core/account_store.dart';
 import 'package:hideip_vpn/core/provisioning.dart';
 import 'package:hideip_vpn/core/secret_prefs.dart';
 import 'package:hideip_vpn/state/app_state.dart';
+import 'package:hideip_vpn/ui/redesign/account/account_strings.dart';
+import 'package:hideip_vpn/ui/redesign/account/account_widgets.dart';
 import 'package:hideip_vpn/ui/redesign/account_screen.dart';
 import 'package:hideip_vpn/ui/redesign/hip.dart';
 import 'package:hideip_vpn/ui/redesign/hip_sheet.dart';
@@ -45,20 +47,21 @@ const _forbidden = [
 
 /// With [sheets], sheets really open (on that navigator); without, they
 /// close at once with nothing chosen.
-HipNav _nav({List<HipScreen>? went, GlobalKey<NavigatorState>? sheets}) => HipNav(
-  go: (s, [_]) => went?.add(s),
-  back: () {},
-  ctx: () => null,
-  showSheet: <T>(List<Widget> children) async => sheets == null
-      ? null
-      : showHipSheet<T>(sheets.currentContext!, children: children),
-  openDetail: (_) {},
-  openImport: () {},
-  openImportWith: (_) {},
-  openPaywall: ({required HipScreen from, String? locId}) {},
-  claimBack: (_) {},
-  releaseBack: (_) {},
-);
+HipNav _nav({List<HipScreen>? went, GlobalKey<NavigatorState>? sheets}) =>
+    HipNav(
+      go: (s, [_]) => went?.add(s),
+      back: () {},
+      ctx: () => null,
+      showSheet: <T>(List<Widget> children) async => sheets == null
+          ? null
+          : showHipSheet<T>(sheets.currentContext!, children: children),
+      openDetail: (_) {},
+      openImport: () {},
+      openImportWith: (_) {},
+      openPaywall: ({required HipScreen from, String? locId}) {},
+      claimBack: (_) {},
+      releaseBack: (_) {},
+    );
 
 /// The account API, counting every call. Nothing is served at the
 /// subscription URL, so no server rows (and no latency probes) appear.
@@ -227,6 +230,13 @@ Future<void> _dialog(WidgetTester tester) async {
   await tester.pump(const Duration(milliseconds: 400));
 }
 
+/// Unfolds More options, where the rare actions live.
+Future<void> _openMore(WidgetTester tester) async {
+  await tester.ensureVisible(find.text(SA.moreOptions));
+  await tester.tap(find.text(SA.moreOptions));
+  await tester.pump();
+}
+
 void _expectNoForbiddenWords() {
   for (final word in _forbidden) {
     expect(
@@ -277,7 +287,7 @@ void main() {
   ) async {
     await tester.pumpWidget(_host(_state(backend)));
 
-    expect(find.text(S.accountNumberTitle), findsOneWidget);
+    expect(find.text(SA.title), findsOneWidget);
     expect(find.text(S.accountHelp), findsOneWidget);
     expect(_signInButton(tester).onTap, isNull);
 
@@ -353,11 +363,14 @@ void main() {
     expect(find.textContaining('Active until'), findsOneWidget);
     // This device is marked, the other one can be taken off.
     expect(find.text(S.accountThisDevice), findsOneWidget);
+    // The rare actions wait under More options.
+    expect(find.text(S.accountRotate), findsNothing);
+    await _openMore(tester);
     expect(find.text(S.accountRotate), findsOneWidget);
     expect(find.text(S.accountSignOut), findsOneWidget);
     _expectNoForbiddenWords();
 
-    await tester.tap(find.text(S.accountReveal));
+    await tester.tap(find.text(SA.numberShow));
     await _dialog(tester);
     expect(find.byType(HipSheet), findsOneWidget);
     expect(
@@ -366,13 +379,13 @@ void main() {
       reason: 'nothing shows before the warning is confirmed',
     );
 
-    await tester.tap(find.widgetWithText(HipCta, S.aCancel));
+    await tester.tap(find.widgetWithText(AccountCta, S.aCancel));
     await _dialog(tester);
     expect(find.text('8236 3877 8895 0319'), findsNothing);
 
-    await tester.tap(find.text(S.accountReveal));
+    await tester.tap(find.text(SA.numberShow));
     await _dialog(tester);
-    await tester.tap(find.widgetWithText(HipCta, S.accountReveal));
+    await tester.tap(find.widgetWithText(AccountCta, S.accountReveal));
     await _dialog(tester);
     expect(find.text('8236 3877 8895 0319'), findsOneWidget);
     expect(find.text(S.accountHide), findsOneWidget);
@@ -395,7 +408,8 @@ void main() {
     await _settle(tester);
 
     expect(find.text('•••• •••• •••• 0319'), findsOneWidget);
-    expect(find.text(S.accountOutOfTime), findsOneWidget);
+    expect(find.text(SA.statusOff), findsOneWidget);
+    expect(find.textContaining('Ended on'), findsOneWidget);
   });
 
   testWidgets('out of time, the screen offers a way forward', (tester) async {
@@ -408,9 +422,12 @@ void main() {
     await _settle(tester);
 
     expect(find.text(S.accountOutOfTimeNote), findsOneWidget);
-    expect(find.widgetWithText(HipCta, S.accountCheckAgain), findsOneWidget);
+    expect(
+      find.widgetWithText(AccountCta, S.accountCheckAgain),
+      findsOneWidget,
+    );
     // No store catalog in a test: no plans to point at, so no dead button.
-    expect(find.widgetWithText(HipCta, S.aSeePlans), findsNothing);
+    expect(find.widgetWithText(AccountCta, S.aSeePlans), findsNothing);
     // Neither line points anywhere outside the stores.
     _expectNoForbiddenWords();
 
@@ -418,9 +435,9 @@ void main() {
     backend.active = true;
     final before = backend.calls;
     await tester.ensureVisible(
-      find.widgetWithText(HipCta, S.accountCheckAgain),
+      find.widgetWithText(AccountCta, S.accountCheckAgain),
     );
-    await tester.tap(find.widgetWithText(HipCta, S.accountCheckAgain));
+    await tester.tap(find.widgetWithText(AccountCta, S.accountCheckAgain));
     await _settle(tester);
     expect(backend.calls, greaterThan(before));
     expect(state.accountActive, isTrue);
@@ -438,7 +455,7 @@ void main() {
     await _settle(tester);
 
     expect(find.text(S.accountOutOfTimeNote), findsNothing);
-    expect(find.widgetWithText(HipCta, S.accountCheckAgain), findsNothing);
+    expect(find.widgetWithText(AccountCta, S.accountCheckAgain), findsNothing);
   });
 
   testWidgets('storage that fails says so and frees the button', (
@@ -475,11 +492,12 @@ void main() {
     await _settle(tester);
 
     expect(find.text('•••• •••• •••• 0319'), findsOneWidget);
-    expect(find.text(S.accountDeviceSignedOut), findsOneWidget);
+    expect(find.text(SA.statusSignedOut), findsOneWidget);
+    expect(find.text(SA.statusSignedOutLine), findsOneWidget);
     expect(state.accountNumber, _number);
 
     backend.devices = ['dev_abc', 'dev_two'];
-    await tester.tap(find.widgetWithText(HipCta, S.accountCtaSignIn));
+    await tester.tap(find.widgetWithText(AccountCta, S.accountCtaSignIn));
     await _settle(tester);
     expect(find.text(S.pwDoneTitle), findsOneWidget);
     expect(state.premium.isOn, isTrue);
@@ -498,17 +516,18 @@ void main() {
     await tester.pumpWidget(_host(state));
     await _settle(tester);
 
-    expect(find.text(S.accountDeviceSignedOut), findsOneWidget);
+    expect(find.text(SA.statusSignedOut), findsOneWidget);
     expect(state.accountCanManage, isFalse);
     // The number, the reason, the way back in and the way out; nothing else.
     expect(find.text('•••• •••• •••• 0319'), findsOneWidget);
-    expect(find.widgetWithText(HipCta, S.accountCtaSignIn), findsOneWidget);
+    expect(find.widgetWithText(AccountCta, S.accountCtaSignIn), findsOneWidget);
     expect(find.text(S.accountSignOut), findsOneWidget);
-    expect(find.text(S.accountDevices.toUpperCase()), findsNothing);
+    expect(find.text(SA.devicesTitle.toUpperCase()), findsNothing);
     expect(find.text('Desktop'), findsNothing);
     expect(find.byIcon(Icons.link_off), findsNothing);
+    expect(find.text(SA.moreOptions), findsNothing);
     expect(find.text(S.accountRotate), findsNothing);
-    expect(find.text(S.accountLinkDevice), findsNothing);
+    expect(find.text(SA.addDevice), findsNothing);
     expect(find.text(S.accountDelete), findsNothing);
   });
 
@@ -520,17 +539,20 @@ void main() {
     await tester.pumpWidget(_host(state));
     await _settle(tester);
 
-    expect(find.text(S.accountExplain), findsOneWidget);
+    expect(find.text(SA.statusOn), findsOneWidget);
+    expect(find.text(SA.statusEndsUnlessAdded), findsOneWidget);
     // Nothing pays for this number from here yet: a store subscription is
-    // offered, and nothing else under Billing.
+    // offered, and nothing else under Payment.
     expect(
       find.text(S.accountSubscribeStore('Google Play')),
       kPlansAvailable && state.plansOffered ? findsOneWidget : findsNothing,
     );
     expect(find.textContaining('subscription · renews'), findsNothing);
     expect(find.text('Desktop'), findsOneWidget);
+    expect(find.text(SA.devicesCount(2, 5)), findsOneWidget);
+    expect(find.text(SA.addDevice), findsOneWidget);
+    await _openMore(tester);
     expect(find.text(S.accountRotate), findsOneWidget);
-    expect(find.text(S.accountLinkDevice), findsOneWidget);
     expect(find.text(S.accountDelete), findsOneWidget);
     _expectNoForbiddenWords();
   });
@@ -547,10 +569,10 @@ void main() {
     await tester.pumpWidget(_host(state));
     await _settle(tester);
 
-    expect(find.text(S.accountExplainStore('App Store')), findsOneWidget);
-    expect(find.text(S.accountExplain), findsNothing);
+    expect(find.text(SA.statusRenewsThrough('App Store')), findsOneWidget);
+    expect(find.text(SA.statusEndsUnlessAdded), findsNothing);
     expect(find.text(S.accountSubscribeStore('App Store')), findsNothing);
-    expect(find.text(S.pmBilling.toUpperCase()), findsOneWidget);
+    expect(find.text(SA.paymentTitle.toUpperCase()), findsOneWidget);
     expect(
       find.textContaining('App Store subscription · renews'),
       findsOneWidget,
@@ -569,6 +591,7 @@ void main() {
   testWidgets('a store subscription on another number is noted quietly', (
     tester,
   ) async {
+    _tall(tester);
     final state = await _v2SignedIn(tester, backend);
     state
       ..elsewhere = true
@@ -592,18 +615,21 @@ void main() {
     await tester.pumpWidget(_host(state));
     await _settle(tester);
 
-    expect(find.text(S.accountNoNumberTitle), findsOneWidget);
-    expect(find.text(S.accountNoNumberBody('App Store')), findsOneWidget);
+    expect(find.text(SA.numberNotHere), findsOneWidget);
+    expect(find.text(SA.numberNotHereNote), findsOneWidget);
     expect(find.textContaining('0319'), findsNothing);
+    // Premium is the first thing said, the missing number a quiet card.
+    expect(find.text(SA.statusOn), findsOneWidget);
     // The number can still be put in here, to see it again.
     expect(find.byType(TextField), findsNothing);
     await tester.tap(find.text(S.accountEnterNumber));
     await tester.pump();
     expect(find.byType(TextField), findsOneWidget);
-    expect(find.text(S.accountReveal), findsNothing);
+    expect(find.text(SA.numberShow), findsNothing);
     expect(find.text(S.accountCopy), findsNothing);
-    expect(find.text(S.accountKeepSafe), findsNothing);
+    expect(find.text(SA.numberNote), findsNothing);
     // Getting a new number is the way to one.
+    await _openMore(tester);
     expect(find.text(S.accountRotate), findsOneWidget);
   });
 
@@ -615,15 +641,14 @@ void main() {
     state
       ..linked = true
       ..store = 'App Store';
-    await tester.pumpWidget(
-      _host(state, sheets: GlobalKey<NavigatorState>()),
-    );
+    await tester.pumpWidget(_host(state, sheets: GlobalKey<NavigatorState>()));
     await _settle(tester);
 
+    await _openMore(tester);
     await tester.tap(find.text(S.accountSignOut));
     await _dialog(tester);
     expect(find.text(S.accountSignOutBodyLinked('App Store')), findsOneWidget);
-    await tester.tap(find.widgetWithText(HipCta, S.aCancel));
+    await tester.tap(find.widgetWithText(AccountCta, S.aCancel));
     await _dialog(tester);
   });
 
@@ -632,17 +657,16 @@ void main() {
   ) async {
     _tall(tester);
     final state = await _v2SignedIn(tester, backend);
-    await tester.pumpWidget(
-      _host(state, sheets: GlobalKey<NavigatorState>()),
-    );
+    await tester.pumpWidget(_host(state, sheets: GlobalKey<NavigatorState>()));
     await _settle(tester);
 
     // No store subscription: the plain warning and no store button.
+    await _openMore(tester);
     await tester.tap(find.text(S.accountDelete));
     await _dialog(tester);
     expect(find.text(S.accountDeleteBody), findsOneWidget);
     expect(find.textContaining('Manage in'), findsNothing);
-    await tester.tap(find.widgetWithText(HipCta, S.aCancel));
+    await tester.tap(find.widgetWithText(AccountCta, S.aCancel));
     await _dialog(tester);
     expect(state.deletes, 0);
 
@@ -654,12 +678,12 @@ void main() {
     await _dialog(tester);
     expect(find.text(S.accountDeleteBodyStore('Google Play')), findsOneWidget);
     expect(
-      find.widgetWithText(HipCta, S.accountManageStore('Google Play')),
+      find.widgetWithText(AccountCta, S.accountManageStore('Google Play')),
       findsOneWidget,
     );
     _expectNoForbiddenWords();
 
-    await tester.tap(find.widgetWithText(HipCta, S.accountDelete));
+    await tester.tap(find.widgetWithText(AccountCta, S.accountDelete));
     await _dialog(tester);
     await _settle(tester);
     expect(state.deletes, 1);
@@ -676,14 +700,13 @@ void main() {
     _tall(tester);
     final state = await _v2SignedIn(tester, backend);
     state.deleteResult = AccountResult.network;
-    await tester.pumpWidget(
-      _host(state, sheets: GlobalKey<NavigatorState>()),
-    );
+    await tester.pumpWidget(_host(state, sheets: GlobalKey<NavigatorState>()));
     await _settle(tester);
 
+    await _openMore(tester);
     await tester.tap(find.text(S.accountDelete));
     await _dialog(tester);
-    await tester.tap(find.widgetWithText(HipCta, S.accountDelete));
+    await tester.tap(find.widgetWithText(AccountCta, S.accountDelete));
     await _dialog(tester);
     await _settle(tester);
     expect(state.accountSignedIn, isTrue);
@@ -695,9 +718,7 @@ void main() {
   testWidgets('a number a purchase just made is shown once', (tester) async {
     final state = await _v2SignedIn(tester, backend);
     state.fresh = _number;
-    await tester.pumpWidget(
-      _host(state, sheets: GlobalKey<NavigatorState>()),
-    );
+    await tester.pumpWidget(_host(state, sheets: GlobalKey<NavigatorState>()));
     await _settle(tester);
 
     expect(find.text(S.accountFreshTitle), findsOneWidget);
@@ -714,9 +735,7 @@ void main() {
 
     // Coming back to the screen does not show it again.
     await tester.pumpWidget(const SizedBox());
-    await tester.pumpWidget(
-      _host(state, sheets: GlobalKey<NavigatorState>()),
-    );
+    await tester.pumpWidget(_host(state, sheets: GlobalKey<NavigatorState>()));
     await _settle(tester);
     expect(find.text(S.accountFreshTitle), findsNothing);
     expect(state.acks, 1);
