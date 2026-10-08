@@ -875,8 +875,6 @@ abstract final class S {
   /// Premium page. The screen itself is titled [accountTitle].
   static const accountNumberTitle = 'Account number';
 
-  /// The quiet link under the paywall offer.
-  static const accountSignInLink = 'Already have an account number? Sign in';
   static const accountHelp =
       'Enter the 16-digit account number of your hideip.net subscription. '
       'It works instead of a username and password.';
@@ -1224,4 +1222,49 @@ abstract final class S {
   static String accountDeviceSeen(String date) => 'Last used $date';
   static const accountDeviceNeverUsed = 'Not used yet';
   static const accountDeviceManages = 'Manages the account';
+
+  /// Approving the request this device shows itself. Approval happens on
+  /// another device; this one only waits.
+  static const accountErrOwnRequest =
+      'This is the request this device shows. Another device that manages '
+      'the account approves it.';
+
+  // --- This device, asking another one for access ---------------------------
+
+  /// The one way in for someone who already pays, wherever a new device
+  /// starts: onboarding, the paywall, an ended trial and an empty Home.
+  static const accountHaveSubscription = 'I already have a subscription';
+
+  /// Above the QR code and the short code this device shows.
+  static const accountNewDeviceIntro =
+      'Another device with this Premium adds this one by scanning the QR '
+      'code or entering the short code.';
+  static const accountNewDeviceQrLabel = 'QR code that adds this device';
+  static const accountNewDeviceWaiting = 'Waiting for the other device.';
+  static const accountNewDeviceStoring = 'Signing in…';
+
+  /// Why the code on show stopped working. Each ends with a new code.
+  static const accountNewDeviceExpired = 'This code has expired.';
+  static const accountNewDeviceCancelled = 'This request was cancelled.';
+  static const accountNewDeviceRevoked =
+      'The other device took this approval back.';
+  static const accountNewDeviceInactive =
+      'Premium is off on that account, so this device cannot be added right '
+      'now.';
+  static const accountNewDeviceNewCode = 'Show a new code';
+
+  /// On a device that already has Premium or an account: nothing is shown
+  /// until the move is confirmed.
+  static const accountNewDeviceShow = 'Show a code for this device';
+  static const accountSwitchTitle = 'Use another account on this device?';
+  static const accountSwitchBody =
+      'Nothing changes here until the other device adds this one. Then this '
+      'device uses that account instead.';
+  static String accountSwitchBodyStore(String store) =>
+      'Nothing changes here until the other device adds this one. Then this '
+      'device uses that account instead. The $store subscription does not '
+      'move with it and keeps paying for what it pays for now.';
+
+  /// Under the code: the account number as the other way in.
+  static const accountNewDeviceOrNumber = 'Or sign in with the account number';
 }

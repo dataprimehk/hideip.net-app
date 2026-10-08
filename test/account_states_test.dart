@@ -5,6 +5,7 @@ import 'package:hideip_vpn/core/account_service.dart';
 import 'package:hideip_vpn/state/app_state.dart';
 import 'package:hideip_vpn/ui/redesign/account/account_port.dart';
 import 'package:hideip_vpn/ui/redesign/account/account_widgets.dart';
+import 'package:hideip_vpn/ui/redesign/account/new_device.dart';
 import 'package:hideip_vpn/ui/redesign/account/pairing_port.dart';
 import 'package:hideip_vpn/ui/redesign/account_screen.dart';
 import 'package:hideip_vpn/ui/redesign/hip.dart';
@@ -89,6 +90,7 @@ Widget _host(
   required Look look,
   GlobalKey<NavigatorState>? sheets,
   List<HipScreen>? paywalls,
+  FakeNewDevicePort? newDevice,
 }) {
   final large = look == Look.largeSmall;
   return MaterialApp(
@@ -106,6 +108,7 @@ Widget _host(
         nav: fakeNav(sheets: sheets, paywalls: paywalls),
         account: account,
         pairing: pairing,
+        newDevice: newDevice ?? FakeNewDevicePort(),
       ),
     ),
   );
@@ -429,17 +432,31 @@ void main() {
         _expectCleanCopy(tester);
       });
 
-      testWidgets('10 form: the same sign-in, titled Account', (tester) async {
+      testWidgets('10 form: the code another device approves, then the '
+          'number, titled Account', (tester) async {
         _screen(tester, look);
         final a = FakeAccountPort();
         states['form']!(a);
-        await tester.pumpWidget(_host(a, FakePairingPort(), look: look));
+        final device = FakeNewDevicePort.v2();
+        await tester.pumpWidget(
+          _host(a, FakePairingPort(), look: look, newDevice: device),
+        );
         await _settle(tester);
 
         expect(find.text(S.accountTitle), findsOneWidget);
-        expect(find.text(S.accountHelp), findsOneWidget);
+        // One request, asked for on the way in, shown as a QR code and a
+        // short code together.
+        expect(device.starts, [false]);
+        expect(find.text(S.accountNewDeviceIntro), findsOneWidget);
+        expect(find.byType(PairingQr), findsOneWidget);
+        expect(find.text('7KQM-3XHP'), findsOneWidget);
+        expect(find.text(S.accountNewDeviceWaiting), findsOneWidget);
+        // The number and the restore stay as the other ways in.
+        expect(await _seek(tester, S.accountHelp), findsOneWidget);
+        await _seek(tester, S.accountPaste);
         expect(find.byType(TextField), findsOneWidget);
         expect(find.widgetWithText(HipCta, S.accountCtaSignIn), findsOneWidget);
+        expect(await _seek(tester, S.pwRestore), findsOneWidget);
         expect(a.refreshes, 0, reason: 'nothing to ask about yet');
         _expectCleanCopy(tester);
       });

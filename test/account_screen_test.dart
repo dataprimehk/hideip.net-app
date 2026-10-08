@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hideip_vpn/core/account_service.dart';
 import 'package:hideip_vpn/core/account_store.dart';
+import 'package:hideip_vpn/core/pairing.dart';
 import 'package:hideip_vpn/core/provisioning.dart';
 import 'package:hideip_vpn/core/secret_prefs.dart';
 import 'package:hideip_vpn/state/app_state.dart';
@@ -118,6 +119,11 @@ AppState _state(_Backend backend) => AppState(
   provisioning: ProvisioningService(
     client: MockClient((_) async => http.Response('', 503)),
     catalogSources: [Uri.parse('https://mirror.test/catalog')],
+  ),
+  // A server from before pairing v2: the screen signed out is the 1.2.0
+  // sign-in, which is what these tests are about.
+  pairing: PairingClient(
+    client: MockClient((_) async => http.Response('', 404)),
   ),
 );
 
@@ -313,6 +319,8 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(_host(_state(backend)));
+    // The old server answers that it has no pairing v2.
+    await _settle(tester);
 
     await tester.enterText(find.byType(TextField), '1234567890123456');
     await tester.pump();
@@ -329,6 +337,8 @@ void main() {
   ) async {
     final went = <HipScreen>[];
     await tester.pumpWidget(_host(_state(backend), went: went));
+    // The old server answers that it has no pairing v2.
+    await _settle(tester);
 
     await tester.enterText(find.byType(TextField), _number);
     await tester.pump();
@@ -463,6 +473,8 @@ void main() {
     final vault = MemorySecureKeyVault()..failWrites = true;
     SecretPrefs.installKeyVaultForTesting(vault);
     await tester.pumpWidget(_host(_state(backend)));
+    // The old server answers that it has no pairing v2.
+    await _settle(tester);
 
     await tester.enterText(find.byType(TextField), _number);
     await tester.pump();

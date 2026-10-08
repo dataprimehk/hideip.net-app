@@ -1492,6 +1492,14 @@ class AppState extends ChangeNotifier implements AccountUiHost {
       default:
         break;
     }
+    // A request for access this device still has open would move it again
+    // once approved elsewhere: the number just entered wins, and the
+    // request is withdrawn.
+    if ((result.result == AccountResult.ok ||
+            result.result == AccountResult.inactive) &&
+        _pendingLink != null) {
+      unawaited(cancelLinkRequest());
+    }
     return result;
   }
 

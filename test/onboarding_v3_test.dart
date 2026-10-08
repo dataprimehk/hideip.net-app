@@ -224,9 +224,9 @@ void main() {
       await _tap(tester, S.obB1Cta);
       await _tap(tester, S.obNext);
       await _tap(tester, S.obNext);
-      expect(find.text(S.accountSignInLink), findsOneWidget);
-      await tester.ensureVisible(find.text(S.accountSignInLink));
-      await tester.tap(find.text(S.accountSignInLink));
+      expect(find.text(S.accountHaveSubscription), findsOneWidget);
+      await tester.ensureVisible(find.text(S.accountHaveSubscription));
+      await tester.tap(find.text(S.accountHaveSubscription));
       await tester.pump(const Duration(milliseconds: 400));
       expect(log.went, [HipScreen.account]);
       // Sign-in ends on Home, so the intro counts as seen.

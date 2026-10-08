@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:hideip_vpn/core/account_service.dart';
+import 'package:hideip_vpn/core/pairing.dart';
+import 'package:hideip_vpn/state/app_pairing.dart';
 import 'package:hideip_vpn/state/app_state.dart';
-import 'package:hideip_vpn/ui/redesign/account/account_device.dart';
 import 'package:hideip_vpn/ui/redesign/account/account_port.dart';
+import 'package:hideip_vpn/ui/redesign/account/new_device.dart';
 import 'package:hideip_vpn/ui/redesign/account/pairing_port.dart';
 import 'package:hideip_vpn/ui/redesign/hip_sheet.dart';
 import 'package:hideip_vpn/ui/redesign/shell.dart';
@@ -293,3 +295,86 @@ const forbiddenWords = [
   'voucher',
   ' bot',
 ];
+
+/// A request this device shows, as a v2 server hands it out.
+LinkTicket sampleTicket({Duration left = const Duration(minutes: 9)}) =>
+    LinkTicket(
+      linkId: 'L1',
+      pollSecret: 'secret-1',
+      qrPayload: 'hideip://link?v=1&id=L1',
+      code: '7KQM-3XHP',
+      expiresAt: DateTime.now().add(left),
+    );
+
+/// This device asking for access, by hand. [startsTo] is what a start
+/// lands in; the default is a server from before pairing v2.
+class FakeNewDevicePort extends ChangeNotifier implements NewDevicePort {
+  @override
+  LinkRequestPhase phase;
+  @override
+  LinkTicket? ticket;
+  @override
+  bool needsConfirm;
+  @override
+  bool canRestore;
+  LinkRequestPhase startsTo;
+
+  FakeNewDevicePort({
+    this.phase = LinkRequestPhase.idle,
+    this.ticket,
+    this.needsConfirm = false,
+    this.canRestore = true,
+    this.startsTo = LinkRequestPhase.unsupported,
+  });
+
+  /// A v2 server: a start puts a code up.
+  factory FakeNewDevicePort.v2({bool needsConfirm = false}) =>
+      FakeNewDevicePort(
+        needsConfirm: needsConfirm,
+        startsTo: LinkRequestPhase.waiting,
+      );
+
+  final List<bool> starts = [];
+  int cancels = 0;
+  int clears = 0;
+  int restores = 0;
+
+  @override
+  Listenable get changes => this;
+
+  @override
+  Future<LinkRequestPhase> start({bool confirmSwitch = false}) async {
+    starts.add(confirmSwitch);
+    phase = startsTo;
+    if (phase == LinkRequestPhase.waiting) ticket = sampleTicket();
+    notifyListeners();
+    return phase;
+  }
+
+  @override
+  Future<void> cancel() async {
+    cancels++;
+    phase = LinkRequestPhase.idle;
+    ticket = null;
+    notifyListeners();
+  }
+
+  @override
+  void clear() {
+    clears++;
+    phase = LinkRequestPhase.idle;
+    notifyListeners();
+  }
+
+  @override
+  Future<void> restore() async => restores++;
+
+  /// The state moves on by itself, as the poll timer would move it.
+  void land(LinkRequestPhase next) {
+    phase = next;
+    if (next != LinkRequestPhase.waiting && next != LinkRequestPhase.storing) {
+      ticket = null;
+    }
+    notifyListeners();
+  }
+}

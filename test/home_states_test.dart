@@ -75,14 +75,14 @@ void main() {
       (tester) async {
     var taps = 0;
     await tester.pumpWidget(host(HomeEmptyBlock(onSignIn: () => taps++)));
-    expect(find.text(S.accountSignInLink), findsOneWidget);
-    await tester.tap(find.text(S.accountSignInLink));
+    expect(find.text(S.accountHaveSubscription), findsOneWidget);
+    await tester.tap(find.text(S.accountHaveSubscription));
     expect(taps, 1);
 
     // Without a callback (already signed in, or sign-in switched off) the
     // block is the plain explanation.
     await tester.pumpWidget(host(const HomeEmptyBlock()));
-    expect(find.text(S.accountSignInLink), findsNothing);
+    expect(find.text(S.accountHaveSubscription), findsNothing);
   });
 
   testWidgets('B0 without plans on offer drops See Premium locations',

@@ -764,9 +764,11 @@ class PaywallOffer extends StatelessWidget {
   }
 }
 
-/// The quiet way out of a paywall for someone who already has an account
-/// number: one line of text, below everything else, never a button that
-/// competes with the offer.
+/// The quiet way out of a paywall for someone who already pays: one line of
+/// text, below everything else, never a button that competes with the
+/// offer. It leads to the Account screen, where this device shows a code
+/// for another one to approve, takes the account number, or restores a
+/// purchase.
 class AccountSignInLink extends StatelessWidget {
   final VoidCallback onTap;
 
@@ -788,7 +790,7 @@ class AccountSignInLink extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
           child: Text(
-            S.accountSignInLink,
+            S.accountHaveSubscription,
             textAlign: TextAlign.center,
             style: Hip.sans(
               500,

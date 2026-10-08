@@ -8,12 +8,14 @@ import '../../core/camera_permission.dart';
 import '../../core/haptics.dart';
 import '../../core/premium.dart';
 import '../../core/sensitive_clipboard.dart';
+import '../../state/app_pairing.dart';
 import '../../state/app_state.dart';
 import '../brand.dart';
 import '../strings.dart';
 import 'account/account_device.dart';
 import 'account/account_port.dart';
 import 'account/account_widgets.dart';
+import 'account/new_device.dart';
 import 'account/pairing_flow.dart';
 import 'account/pairing_port.dart';
 import 'hip.dart';
@@ -86,8 +88,10 @@ Future<void> showFreshAccountNumber(
   }
 }
 
-/// Settings → Account. Signed out it is a sign-in form (the number is the
-/// only credential there is). Signed in it answers, top to bottom, the
+/// Settings → Account. Signed out it is the way in for a device whose
+/// account is elsewhere: the QR code and the short code another device
+/// approves (pairing v2), the account number, and a store restore. Signed
+/// in it answers, top to bottom, the
 /// questions people actually have: does Premium work and until when, how
 /// it gets onto another device, what the number is for, how it is paid,
 /// and, folded away, the rare ways to change or leave the account.
@@ -102,6 +106,10 @@ class AccountScreen extends StatefulWidget {
   final AccountPort? account;
   final PairingPort? pairing;
 
+  /// This device asking another one for access. Without it the screen
+  /// reads [state].
+  final NewDevicePort? newDevice;
+
   /// Test seams for the camera: its permission and the scanner itself.
   final Future<CamPerm> Function()? camStatus;
   final ScanQr? scan;
@@ -112,6 +120,7 @@ class AccountScreen extends StatefulWidget {
     required this.nav,
     this.account,
     this.pairing,
+    this.newDevice,
     this.camStatus,
     this.scan,
   });
@@ -125,6 +134,14 @@ class _AccountScreenState extends State<AccountScreen> {
   late final AccountPort _port = widget.account ?? accountPortOf(widget.state);
   late final PairingPort _pairing =
       widget.pairing ?? pairingPortOf(widget.state);
+  late final NewDevicePort _newDevice =
+      widget.newDevice ?? AppStateNewDevicePort(widget.state);
+  late final Listenable _changes = Listenable.merge([
+    _port.changes,
+    _newDevice.changes,
+  ]);
+
+  bool _restoring = false;
 
   bool _busy = false;
   String? _error;
@@ -179,15 +196,53 @@ class _AccountScreenState extends State<AccountScreen> {
       _loadStatus();
       _askCapabilities();
     }
+    _newDevice.changes.addListener(_onNewDevice);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        showFreshAccountNumber(widget.state, widget.nav, port: _port);
-      }
+      if (!mounted) return;
+      // A request that finished while the screen was away has been shown
+      // by the account it brought; its end is settled here.
+      if (_newDevice.phase == LinkRequestPhase.done) _newDevice.clear();
+      showFreshAccountNumber(widget.state, widget.nav, port: _port);
     });
+  }
+
+  /// Another device approved this one, and the account is stored here:
+  /// the same moment as a sign-in going through.
+  void _onNewDevice() {
+    if (!mounted || _done) return;
+    if (_newDevice.phase != LinkRequestPhase.done) return;
+    Haptics.success();
+    setState(() {
+      _savedOnly = !_port.premiumFromAccount;
+      _done = true;
+    });
+    _newDevice.clear();
+  }
+
+  /// Asks before this device's request would move it to another account
+  /// (K10). Nothing changes until the new account is stored here.
+  Future<bool> _confirmSwitch() => _confirm(
+    title: S.accountSwitchTitle,
+    body: _port.storeLinked || _port.hasStoreEntitlement
+        ? S.accountSwitchBodyStore(_store)
+        : S.accountSwitchBody,
+    action: S.aContinue,
+  );
+
+  Future<void> _restore() async {
+    if (_restoring || _busy) return;
+    setState(() => _restoring = true);
+    try {
+      await _newDevice.restore();
+    } finally {
+      if (mounted) setState(() => _restoring = false);
+    }
   }
 
   @override
   void dispose() {
+    _newDevice.changes.removeListener(_onNewDevice);
+    withdrawNewDeviceRequest(_newDevice);
     _field.removeListener(_onEdit);
     _field.dispose();
     super.dispose();
@@ -696,7 +751,7 @@ class _AccountScreenState extends State<AccountScreen> {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: _port.changes,
+      listenable: _changes,
       builder: (context, _) {
         if (_done) return _success();
         final signedIn = _port.signedIn;
@@ -720,7 +775,7 @@ class _AccountScreenState extends State<AccountScreen> {
               Expanded(
                 child: ListView(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
-                  children: signedIn ? _signedIn() : _signInForm(),
+                  children: signedIn ? _signedIn() : _notSignedIn(),
                 ),
               ),
             ],
@@ -729,6 +784,32 @@ class _AccountScreenState extends State<AccountScreen> {
       },
     );
   }
+
+  /// Not signed in: the code another device approves, then the account
+  /// number, then the store's restore. A server without pairing v2 leaves
+  /// the number and the restore, as in 1.2.0.
+  List<Widget> _notSignedIn() => [
+    if (newDeviceOffered(_newDevice.phase)) ...[
+      Padding(
+        padding: const EdgeInsets.fromLTRB(4, 4, 4, 14),
+        child: Text(
+          S.accountNewDeviceIntro,
+          style: Hip.sans(400, 14, color: Hip.muted, height: 1.5),
+        ),
+      ),
+      NewDeviceCard(port: _newDevice, confirmSwitch: _confirmSwitch),
+      const HipSectionLabel(S.accountNewDeviceOrNumber),
+    ],
+    ..._signInForm(),
+    if (_newDevice.canRestore) ...[
+      AccountCta(
+        S.pwRestore,
+        quiet: true,
+        onTap: _restoring || _busy ? null : _restore,
+      ),
+      const SizedBox(height: 24),
+    ],
+  ];
 
   List<Widget> _signInForm() {
     final localError = _complete && !_valid ? S.accountErrInvalid : null;

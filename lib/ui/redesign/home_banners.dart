@@ -342,9 +342,9 @@ class HomeUpsellRow extends StatelessWidget {
 /// explains what sets a connection up; the actions live in the CTA bar, where
 /// Connect would otherwise be.
 class HomeEmptyBlock extends StatelessWidget {
-  /// Opens sign-in with an account number. Without a store catalog this is
-  /// the only way to Premium, so the empty screen offers it quietly; null
-  /// hides the line.
+  /// Opens the Account screen, the way in for someone who already pays.
+  /// Without a store catalog this is the only way to Premium, so the empty
+  /// screen offers it quietly; null hides the line.
   final VoidCallback? onSignIn;
   const HomeEmptyBlock({super.key, this.onSignIn});
 

@@ -33,27 +33,32 @@ Future<String?> scanWithCamera(BuildContext context) => Navigator.of(
 ).push<String>(MaterialPageRoute(builder: (_) => const QrScanScreen()));
 
 /// What the user is told about [error]. [byCode] picks the words for a
-/// typed code over those for a scanned one where the two differ.
-String pairingErrorText(PairingError error, {bool byCode = false}) =>
-    switch (error) {
-      PairingError.unknownLink =>
-        byCode ? S.accountErrUnknownCode : S.accountErrUnknownLink,
-      PairingError.badCode => S.accountErrBadCode,
-      PairingError.linkExpired => S.accountErrExpired,
-      PairingError.linkCancelled => S.accountErrCancelled,
-      PairingError.subscriptionInactive => S.accountErrInactive,
-      PairingError.notPermitted => S.accountErrNotPermitted,
-      PairingError.accountRevoked => S.accountErrRevoked,
-      PairingError.unauthorized => S.accountErrUnauthorized,
-      PairingError.tooManyAttempts => S.accountErrTooMany,
-      PairingError.unsupported => S.accountErrUnsupported,
-      PairingError.notAllowedForKind => S.accountUseOnly,
-      PairingError.self => S.accountErrSelf,
-      // Both have their own screens; reaching here means a retry failed.
-      PairingError.deviceLimitReached ||
-      PairingError.lastManager ||
-      PairingError.network => S.accountErrNetwork,
-    };
+/// typed code over those for a scanned one where the two differ; [request]
+/// is set while a request is looked at or approved.
+String pairingErrorText(
+  PairingError error, {
+  bool byCode = false,
+  bool request = false,
+}) => switch (error) {
+  PairingError.unknownLink =>
+    byCode ? S.accountErrUnknownCode : S.accountErrUnknownLink,
+  PairingError.badCode => S.accountErrBadCode,
+  PairingError.linkExpired => S.accountErrExpired,
+  PairingError.linkCancelled => S.accountErrCancelled,
+  PairingError.subscriptionInactive => S.accountErrInactive,
+  PairingError.notPermitted => S.accountErrNotPermitted,
+  PairingError.accountRevoked => S.accountErrRevoked,
+  PairingError.unauthorized => S.accountErrUnauthorized,
+  PairingError.tooManyAttempts => S.accountErrTooMany,
+  PairingError.unsupported => S.accountErrUnsupported,
+  PairingError.notAllowedForKind => S.accountUseOnly,
+  // On a request, the device's own: approving happens elsewhere.
+  PairingError.self => request ? S.accountErrOwnRequest : S.accountErrSelf,
+  // Both have their own screens; reaching here means a retry failed.
+  PairingError.deviceLimitReached ||
+  PairingError.lastManager ||
+  PairingError.network => S.accountErrNetwork,
+};
 
 /// Asks before a change that would leave the account with no device that
 /// manages it (K7 `last_manager`), then repeats it with the answer.
@@ -258,6 +263,7 @@ class _PairingFlowState extends State<PairingFlow> {
         _error = pairingErrorText(
           result.error ?? PairingError.network,
           byCode: _byCode,
+          request: true,
         );
       });
       return;
@@ -331,7 +337,7 @@ class _PairingFlowState extends State<PairingFlow> {
           error == PairingError.unknownLink;
       _phase = over ? _Phase.failed : _Phase.confirm;
       if (over) _tick?.cancel();
-      _error = pairingErrorText(error, byCode: _byCode);
+      _error = pairingErrorText(error, byCode: _byCode, request: true);
     });
   }
 

@@ -50,6 +50,9 @@ dependencies:
   # dependency, so it works on GrapheneOS and other no-GMS devices too;
   # mobile_scanner's ML Kit backend returns null without Play Services.
   flutter_zxing: ^2.3.0
+  # Draws the QR code a new device shows while it asks for access. Pure
+  # Dart (BSD-3-Clause), no native code, so every build carries it alike.
+  qr: ^4.0.0
   # Receives hideip:// custom-scheme deep links (initial + stream). On iOS it
   # hooks the scene lifecycle automatically through FlutterSceneDelegate, so the
   # empty SceneDelegate this app already ships needs no manual forwarding.

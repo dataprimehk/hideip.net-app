@@ -37,6 +37,7 @@ Widget _account(
       nav: fakeNav(sheets: sheets),
       account: account,
       pairing: pairing,
+      newDevice: FakeNewDevicePort(),
       scan: scan,
       camStatus: () async => cam,
     ),

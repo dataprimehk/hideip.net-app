@@ -671,6 +671,25 @@ void main() {
       expect(backend.to('/v1/link/approve'), isEmpty);
     });
 
+    test(
+      'a number entered while the code is up withdraws the request',
+      () async {
+        final state = fresh();
+        expect(await state.startLinkRequest(), LinkRequestPhase.waiting);
+
+        final signed = await state.signInWithAccountNumber(_numberA);
+        expect(signed.result, AccountResult.ok);
+        await pumpEventQueue();
+
+        // An approval arriving later cannot move the device off the number.
+        expect(backend.to('/v1/link/cancel'), hasLength(1));
+        expect(state.linkPhase, LinkRequestPhase.idle);
+        expect(state.linkTicket, isNull);
+        expect(await const PendingLinkStore().load(), isNull);
+        expect(state.accountNumber, _numberA);
+      },
+    );
+
     test('nothing is approved from a device with no account', () async {
       final state = fresh();
       expect(state.pairingAuth, isNull);
