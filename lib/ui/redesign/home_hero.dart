@@ -1270,7 +1270,13 @@ class _HomeList extends StatelessWidget {
           ),
         const SizedBox(height: 16),
       ],
-      const HipSectionLabel(S.homeRecommended),
+      // The way to every location rides on the first label: under a tall
+      // hero the row at the end of the list is out of sight.
+      HipSectionLabel(
+        S.homeRecommended,
+        action: S.homeAllLocations,
+        onAction: () => nav.go(HipScreen.locations),
+      ),
       HipListGroup(children: [
         HipListRow(
           leading: HipFlag(

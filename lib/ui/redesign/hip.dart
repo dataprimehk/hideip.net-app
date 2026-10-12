@@ -601,15 +601,56 @@ class HipNavHead extends StatelessWidget {
 /// Section label above a list group (uppercase, tracked out).
 class HipSectionLabel extends StatelessWidget {
   final String text;
-  const HipSectionLabel(this.text, {super.key});
+
+  /// A link on the right of the label, for a way out of the section that
+  /// must stay in sight without scrolling to the end of it.
+  final String? action;
+  final VoidCallback? onAction;
+
+  const HipSectionLabel(this.text, {super.key, this.action, this.onAction});
 
   @override
   Widget build(BuildContext context) {
+    final label = Text(text.toUpperCase(),
+        style: Hip.sans(650, Hip.captionSize,
+            color: Hip.muted2, letterSpacing: .91));
+    final act = action, tap = onAction;
+    if (act == null || tap == null) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(14, 18, 14, 7),
+        child: label,
+      );
+    }
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 18, 14, 7),
-      child: Text(text.toUpperCase(),
-          style: Hip.sans(650, Hip.captionSize,
-              color: Hip.muted2, letterSpacing: .91)),
+      padding: const EdgeInsets.fromLTRB(14, 8, 4, 0),
+      child: Row(children: [
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 10, bottom: 7),
+            child: label,
+          ),
+        ),
+        Semantics(
+          button: true,
+          child: InkWell(
+            onTap: tap,
+            borderRadius: BorderRadius.circular(8),
+            child: ConstrainedBox(
+              // A full tap target, even though the text is caption-sized.
+              constraints: const BoxConstraints(minHeight: 44),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Text(act,
+                      style: Hip.sans(600, Hip.captionSize + 1,
+                          color: Hip.blue)),
+                  Icon(Icons.chevron_right, size: 16, color: Hip.blue),
+                ]),
+              ),
+            ),
+          ),
+        ),
+      ]),
     );
   }
 }
