@@ -444,10 +444,10 @@ packages:
     dependency: "direct main"
     description:
       name: flutter_zxing
-      sha256: "6bf0cb0fde122455e73ae78214457c106fbde3c633af4624ce29567ac590ef21"
+      sha256: "2c1ed2d0b1eb70c95231da33e9dea80e5b2f8a4711974bdadf7d9c1813b7ad5e"
       url: "https://pub.dev"
     source: hosted
-    version: "2.3.0"
+    version: "2.4.0"
   gtk:
     dependency: transitive
     description:

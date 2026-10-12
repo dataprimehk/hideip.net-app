@@ -49,7 +49,7 @@ dependencies:
   # QR scanning via pure ZXing (FFI). No Google ML Kit / Play Services
   # dependency, so it works on GrapheneOS and other no-GMS devices too;
   # mobile_scanner's ML Kit backend returns null without Play Services.
-  flutter_zxing: ^2.3.0
+  flutter_zxing: ^2.4.0
   # Draws the QR code a new device shows while it asks for access. Pure
   # Dart (BSD-3-Clause), no native code, so every build carries it alike.
   qr: ^4.0.0
