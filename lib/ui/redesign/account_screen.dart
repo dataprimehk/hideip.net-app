@@ -1053,13 +1053,34 @@ class _AccountScreenState extends State<AccountScreen> {
                 S.accountNumberNotHereNote,
                 style: Hip.sans(400, 13.5, color: Hip.muted, height: 1.45),
               ),
+              // The two ways out, each with what it takes: the number from
+              // wherever it is kept, or a new one when it is kept nowhere.
               if (!_enterNumber) ...[
                 const SizedBox(height: 12),
+                Text(
+                  S.accountNumberFromOther,
+                  style: Hip.sans(400, 13.5, color: Hip.muted, height: 1.45),
+                ),
+                const SizedBox(height: 10),
                 AccountCta(
                   S.accountEnterNumber,
                   ghost: true,
                   onTap: _openNumberEntry,
                 ),
+                if (manage) ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    S.accountNumberNoOther,
+                    style:
+                        Hip.sans(400, 13.5, color: Hip.muted, height: 1.45),
+                  ),
+                  const SizedBox(height: 10),
+                  AccountCta(
+                    S.accountRotate,
+                    ghost: true,
+                    onTap: _busy ? null : _rotate,
+                  ),
+                ],
               ],
             ],
           ),

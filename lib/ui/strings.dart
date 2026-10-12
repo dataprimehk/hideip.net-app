@@ -997,8 +997,9 @@ abstract final class S {
   /// The number a store purchase just made, shown once.
   static const accountFreshTitle = 'Your account number';
   static const accountFreshBody =
-      'Premium is tied to this number. Save it to use Premium on your other '
-      'devices. You can always see it again here.';
+      'Premium is tied to this number. Save it in your password manager or '
+      'notes: you need it for your other devices and for a new phone. It can '
+      'be shown again only on this device.';
 
   /// The billing row, and its way to the store's own page.
   static String accountBilling(String store, String date) =>
@@ -1121,12 +1122,20 @@ abstract final class S {
 
   static const accountNumberShow = 'Show';
   static const accountNumberNote =
-      'The number signs hideip.net in on another device. Anyone with it can '
-      'use this Premium, and it cannot be recovered.';
-  static const accountNumberNotHere = 'Not on this device';
+      'The number signs hideip.net in on another device or a new phone. '
+      'Anyone with it can use this Premium. Keep a copy in your password '
+      'manager: it cannot be recovered.';
+  static const accountNumberNotHere =
+      'Your account number is not saved on this device';
   static const accountNumberNotHereNote =
-      'Entering the number shows it here and lets the other devices use this '
-      'Premium.';
+      'Premium works here without it. The number stays only on the devices '
+      'where it was shown or entered, and hideip.net cannot show it again.';
+  static const accountNumberFromOther =
+      'Have it on another device, or saved somewhere? On that device open '
+      'Settings, then Account, and tap Show. Enter it here.';
+  static const accountNumberNoOther =
+      'Not anywhere? Get a new number. Your Premium and devices stay; the old '
+      'number stops working.';
 
   // --- Payment: how do I pay -----------------------------------------------
 

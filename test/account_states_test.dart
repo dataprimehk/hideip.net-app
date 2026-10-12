@@ -140,6 +140,10 @@ Future<Finder> _seek(WidgetTester tester, String text) async {
     scrollable: find.byType(Scrollable).first,
     maxScrolls: 60,
   );
+  // Scrolled into the viewport can still mean a sliver at its edge, too
+  // little to tap; bring the whole row in.
+  await tester.ensureVisible(f.first);
+  await tester.pump();
   return f;
 }
 
