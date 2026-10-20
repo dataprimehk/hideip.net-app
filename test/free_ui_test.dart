@@ -139,18 +139,27 @@ class _Backend {
 
 late _Backend _backend;
 
-AppState _fresh() => AppState(
-  accounts: AccountService(client: _backend.client),
-  provisioning: ProvisioningService(
-    client: _backend.client,
-    catalogSources: [_catalog],
-  ),
-  pairing: PairingClient(client: _backend.client),
-  free: FreeService(client: _backend.client),
-  freeProver: PowProver(solve: (c, bits) async => solvePow(c, bits)),
-  linkPollInterval: null,
-  tablet: false,
-);
+class _FreeUiState extends AppState {
+  _FreeUiState()
+    : super(
+        accounts: AccountService(client: _backend.client),
+        provisioning: ProvisioningService(
+          client: _backend.client,
+          catalogSources: [_catalog],
+        ),
+        pairing: PairingClient(client: _backend.client),
+        free: FreeService(client: _backend.client),
+        freeProver: PowProver(solve: (c, bits) async => solvePow(c, bits)),
+        linkPollInterval: null,
+        tablet: false,
+      );
+
+  // UI/account tests use the HTTP backend above, never real TCP probes.
+  @override
+  Future<void> pingAll() async {}
+}
+
+AppState _fresh() => _FreeUiState();
 
 /// Lets the mocked network answer between frames.
 Future<void> _settle(WidgetTester tester) async {

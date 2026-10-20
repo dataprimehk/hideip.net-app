@@ -438,6 +438,8 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
       final chrome = _chromeH ?? (pad.top + pad.bottom + 470);
       // 14 = the map's top margin inside the hero panel.
       final mapH = (cons.maxHeight - chrome - 14).clamp(0.0, cons.maxHeight);
+      final scrollHero =
+          MediaQuery.textScalerOf(context).scale(14) > 14 * 1.6 && !compact;
       // In map mode the strip under the panel (where the CTA sits) darkens
       // with the same timing as the map expand, so the screen reads as one
       // dark surface instead of a light band under a wall of map.
@@ -445,9 +447,11 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
         duration: Hip.dur(const Duration(milliseconds: 650)),
         curve: const Cubic(.32, .72, 0, 1),
         color: mapMode ? Hip.hero : Hip.surface,
-        child: Column(children: [
+        child: _HomeBody(
+          scrollHero: scrollHero,
+          mapMode: mapMode,
           // --- dark hero panel ---------------------------------------------
-          ClipRRect(
+          hero: ClipRRect(
             borderRadius:
                 const BorderRadius.vertical(bottom: Radius.circular(32)),
             child: Container(
@@ -455,7 +459,7 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
               color: Hip.hero,
               child: Column(children: [
                 Column(key: _heroKey, children: [
-                  SizedBox(height: pad.top + 6),
+                  SizedBox(height: (scrollHero ? 0 : pad.top) + 6),
                   HipAppHead(
                     onDark: true,
                     onSettings: () => nav.go(HipScreen.settings),
@@ -601,7 +605,9 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
                 AnimatedContainer(
                   duration: Hip.dur(const Duration(milliseconds: 650)),
                   curve: const Cubic(.32, .72, 0, 1),
-                  height: mapMode ? mapH : 0,
+                  height: mapMode
+                      ? (scrollHero ? mapH.clamp(240.0, double.infinity) : mapH)
+                      : 0,
                   margin: EdgeInsets.only(top: mapMode ? 14 : 0),
                   child: WorldMap(
                     locations: state.locations,
@@ -626,8 +632,7 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
           ),
 
           // --- server list (hidden in map mode) ------------------------------
-          Expanded(
-            child: IgnorePointer(
+          locations: IgnorePointer(
               ignoring: mapMode,
               child: AnimatedOpacity(
                 duration: Hip.dur(const Duration(milliseconds: 300)),
@@ -636,6 +641,9 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
                   child: HeroScrollEdge(
                     child: SingleChildScrollView(
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                  physics: scrollHero
+                      ? const NeverScrollableScrollPhysics()
+                      : null,
                   // The results move up a little while the hero is folded:
                   // with a keyboard up every row of height counts.
                   child: AnimatedPadding(
@@ -657,13 +665,12 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
                 ),
               ),
             ),
-          ),
 
           // --- CTA bar -------------------------------------------------------
           // It steps aside with the hero while a search is on: the results
           // need the height more than a button that a picked result brings
           // straight back.
-          _foldSize(
+          cta: _foldSize(
             child: compact
                 ? const SizedBox(width: double.infinity)
                 : Padding(
@@ -691,7 +698,7 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
                     ),
                   ),
           ),
-        ]),
+        ),
       );
     });
   }
@@ -721,6 +728,39 @@ class _HomeHeroScreenState extends State<HomeHeroScreen>
           ?current,
         ],
       );
+}
+
+/// Large text lets the hero share the scroll area with the locations. The
+/// action stays pinned; fixed hero chrome cannot squeeze the list to zero.
+class _HomeBody extends StatelessWidget {
+  final bool scrollHero;
+  final bool mapMode;
+  final Widget hero;
+  final Widget locations;
+  final Widget cta;
+  const _HomeBody({
+    required this.scrollHero,
+    required this.mapMode,
+    required this.hero,
+    required this.locations,
+    required this.cta,
+  });
+
+  @override
+  Widget build(BuildContext context) => Column(children: [
+    if (scrollHero)
+      Expanded(child: Column(children: [
+        // The hero can scroll away; the system status bar keeps its dark
+        // background and light indicators over the whole scroll range.
+        ColoredBox(color: Hip.hero, child: SizedBox(
+          height: MediaQuery.paddingOf(context).top, width: double.infinity)),
+        Expanded(child: SingleChildScrollView(
+          child: Column(children: [hero, if (!mapMode) locations]),
+        )),
+      ]))
+    else ...[hero, Expanded(child: locations)],
+    cta,
+  ]);
 }
 
 /// The bar under the list. Every Home state that changes what the primary
@@ -840,61 +880,80 @@ class _HomeSeg extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scaler = MediaQuery.textScalerOf(context);
+    final showIcons = scaler.scale(13) <= 13 * 1.6;
     Widget seg(String label, IconData icon, bool active, bool toMap) =>
         GestureDetector(
           onTap: () => onChanged(toMap),
           behavior: HitTestBehavior.opaque,
           child: Container(
-            width: 118,
-            height: 40,
+            constraints: const BoxConstraints(minHeight: 44),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
             alignment: Alignment.center,
             child: AnimatedDefaultTextStyle(
               duration: Hip.dur(const Duration(milliseconds: 300)),
               style: Hip.sans(600, 13,
                   color: Colors.white.withValues(alpha: active ? 1 : .55)),
               child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(icon,
-                    size: 15,
-                    color: Colors.white.withValues(alpha: active ? 1 : .55)),
-                const SizedBox(width: 7),
-                Text(label),
+                if (showIcons) ...[
+                  Icon(icon, size: 15,
+                      color: Colors.white.withValues(alpha: active ? 1 : .55)),
+                  const SizedBox(width: 7),
+                ],
+                Flexible(child: Text(label, textAlign: TextAlign.center)),
               ]),
             ),
           ),
         );
 
-    return Container(
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: .06),
-        border: Border.all(color: Colors.white.withValues(alpha: .1)),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: SizedBox(
-        width: 118 * 2 + 3,
-        height: 44,
+    double labelWidth(String label) {
+      final text = TextPainter(
+        text: TextSpan(text: label, style: Hip.sans(600, 13)),
+        textScaler: scaler,
+        textDirection: Directionality.of(context),
+      )..layout();
+      final width = text.width + 20 + (showIcons ? 22 : 0);
+      text.dispose();
+      return width;
+    }
+
+    return LayoutBuilder(builder: (context, constraints) {
+      final width = (239 * scaler.scale(13) / 13).clamp(0.0, constraints.maxWidth);
+      final half = (width - 9) / 2;
+      final vertical = labelWidth(S.homeSegServers) > half || labelWidth(S.homeSegMap) > half;
+      final servers = seg(S.homeSegServers, Icons.dns_outlined, !mapMode, false);
+      final map = seg(S.homeSegMap, Icons.public, mapMode, true);
+      return Container(
+        width: width,
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: .06),
+          border: Border.all(color: Colors.white.withValues(alpha: .1)),
+          borderRadius: BorderRadius.circular(vertical ? 20 : 999),
+        ),
         child: Stack(children: [
-          AnimatedAlign(
+          Positioned.fill(child: AnimatedAlign(
             duration: Hip.dur(const Duration(milliseconds: 500)),
             curve: const Cubic(.32, .72, 0, 1),
-            alignment: mapMode ? Alignment.centerRight : Alignment.centerLeft,
-            child: Container(
-              width: 118,
-              height: 44,
-              decoration: BoxDecoration(
+            alignment: vertical
+                ? (mapMode ? Alignment.bottomCenter : Alignment.topCenter)
+                : (mapMode ? Alignment.centerRight : Alignment.centerLeft),
+            child: FractionallySizedBox(
+              widthFactor: vertical ? 1 : .5,
+              heightFactor: vertical ? .5 : 1,
+              child: DecoratedBox(decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: .13),
-                borderRadius: BorderRadius.circular(999),
-              ),
+                borderRadius: BorderRadius.circular(vertical ? 17 : 999),
+              )),
             ),
-          ),
-          Row(mainAxisSize: MainAxisSize.min, children: [
-            seg(S.homeSegServers, Icons.dns_outlined, !mapMode, false),
-            const SizedBox(width: 3),
-            seg(S.homeSegMap, Icons.public, mapMode, true),
-          ]),
+          )),
+          if (vertical)
+            Column(mainAxisSize: MainAxisSize.min, children: [servers, map])
+          else
+            Row(children: [Expanded(child: servers), const SizedBox(width: 3), Expanded(child: map)]),
         ]),
-      ),
-    );
+      );
+    });
   }
 }
 
@@ -919,8 +978,8 @@ class _HomeSearch extends StatelessWidget {
     final white = Colors.white;
     return Container(
       margin: const EdgeInsets.only(top: 10),
-      padding: const EdgeInsets.only(left: 16),
-      height: 46,
+      padding: const EdgeInsets.fromLTRB(16, 8, 0, 8),
+      constraints: const BoxConstraints(minHeight: 46),
       decoration: BoxDecoration(
         color: white.withValues(alpha: .06),
         border: Border.all(color: white.withValues(alpha: .1), width: 1.5),
@@ -1357,19 +1416,22 @@ class _HomeSessionCardState extends State<HomeSessionCard> {
     final d = widget.duration;
     return HipCard(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 14,
+          runSpacing: 8,
+          children: [
           Semantics(
             label: S.speedDown,
             child: Text('↓ ${_rate(widget.stats.downlink)}',
                 style: Hip.mono(700, 14, color: Hip.blue)),
           ),
-          const SizedBox(width: 14),
           Semantics(
             label: S.speedUp,
             child: Text('↑ ${_rate(widget.stats.uplink)}',
                 style: Hip.mono(700, 14, color: Hip.ink)),
           ),
-          const Spacer(),
           if (d != null)
             Row(mainAxisSize: MainAxisSize.min, children: [
               Icon(Icons.schedule, size: 13, color: Hip.muted),

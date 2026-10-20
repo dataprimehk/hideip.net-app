@@ -133,7 +133,9 @@ class HipWordmark extends StatelessWidget {
       letterSpacing: -.045 * size,
       color: color ?? Hip.ink,
     );
-    return Text.rich(TextSpan(children: [
+    // The logo is artwork, not content or an adjustable control label.
+    return MediaQuery.withNoTextScaling(
+      child: Text.rich(TextSpan(children: [
       TextSpan(text: 'hide', style: base),
       WidgetSpan(
         alignment: PlaceholderAlignment.middle,
@@ -170,7 +172,8 @@ class HipWordmark extends StatelessWidget {
           fontVariations: const [FontVariation('wght', 500)],
         ),
       ),
-    ]));
+    ])),
+    );
   }
 }
 
@@ -437,8 +440,9 @@ class HipCta extends StatelessWidget {
           IconTheme(data: IconThemeData(color: fg, size: 18), child: leading!),
           const SizedBox(width: 8),
         ],
-        Text(label,
-            style: Hip.sans(quiet ? 550 : 600, quiet ? 15 : 16.5, color: fg)),
+        Flexible(child: Text(label,
+            textAlign: TextAlign.center,
+            style: Hip.sans(quiet ? 550 : 600, quiet ? 15 : 16.5, color: fg))),
       ],
     );
 
@@ -478,7 +482,8 @@ class HipCta extends StatelessWidget {
     }
 
     final button = Container(
-      height: height,
+      constraints: BoxConstraints(minHeight: height),
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: quiet ? 10 : 12),
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: bg,
@@ -611,9 +616,15 @@ class HipSectionLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final label = Text(text.toUpperCase(),
-        style: Hip.sans(650, Hip.captionSize,
-            color: Hip.muted2, letterSpacing: .91));
+    final label = Text(
+      text.toUpperCase(),
+      style: Hip.sans(
+        650,
+        Hip.captionSize,
+        color: Hip.muted2,
+        letterSpacing: .91,
+      ),
+    );
     final act = action, tap = onAction;
     if (act == null || tap == null) {
       return Padding(
@@ -621,36 +632,53 @@ class HipSectionLabel extends StatelessWidget {
         child: label,
       );
     }
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 8, 4, 0),
-      child: Row(children: [
-        Expanded(
+    final heading = Padding(
+      padding: const EdgeInsets.only(top: 10, bottom: 7),
+      child: label,
+    );
+    final link = Semantics(
+      button: true,
+      child: InkWell(
+        onTap: tap,
+        borderRadius: BorderRadius.circular(8),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 44),
           child: Padding(
-            padding: const EdgeInsets.only(top: 10, bottom: 7),
-            child: label,
-          ),
-        ),
-        Semantics(
-          button: true,
-          child: InkWell(
-            onTap: tap,
-            borderRadius: BorderRadius.circular(8),
-            child: ConstrainedBox(
-              // A full tap target, even though the text is caption-sized.
-              constraints: const BoxConstraints(minHeight: 44),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Text(act,
-                      style: Hip.sans(600, Hip.captionSize + 1,
-                          color: Hip.blue)),
-                  Icon(Icons.chevron_right, size: 16, color: Hip.blue),
-                ]),
-              ),
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Text(
+                    act,
+                    style: Hip.sans(600, Hip.captionSize + 1, color: Hip.blue),
+                  ),
+                ),
+                Icon(Icons.chevron_right, size: 16, color: Hip.blue),
+              ],
             ),
           ),
         ),
-      ]),
+      ),
+    );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 8, 4, 0),
+      child:
+          MediaQuery.textScalerOf(context).scale(Hip.captionSize) >
+              Hip.captionSize * 1.6
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                heading,
+                Align(alignment: Alignment.centerRight, child: link),
+              ],
+            )
+          : Row(
+              children: [
+                Expanded(child: heading),
+                link,
+              ],
+            ),
     );
   }
 }
@@ -722,6 +750,8 @@ class HipListRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final largeText = MediaQuery.textScalerOf(context).scale(Hip.titleSize)
+        > Hip.titleSize * 1.6;
     final green = Brand.hsl(152, 60, 42);
     final corners = HipRowSlot.cornersOf(context);
     final row = Container(
@@ -741,8 +771,8 @@ class HipListRow extends StatelessWidget {
             Row(mainAxisSize: MainAxisSize.min, children: [
               Flexible(
                 child: Text(title,
-                    maxLines: titleMaxLines,
-                    overflow: TextOverflow.ellipsis,
+                    maxLines: largeText ? null : titleMaxLines,
+                    overflow: largeText ? TextOverflow.clip : TextOverflow.ellipsis,
                     style: Hip.sans(650, Hip.titleSize,
                         color: Hip.ink, letterSpacing: -.17)),
               ),
@@ -761,23 +791,25 @@ class HipListRow extends StatelessWidget {
                   ),
                 ),
               ],
-              if (titleBadge != null) ...[
+              if (titleBadge != null && !largeText) ...[
                 const SizedBox(width: 7),
                 titleBadge!,
               ],
             ]),
+            if (titleBadge != null && largeText)
+              Padding(padding: const EdgeInsets.only(top: 4), child: titleBadge!),
             if (subtitleSpan != null)
               Padding(
                 padding: const EdgeInsets.only(top: 1),
                 child: Text.rich(subtitleSpan!,
-                    overflow: TextOverflow.ellipsis,
+                    overflow: largeText ? TextOverflow.clip : TextOverflow.ellipsis,
                     style: Hip.sans(400, Hip.bodySize, color: Hip.muted)),
               )
             else if (subtitle != null)
               Padding(
                 padding: const EdgeInsets.only(top: 1),
                 child: Text(subtitle!,
-                    overflow: TextOverflow.ellipsis,
+                    overflow: largeText ? TextOverflow.clip : TextOverflow.ellipsis,
                     style: subtitleMono
                         ? Hip.mono(600, 12, color: Hip.muted)
                         : Hip.sans(400, Hip.bodySize, color: Hip.muted)),

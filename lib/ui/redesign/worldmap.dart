@@ -817,49 +817,50 @@ class _WorldMapState extends State<WorldMap> with TickerProviderStateMixin {
           right: 12,
           bottom: 12,
           child: Container(
-            height: 38,
+            constraints: const BoxConstraints(minHeight: 38),
             padding: const EdgeInsets.only(left: 13, right: 5),
             decoration: BoxDecoration(
               color: Brand.hsl(222, 20, 8, .85),
               border: Border.all(color: Colors.white.withValues(alpha: .1)),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Row(children: [
-              AnimatedBuilder(
-                animation: _tick,
-                builder: (context, _) {
-                  final busy = widget.conn == MarkState.connecting ||
-                      widget.conn == MarkState.disconnecting;
-                  final beat =
-                      .5 + .5 * math.sin(_tick.value * 4 * 2 * math.pi);
-                  return Container(
-                    width: 7,
-                    height: 7,
-                    decoration: BoxDecoration(
-                      color: busy
-                          ? hudColor.withValues(alpha: .55 + .45 * beat)
-                          : hudColor,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                            color: hudColor.withValues(alpha: .2),
-                            spreadRadius: 3),
-                      ],
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Text(hudText,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Hip.mono(600, 10.5,
-                        color: Colors.white.withValues(alpha: .78),
-                        letterSpacing: .5)),
-              ),
-              const SizedBox(width: 9),
-              GestureDetector(
+            child: _MapHudLayout(
+              status: Row(children: [
+                AnimatedBuilder(
+                  animation: _tick,
+                  builder: (context, _) {
+                    final busy = widget.conn == MarkState.connecting ||
+                        widget.conn == MarkState.disconnecting;
+                    final beat =
+                        .5 + .5 * math.sin(_tick.value * 4 * 2 * math.pi);
+                    return Container(
+                      width: 7,
+                      height: 7,
+                      decoration: BoxDecoration(
+                        color: busy
+                            ? hudColor.withValues(alpha: .55 + .45 * beat)
+                            : hudColor,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                              color: hudColor.withValues(alpha: .2),
+                              spreadRadius: 3),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(hudText,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Hip.mono(600, 10.5,
+                          color: Colors.white.withValues(alpha: .78),
+                          letterSpacing: .5)),
+                ),
+              ]),
+              action: GestureDetector(
                 onTap: widget.onAllLocations,
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
@@ -877,10 +878,37 @@ class _WorldMapState extends State<WorldMap> with TickerProviderStateMixin {
                   ]),
                 ),
               ),
-            ]),
+            ),
           ),
         ),
       ]);
+  }
+}
+
+/// The status and location action share a row at ordinary sizes. Large text
+/// gets a row of its own so the action cannot squeeze the status out of view.
+class _MapHudLayout extends StatelessWidget {
+  final Widget status;
+  final Widget action;
+  const _MapHudLayout({required this.status, required this.action});
+
+  @override
+  Widget build(BuildContext context) {
+    if (MediaQuery.textScalerOf(context).scale(11.5) > 11.5 * 1.6) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          status,
+          const SizedBox(height: 6),
+          Align(alignment: Alignment.centerRight, child: action),
+        ]),
+      );
+    }
+    return Row(children: [
+      Expanded(child: status),
+      const SizedBox(width: 9),
+      action,
+    ]);
   }
 }
 
