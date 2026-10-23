@@ -48,6 +48,10 @@ class _Backend {
   int powBits = 8;
   String challenge = _challenge;
   http.Response? registerAnswer;
+
+  /// Consulted before [registerAnswer]: a response, or null to go on.
+  http.Response? Function(http.Request req, Map<String, dynamic> body)?
+  registerRule;
   int registered = 0;
   final goneTokens = <int>{};
 
@@ -87,6 +91,11 @@ class _Backend {
               .millisecondsSinceEpoch,
         });
       case '/v1/free/register':
+        final rule = registerRule;
+        if (rule != null) {
+          final ruled = rule(req, body(req));
+          if (ruled != null) return ruled;
+        }
         final answer = registerAnswer;
         if (answer != null) return answer;
         final b = body(req);
@@ -188,7 +197,11 @@ void main() {
 
   group('the service', () {
     late _Backend backend;
-    setUp(() => backend = _Backend());
+    setUp(() async {
+      SharedPreferences.setMockInitialValues({});
+      await const FreeStore().clearPending();
+      backend = _Backend();
+    });
 
     test('info is kept for five minutes, a failure for less', () async {
       var now = DateTime(2026, 10, 8, 12);
@@ -235,6 +248,7 @@ void main() {
       };
       for (final e in cases.entries) {
         backend.registerAnswer = e.key;
+        await const FreeStore().clearPending();
         final r = await FreeService(client: backend.client).register(_pow());
         expect(r.status, e.value, reason: e.key.body);
         expect(r.ok, isFalse);
@@ -282,19 +296,43 @@ void main() {
   group('App Attest', () {
     late _Backend backend;
     final calls = <MethodCall>[];
+    final waits = <Duration>[];
     var supported = true;
+    var nextKeyId = 'a2V5LWlk';
 
-    setUp(() {
+    // Per method, the codes its next calls fail with, in order.
+    final failures = <String, List<String>>{};
+
+    AppAttestProver prover() =>
+        AppAttestProver(wait: (d) async => waits.add(d));
+
+    List<String> methods() => [for (final c in calls) c.method];
+
+    setUp(() async {
+      SharedPreferences.setMockInitialValues({});
+      await PremiumSub.clear();
+      await const AccountStore().clear();
+      await const FreeStore().clear();
+      await const FreeStore().clearPending();
+      await const FreeStore().clearAttestKeyId();
       backend = _Backend();
       calls.clear();
+      waits.clear();
+      failures.clear();
       supported = true;
+      nextKeyId = 'a2V5LWlk';
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(AppAttestBridge.channel, (call) async {
             calls.add(call);
+            final queued = failures[call.method];
+            if (queued != null && queued.isNotEmpty) {
+              throw PlatformException(code: queued.removeAt(0));
+            }
             return switch (call.method) {
               'isSupported' => supported,
-              'generateKey' => 'a2V5LWlk',
+              'generateKey' => nextKeyId,
               'attestKey' => 'b2JqZWN0',
+              'generateAssertion' => 'YXNzZXJ0',
               _ => null,
             };
           });
@@ -306,9 +344,7 @@ void main() {
     });
 
     test('a fresh key is attested over the hash of the challenge', () async {
-      final reg = await FreeService(
-        client: backend.client,
-      ).register(const AppAttestProver());
+      final reg = await FreeService(client: backend.client).register(prover());
       expect(reg.ok, isTrue);
       final attest = calls.singleWhere((c) => c.method == 'attestKey');
       final args = attest.arguments as Map;
@@ -327,11 +363,245 @@ void main() {
       });
     });
 
+    test('the key is kept only once the server has accepted it', () async {
+      backend.registerAnswer = _json({'error': 'bad_proof'}, 400);
+      final refused = await FreeService(
+        client: backend.client,
+      ).register(prover());
+      expect(refused.status, FreeRegisterStatus.badProof);
+      expect(await const FreeStore().attestKeyId(), isNull);
+      expect(await const FreeStore().pending(), isNull);
+
+      backend.registerAnswer = null;
+      final ok = await FreeService(client: backend.client).register(prover());
+      expect(ok.ok, isTrue);
+      expect(await const FreeStore().attestKeyId(), 'a2V5LWlk');
+    });
+
+    test('a later registration proves the same key by assertion', () async {
+      await FreeService(client: backend.client).register(prover());
+      calls.clear();
+
+      final again = await FreeService(
+        client: backend.client,
+      ).register(prover());
+      expect(again.ok, isTrue);
+      expect(methods(), ['isSupported', 'generateAssertion']);
+      final args =
+          calls.singleWhere((c) => c.method == 'generateAssertion').arguments
+              as Map;
+      expect(args['keyId'], 'a2V5LWlk');
+      final hash = await Sha256().hash(utf8.encode('hideip-free-test'));
+      expect(args['clientDataHash'], hash.bytes);
+      final sent = backend.body(backend.to('/v1/free/register').last);
+      expect(sent, {
+        'platform': 'ios',
+        'assertion': {'key_id': 'a2V5LWlk', 'object': 'YXNzZXJ0'},
+        'challenge': _challenge,
+      });
+    });
+
+    test(
+      'a key Apple no longer knows is replaced by a new attestation',
+      () async {
+        await FreeService(client: backend.client).register(prover());
+        nextKeyId = 'bmV3LWtleQ';
+        failures['generateAssertion'] = ['invalid_key'];
+        calls.clear();
+
+        final reg = await FreeService(
+          client: backend.client,
+        ).register(prover());
+        expect(reg.ok, isTrue);
+        expect(methods(), [
+          'isSupported',
+          'generateAssertion',
+          'generateKey',
+          'attestKey',
+        ]);
+        expect(await const FreeStore().attestKeyId(), 'bmV3LWtleQ');
+        final sent = backend.body(backend.to('/v1/free/register').last);
+        expect(sent['attestation'], {
+          'key_id': 'bmV3LWtleQ',
+          'object': 'b2JqZWN0',
+        });
+      },
+    );
+
+    test(
+      'an unreachable Apple is tried again with the same key, then given up',
+      () async {
+        await FreeService(client: backend.client).register(prover());
+        failures['generateAssertion'] = [
+          'server_unavailable',
+          'server_unavailable',
+          'server_unavailable',
+        ];
+        calls.clear();
+
+        final reg = await FreeService(
+          client: backend.client,
+        ).register(prover());
+        expect(reg.status, FreeRegisterStatus.network);
+        expect(methods(), [
+          'isSupported',
+          'generateAssertion',
+          'generateAssertion',
+          'generateAssertion',
+        ]);
+        expect(
+          calls
+              .where((c) => c.method == 'generateAssertion')
+              .map((c) => (c.arguments as Map)['keyId'])
+              .toSet(),
+          {'a2V5LWlk'},
+        );
+        expect(waits, [const Duration(seconds: 1), const Duration(seconds: 2)]);
+        expect(backend.to('/v1/free/register'), hasLength(1));
+        expect(await const FreeStore().attestKeyId(), 'a2V5LWlk');
+      },
+    );
+
+    test('an unreachable Apple that comes back is used after all', () async {
+      await FreeService(client: backend.client).register(prover());
+      failures['generateAssertion'] = [
+        'server_unavailable',
+        'server_unavailable',
+      ];
+      calls.clear();
+
+      final reg = await FreeService(client: backend.client).register(prover());
+      expect(reg.ok, isTrue);
+      expect(methods(), [
+        'isSupported',
+        'generateAssertion',
+        'generateAssertion',
+        'generateAssertion',
+      ]);
+      expect(backend.body(backend.to('/v1/free/register').last)['assertion'], {
+        'key_id': 'a2V5LWlk',
+        'object': 'YXNzZXJ0',
+      });
+    });
+
+    test(
+      'an assertion the server refuses forgets the key and attests anew',
+      () async {
+        await FreeService(client: backend.client).register(prover());
+        nextKeyId = 'bmV3LWtleQ';
+        backend.registerRule = (req, body) => body.containsKey('assertion')
+            ? _json({'error': 'bad_proof'}, 400)
+            : null;
+
+        final reg = await FreeService(
+          client: backend.client,
+        ).register(prover());
+        expect(reg.ok, isTrue);
+        final sent = backend.to('/v1/free/register');
+        expect(sent, hasLength(3));
+        expect(backend.body(sent[1]).keys, contains('assertion'));
+        expect(backend.body(sent[2]).keys, contains('attestation'));
+        expect(await const FreeStore().attestKeyId(), 'bmV3LWtleQ');
+        expect(await const FreeStore().pending(), isNull);
+      },
+    );
+
+    test(
+      'a registration whose answer was lost is sent again, unchanged',
+      () async {
+        var lost = true;
+        backend.registerRule = (req, body) {
+          if (!lost) return null;
+          lost = false;
+          throw http.ClientException('connection lost');
+        };
+        final first = await FreeService(
+          client: backend.client,
+        ).register(prover());
+        expect(first.status, FreeRegisterStatus.network);
+        expect(await const FreeStore().attestKeyId(), isNull);
+        expect(await const FreeStore().pending(), isNotNull);
+
+        // The app restarts: a new service and prover over the same storage.
+        calls.clear();
+        final again = await FreeService(
+          client: backend.client,
+        ).register(prover());
+        expect(again.ok, isTrue);
+        expect(again.subUrl, _freeSub(1));
+        final sent = backend.to('/v1/free/register');
+        expect(sent, hasLength(2));
+        expect(sent[1].body, sent[0].body);
+        expect(backend.to('/v1/free/challenge'), hasLength(1));
+        expect(calls, isEmpty);
+        expect(await const FreeStore().attestKeyId(), 'a2V5LWlk');
+        expect(await const FreeStore().pending(), isNull);
+      },
+    );
+
+    test(
+      'a pending registration older than five minutes is not sent again',
+      () async {
+        var now = DateTime(2026, 10, 23, 10);
+        var lost = true;
+        backend.registerRule = (req, body) {
+          if (!lost) return null;
+          lost = false;
+          throw http.ClientException('connection lost');
+        };
+        await FreeService(
+          client: backend.client,
+          now: () => now,
+        ).register(prover());
+
+        now = now.add(const Duration(minutes: 5));
+        backend.challenge = base64Url.encode(utf8.encode('second-challenge'));
+        final again = await FreeService(
+          client: backend.client,
+          now: () => now,
+        ).register(prover());
+        expect(again.ok, isTrue);
+        expect(backend.to('/v1/free/challenge'), hasLength(2));
+        final sent = backend.to('/v1/free/register');
+        expect(sent, hasLength(2));
+        expect(backend.body(sent.last)['challenge'], backend.challenge);
+      },
+    );
+
+    test('a 410 is renewed by assertion and keeps its URL', () async {
+      backend.registerRule = (req, body) {
+        if (!body.containsKey('assertion')) return null;
+        backend.goneTokens.remove(1);
+        return _json({'sub_url': _freeSub(1), 'speed_mbps': 10});
+      };
+      final state = AppState(
+        accounts: AccountService(client: backend.client),
+        provisioning: ProvisioningService(
+          client: backend.client,
+          catalogSources: [_catalog],
+        ),
+        pairing: PairingClient(client: backend.client),
+        free: FreeService(client: backend.client),
+        freeProver: prover(),
+        linkPollInterval: null,
+        tablet: false,
+      );
+      await state.refreshFreeInfo();
+      expect(await state.ensureFreeAccess(), FreeAccessResult.ok);
+      backend.goneTokens.add(1);
+
+      await state.startFreeForTesting();
+      final sent = backend.to('/v1/free/register');
+      expect(sent, hasLength(2));
+      expect(backend.body(sent.last).keys, contains('assertion'));
+      expect(await const FreeStore().subUrl(), _freeSub(1));
+      expect(state.profiles.where((p) => p.free), hasLength(2));
+      expect(await const FreeStore().attestKeyId(), 'a2V5LWlk');
+    });
+
     test('a device without App Attest does not ask at all', () async {
       supported = false;
-      final reg = await FreeService(
-        client: backend.client,
-      ).register(const AppAttestProver());
+      final reg = await FreeService(client: backend.client).register(prover());
       expect(reg.status, FreeRegisterStatus.unsupported);
       expect(backend.to('/v1/free/register'), isEmpty);
       expect(calls.where((c) => c.method == 'generateKey'), isEmpty);
@@ -343,11 +613,21 @@ void main() {
             if (call.method == 'isSupported') return true;
             throw PlatformException(code: 'generate_failed');
           });
-      final reg = await FreeService(
-        client: backend.client,
-      ).register(const AppAttestProver());
+      final reg = await FreeService(client: backend.client).register(prover());
       expect(reg.status, FreeRegisterStatus.unsupported);
     });
+
+    test(
+      'the proof of work path makes no App Attest call and keeps no key',
+      () async {
+        final reg = await FreeService(client: backend.client).register(_pow());
+        expect(reg.ok, isTrue);
+        expect(calls, isEmpty);
+        expect(await const FreeStore().attestKeyId(), isNull);
+        final sent = backend.body(backend.to('/v1/free/register').single);
+        expect(sent.keys.toSet(), {'platform', 'pow_nonce', 'challenge'});
+      },
+    );
   });
 
   group('the app', () {
@@ -372,6 +652,8 @@ void main() {
       await PremiumSub.clear();
       await const AccountStore().clear();
       await const FreeStore().clear();
+      await const FreeStore().clearPending();
+      await const FreeStore().clearAttestKeyId();
       backend = _Backend();
       state = fresh();
     });
@@ -491,6 +773,19 @@ void main() {
       // A tap still asks, as it always may.
       expect(await state.ensureFreeAccess(), FreeAccessResult.ok);
       expect(backend.to('/v1/free/register'), hasLength(3));
+    });
+
+    test('a key the server does not know drops its App Attest key', () async {
+      await state.refreshFreeInfo();
+      await state.ensureFreeAccess();
+      await const FreeStore().saveAttestKeyId('a2V5LWlk');
+      // An unknown token answers 404 on the free subscription route.
+      await const FreeStore().save(_freeSub(9));
+
+      await state.startFreeForTesting();
+      expect(await const FreeStore().attestKeyId(), isNull);
+      expect(backend.to('/v1/free/register'), hasLength(2));
+      expect(await const FreeStore().subUrl(), _freeSub(2));
     });
 
     test('Premium takes the free key and its servers away', () async {

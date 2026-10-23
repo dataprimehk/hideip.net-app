@@ -2480,6 +2480,10 @@ class AppState extends ChangeNotifier implements AccountUiHost {
     if (premium.isOn) return FreeAccessResult.premium;
     if (got.gone) {
       await _forgetFreeLocked();
+      // The server does not know the key at all, so its App Attest key is
+      // let go too: the next registration attests a new one. An expired key
+      // (410) is renewed with an assertion for the same key instead.
+      if (got.unknown) await _freeStore.clearAttestKeyId();
       if (_freeReissued || !_freeInfo.enabled) return FreeAccessResult.network;
       _freeReissued = true;
       return _registerFreeLocked();
