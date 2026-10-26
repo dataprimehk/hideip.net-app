@@ -573,7 +573,8 @@ abstract final class S {
   // Privacy.
   static const setUsage = 'Anonymous usage counts';
   static const setUsageSub =
-      'Three one-time events, no identifiers. Details at hideip.net/privacy';
+      'Counts with no identifiers: a few first steps, and once a day '
+      'that the app was used, with your country. Details at hideip.net/privacy';
 
   // F4, notifications refused in system settings.
   static const setNotifBlocked =
@@ -804,11 +805,14 @@ abstract final class S {
   static String setPrivacyRowSub(bool on) =>
       on ? 'Usage counts on' : 'Usage counts off';
   static const setPrivacyExplain =
-      'Three one-time signals, sent once per install and never again: '
-      'opening the app for the first time, adding your first connection, '
-      'and completing your first successful connect. Each one carries only '
-      'its own name and whether you are on Android or iOS. No IP address, '
-      'no account number and no device identifier travels with it.';
+      'Four first steps, each sent once per install: opening the app, '
+      'adding a first server, a first successful connect, and first seeing '
+      'the plans. And at most once a day, after a connect: that the app was '
+      'used, with the kind of server (your own, Premium or free), its '
+      'protocol, the app version, roughly how long ago it was installed, and '
+      'your country as a two-letter code from the mobile network, SIM or '
+      'region setting. No account number, device identifier, server address '
+      'or link travels with them, and hideip.net keeps only daily totals.';
 
   // 1.1.1, home hero
   // ---------------------------------------------------------------------
