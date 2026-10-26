@@ -11,9 +11,11 @@ import android.os.Handler
 import android.os.Looper
 import android.os.PersistableBundle
 import android.provider.Settings
+import android.telephony.TelephonyManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.util.Locale
 import java.util.UUID
 
 /**
@@ -26,6 +28,7 @@ import java.util.UUID
  *   stop() -> stops the tunnel
  *   status() -> {running, error}
  *   installerPackage() -> the package that installed this copy, or null
+ *   usageFacts() -> {country, installer, installedAt} for the anonymous counters
  */
 class MainActivity : FlutterActivity() {
 
@@ -102,6 +105,16 @@ class MainActivity : FlutterActivity() {
                     // requested when the answer is the Play Store; the same
                     // APK also ships through GitHub and F-Droid style repos.
                     "installerPackage" -> result.success(installerPackage())
+                    // Coarse labels for the opt-out usage counters
+                    // (docs/app-events-api.md). Dart reduces them to wire
+                    // words; nothing here is an identifier.
+                    "usageFacts" -> result.success(
+                        mapOf(
+                            "country" to deviceCountry(),
+                            "installer" to installerPackage(),
+                            "installedAt" to firstInstallTime()
+                        )
+                    )
                     "openVpnSettings" -> {
                         try {
                             startActivity(Intent(Settings.ACTION_VPN_SETTINGS))
@@ -132,6 +145,32 @@ class MainActivity : FlutterActivity() {
             @Suppress("DEPRECATION")
             packageManager.getInstallerPackageName(packageName)
         }
+    } catch (e: Exception) {
+        null
+    }
+
+    /**
+     * The country of the mobile network the phone is registered on, else of
+     * its SIM, else of the region setting. Neither telephony call needs a
+     * permission, and neither is affected by the tunnel, unlike an IP lookup.
+     */
+    private fun deviceCountry(): String? {
+        val tm = getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
+        val candidates = listOf(
+            { tm?.networkCountryIso },
+            { tm?.simCountryIso },
+            { Locale.getDefault().country }
+        )
+        for (read in candidates) {
+            val code = try { read() } catch (e: Exception) { null }
+            if (code != null && code.length == 2) return code.uppercase(Locale.ROOT)
+        }
+        return null
+    }
+
+    private fun firstInstallTime(): Long? = try {
+        @Suppress("DEPRECATION")
+        packageManager.getPackageInfo(packageName, 0).firstInstallTime
     } catch (e: Exception) {
         null
     }

@@ -15,6 +15,7 @@ import UIKit
 ///   stop() -> stops the tunnel
 ///   status() -> {running, error}
 ///   stats() -> live traffic counters written by the extension
+///   usageFacts() -> {country, installedAt} for the anonymous usage counters
 final class VpnChannel: NSObject {
     static func register(with registrar: FlutterPluginRegistrar) {
         let channel = FlutterMethodChannel(
@@ -38,8 +39,32 @@ final class VpnChannel: NSObject {
         case "stats": stats(result)
         case "setKillSwitch": setKillSwitch(call, result)
         case "setSensitiveClipboard": setSensitiveClipboard(call, result)
+        case "usageFacts": usageFacts(result)
         default: result(FlutterMethodNotImplemented)
         }
+    }
+
+    /// Coarse labels for the opt-out usage counters (docs/app-events-api.md).
+    /// The country is the region setting, the only country iOS offers without
+    /// location access, and unlike an IP lookup it is not moved by the tunnel.
+    /// The install time is when the app's Documents folder was created.
+    private func usageFacts(_ result: FlutterResult) {
+        let country: String?
+        if #available(iOS 16, *) {
+            country = Locale.current.region?.identifier
+        } else {
+            country = Locale.current.regionCode
+        }
+        var installedAt: Int?
+        if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first,
+           let created = (try? FileManager.default.attributesOfItem(atPath: docs.path))?[.creationDate]
+               as? Date {
+            installedAt = Int(created.timeIntervalSince1970 * 1000)
+        }
+        result([
+            "country": country ?? NSNull(),
+            "installedAt": installedAt ?? NSNull(),
+        ] as [String: Any])
     }
 
     private func setSensitiveClipboard(
