@@ -2800,7 +2800,13 @@ class AppState extends ChangeNotifier implements AccountUiHost {
     bool countFirstProfile = true,
   }) async {
     if (newProfiles.isEmpty) return;
-    if (countFirstProfile) _count(AppEvent.firstProfile);
+    if (countFirstProfile) {
+      final first = newProfiles.first;
+      _count(AppEvent.firstProfile, attrs: {
+        'kind': UsageLabels.kind(first),
+        'source': UsageLabels.source(first),
+      });
+    }
     final sel = selected;
     // Re-importing a subscription the list already holds must replace its
     // group, not stack a second copy of every server next to the first.
@@ -2956,9 +2962,23 @@ class AppState extends ChangeNotifier implements AccountUiHost {
   /// One-shot anonymous counter (docs/app-events-api.md). Never awaited: the
   /// app must behave identically whether the request succeeds, fails or is
   /// switched off.
-  void _count(AppEvent event) {
-    unawaited(AppTelemetry.mark(event, enabled: _prefs.usageCounts));
+  void _count(AppEvent event, {Map<String, String> attrs = const {}}) {
+    unawaited(
+      AppTelemetry.mark(event, enabled: _prefs.usageCounts, attrs: attrs),
+    );
   }
+
+  /// The daily "in use" ping for a tunnel that is up on [profile]; at most
+  /// one a day goes out, whatever brought the tunnel up.
+  void _countActive(ProxyProfile? profile) {
+    if (profile == null) return;
+    unawaited(AppTelemetry.active(profile, enabled: _prefs.usageCounts));
+  }
+
+  /// The plans screen opened, from [from] (a wire word, see
+  /// docs/app-events-api.md). Counted once per install.
+  void countPaywall(String from) =>
+      _count(AppEvent.firstPaywall, attrs: {'from': from});
 
   // --- Connection ------------------------------------------------------------
 
@@ -3043,7 +3063,8 @@ class AppState extends ChangeNotifier implements AccountUiHost {
       Haptics.success();
       notifyListeners();
       if (target != null) await _claimWin(target);
-      _count(AppEvent.firstConnect);
+      _count(AppEvent.firstConnect, attrs: {'kind': UsageLabels.kind(profile)});
+      _countActive(profile);
       _holdForReview(generation);
       _refreshIpAfterToggle();
       // With WireGuard up, watch for the handshake actually completing and
@@ -3369,6 +3390,9 @@ class AppState extends ChangeNotifier implements AccountUiHost {
         if (!initial) Haptics.success();
         _connectedAt ??= DateTime.now();
         _startStatusPoll();
+        // A tunnel the app did not start this run (Always-on, the system
+        // or a tile) is still a day of use.
+        _countActive(activeLocation?.profile ?? selected);
       }
       if (newState == ConnState.disconnected) {
         _statusPoll?.cancel();

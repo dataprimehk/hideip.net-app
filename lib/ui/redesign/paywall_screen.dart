@@ -877,6 +877,21 @@ class PaywallScreen extends StatefulWidget {
 
 enum _PwPhase { plans, buying, success, error }
 
+/// Where the plans screen was opened from, in the usage counters' words
+/// (docs/app-events-api.md).
+String paywallSource(HipScreen from) => switch (from) {
+      HipScreen.onboarding => 'onboarding',
+      HipScreen.home => 'home',
+      HipScreen.locations || HipScreen.detail => 'locations',
+      HipScreen.settings => 'settings',
+      HipScreen.account ||
+      HipScreen.premium ||
+      HipScreen.linkedDevices =>
+        'account',
+      HipScreen.trialExpired => 'trial_expired',
+      HipScreen.import || HipScreen.paywall => 'other',
+    };
+
 class _PaywallScreenState extends State<PaywallScreen> {
   PremiumPlan _plan = PremiumPlan.yearly;
   _PwPhase _phase = _PwPhase.plans;
@@ -891,6 +906,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
   void initState() {
     super.initState();
     _wasLocked = sortedByPing(widget.state, widget.state.lockedLocations);
+    widget.state.countPaywall(paywallSource(widget.from));
   }
 
   /// Closing the offer. From onboarding it walks the stack back, which
