@@ -69,6 +69,17 @@ release and come out with the comment.
   locations stay Premium.
   [not implemented in the app yet; needs the server side, a free node and
   the switch turned on. While it is off, the app shows no free row]
+
+### Changed
+- The anonymous usage counts say a little more, still with no identifier:
+  the first time the plans screen opens, and at most once a day while a
+  tunnel is up, a ping with the kind of server (own, Premium or free), how
+  it was added, its protocol, the install channel and app version, a wide
+  range of days since install and the country the phone reports from its
+  mobile network, SIM or region setting, never from the IP. The server only
+  adds them to daily totals. They can still be turned off in Settings.
+  [on this branch; the hideip.net side is live since 26.10.; waits for the
+  device check]
 -->
 
 ## 1.2.0 (2026-10-02)
