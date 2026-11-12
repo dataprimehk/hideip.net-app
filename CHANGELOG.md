@@ -8,6 +8,19 @@ https://hideip.net/apps/changelog.
 Build 9.
 
 ### Added
+- A free hideip.net location, with no account and no purchase. It is slower
+  than the Premium locations, and its speed comes from the server. The other
+  locations stay Premium. The key for it is asked for on the tap that wants
+  it, not at launch.
+- Add a device: the new device shows a QR code and a short code for the
+  same request. A phone that manages the account scans the QR code or types
+  the short code, sees which device is asking, and adds it with one
+  confirmation. A phone, tablet or computer can also be allowed to manage
+  the account; a TV or a browser only uses Premium.
+- The Account screen follows the questions people ask: whether Premium is
+  on and until when, which devices use it, the account number, payment, and
+  the rarer actions folded under More options. The number stays masked, and
+  Copy copies all of it.
 - Subscriptions from panels that limit devices (Remnawave, 3x-ui, PasarGuard
   and others) import and refresh. Such a panel gets an `x-hwid` value from
   the app: random, one per subscription address, never sent to hideip.net
@@ -19,8 +32,16 @@ Build 9.
 - WireGuard servers in sing-box JSON subscriptions, also when the document
   has them only under `endpoints`.
 - A `name` in an add link is kept as the title of the imported subscription.
+- Home keeps an All locations link next to Recommended.
 
 ### Changed
+- The anonymous usage counts say a little more, still with no identifier:
+  the first time the plans screen opens, and at most once a day while a
+  tunnel is up, a ping with the kind of server (own, Premium or free), how
+  it was added, its protocol, the install channel and app version, a wide
+  range of days since install and the country the phone reports from its
+  mobile network, SIM or region setting, never from the IP. The server only
+  adds them to daily totals. They can still be turned off in Settings.
 - A link whose transport the core does not support (xhttp, splithttp, mKCP,
   QUIC or TCP header obfuscation, VLESS encryption) is no longer imported as
   a plain TCP server that never connects. Import and refresh say how many
@@ -29,6 +50,10 @@ Build 9.
   The rest of the interface is still in English.
 - Server addresses are looked up with the resolver of the network the device
   is on, outside the tunnel, instead of a fixed public resolver.
+- A device that is signed in without the account number on it says where
+  the number is and how to get a new one.
+- Android draws edge to edge, with system bar icons picked for the surface
+  under each bar.
 
 ### Fixed
 - A refresh that fails, comes back empty, hits a device limit or gets a
@@ -45,42 +70,9 @@ Build 9.
   not outside it.
 - Hiddify's `wg://` form with `pk` and `peer_pk` is refused with a reason
   instead of failing silently.
-
-<!--
-Not in this build yet. A line below moves up only after its code is on this
-branch and has been checked on devices. The bracketed notes are for the
-release and come out with the comment.
-
-### Added
-- The Account screen follows the questions people ask: whether Premium is
-  on and until when, which devices use it, the account number, payment, and
-  the rarer actions folded under More options. The number stays masked, and
-  Copy copies all of it.
-  [Account screen branch, waits for integration and device checks]
-- Add a device: the new device shows a QR code and a short code for the
-  same request. A phone that manages the account scans the QR code or types
-  the short code, sees which device is asking, and adds it with one
-  confirmation. A phone, tablet or computer can also be allowed to manage
-  the account; a TV or a browser only uses Premium.
-  [needs the new pairing on the hideip.net server; until that is deployed
-  the app keeps the 1.2.0 way of linking a device]
-- A free hideip.net location, with no account and no purchase. It is slower
-  than the Premium locations, and its speed comes from the server. The other
-  locations stay Premium.
-  [not implemented in the app yet; needs the server side, a free node and
-  the switch turned on. While it is off, the app shows no free row]
-
-### Changed
-- The anonymous usage counts say a little more, still with no identifier:
-  the first time the plans screen opens, and at most once a day while a
-  tunnel is up, a ping with the kind of server (own, Premium or free), how
-  it was added, its protocol, the install channel and app version, a wide
-  range of days since install and the country the phone reports from its
-  mobile network, SIM or region setting, never from the IP. The server only
-  adds them to daily totals. They can still be turned off in Settings.
-  [on this branch; the hideip.net side is live since 26.10.; waits for the
-  device check]
--->
+- Home stays usable with the largest accessibility text sizes.
+- The location picker scrolls above the keyboard instead of overflowing.
+- The QR scanner moves to flutter_zxing 2.4.0 and its camera restart fixes.
 
 ## 1.2.0 (2026-10-02)
 
