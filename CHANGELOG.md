@@ -3,7 +3,7 @@
 Notable changes to the hideip.net app. The same history is published at
 https://hideip.net/apps/changelog.
 
-## 1.2.1 (unreleased)
+## 1.2.1 (2026-11-13)
 
 Build 9.
 
